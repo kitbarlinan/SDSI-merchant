@@ -36,7 +36,7 @@ export const orderTotal = (order: Order): number =>
 export const orderUnits = (order: Order): number =>
   order.lines.reduce((sum, line) => sum + line.quantity, 0);
 
-/** SDSI's top-up on one line. */
+/** SDSI's estimated top-up on one line: Net SRP x the costing mark-up. */
 export const lineTopUp = (line: OrderLine, ratePercent: number): number =>
   roundMoney((line.total * ratePercent) / 100);
 

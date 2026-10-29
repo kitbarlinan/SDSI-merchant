@@ -6,7 +6,6 @@ import { TrendChart } from '@/components/charts/TrendChart';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
-import { inputClass } from '@/components/ui/Field';
 import { Icon } from '@/components/ui/Icon';
 import { DateFilter } from '@/components/ui/DateFilter';
 import { MerchantFilter } from '@/components/ui/MerchantFilter';
@@ -31,13 +30,11 @@ function csvCell(value: string | number): string {
 
 function AccountingReports() {
   const { user } = useAuth();
-  const { orders: allOrders, merchants: allMerchants, topUpPercent, setTopUpPercent } = useAppData();
+  const { orders: allOrders, merchants: allMerchants, costing } = useAppData();
+  const topUpPercent = costing.settings.markupPct;
   const { today, range, setRange } = useDayRange();
 
   const [merchantFilter, setMerchantFilter] = useState('all');
-  const [rateInput, setRateInput] = useState('');
-  const [rateError, setRateError] = useState<string | null>(null);
-  const [rateSaved, setRateSaved] = useState(false);
   const [limit, setLimit] = useState(LEDGER_PAGE);
 
   const merchants = useMemo(
@@ -74,20 +71,7 @@ function AccountingReports() {
   );
 
   if (!user) return null;
-  const actor = user;
   const merchantName = (id: string) => allMerchants.find((m) => m.id === id)?.name ?? id;
-
-  function saveRate() {
-    const result = setTopUpPercent(actor, Number(rateInput));
-    if (!result.ok) {
-      setRateError(result.error);
-      setRateSaved(false);
-      return;
-    }
-    setRateError(null);
-    setRateSaved(true);
-    setRateInput('');
-  }
 
   function exportCsv() {
     const header = [
@@ -98,9 +82,9 @@ function AccountingReports() {
       'Terms',
       'Paid via',
       'Merchant sales',
-      'Top-up rate %',
-      'SDSI top-up',
-      'Net payable to merchant',
+      'Mark-up % (costing)',
+      'SDSI top-up (estimate)',
+      'Remit to merchant',
     ];
     const lines = ledger.map((order) => {
       const total = orderTotal(order);
@@ -115,7 +99,7 @@ function AccountingReports() {
         total.toFixed(2),
         order.topUpRate ?? 0,
         topUp.toFixed(2),
-        (total - topUp).toFixed(2),
+        total.toFixed(2),
       ]
         .map(csvCell)
         .join(',');
@@ -159,8 +143,10 @@ function AccountingReports() {
         <p className="font-medium">How the numbers work</p>
         <p className="mt-1 text-violet-800">
           SDSI fulfills orders for the merchants, so the cash we collect belongs to them. SDSI&apos;s own
-          revenue is only the <strong>top-up</strong> on each delivered order. Net payable is what SDSI
-          owes the merchant: sales minus top-up.
+          revenue is only the <strong>top-up</strong>: the costing mark-up ({formatPercent(topUpPercent)}) on the
+          merchant&apos;s Net SRP, so 1,485 less 990 = 495 on a 990 SRP. This is an <strong>estimate in pesos</strong>.
+          The real top-up (pickup / COD price in HKD, converted, less what we remit) comes later. What SDSI remits
+          to the merchant is the Net SRP, with nothing taken out.
         </p>
       </div>
 
@@ -168,9 +154,9 @@ function AccountingReports() {
         <StatCard
           variant="primary"
           icon="wallet"
-          label="SDSI revenue (top-up)"
+          label="SDSI revenue (est. top-up)"
           value={formatCurrency(summary.topUp)}
-          hint={`${formatPercent(topUpPercent)} placeholder rate`}
+          hint={`${formatPercent(topUpPercent)} costing mark-up, estimate`}
           delta={pctChange(summary.topUp, prev.topUp)}
         />
         <StatCard
@@ -189,9 +175,9 @@ function AccountingReports() {
         />
         <StatCard
           icon="leaf"
-          label="Net payable to merchants"
+          label="Remit to merchants"
           value={formatCurrency(summary.netPayable)}
-          hint="Sales minus top-up"
+          hint="Net SRP of delivered orders"
         />
       </div>
 
@@ -201,50 +187,16 @@ function AccountingReports() {
         </Card>
 
         <Card
-          title="Top-up rate"
-          subtitle="Still to be finalized"
-          action={<Badge tone="amber">Placeholder</Badge>}
+          title="Top-up basis"
+          subtitle="Taken from Accounting → Costing"
+          action={<Badge tone="amber">Estimate</Badge>}
         >
           <div className="space-y-3">
-            <p className="text-3xl font-semibold tracking-tight text-slate-900">
-              {formatPercent(topUpPercent)}
-            </p>
+            <p className="text-3xl font-semibold tracking-tight text-slate-900">{formatPercent(topUpPercent)}</p>
             <p className="text-xs text-slate-500">
-              Each order keeps the rate it was delivered with, so changing this only affects orders
-              delivered from now on.
+              Mark-up on Net SRP, set in the Costing tab. Each delivered order keeps the mark-up it was delivered
+              with, so a later change never rewrites past orders.
             </p>
-            <div className="flex gap-2">
-              <input
-                type="number"
-                min={0}
-                max={100}
-                step="0.1"
-                inputMode="decimal"
-                value={rateInput}
-                onChange={(event) => {
-                  setRateInput(event.target.value);
-                  setRateSaved(false);
-                }}
-                onKeyDown={(event) => event.key === 'Enter' && saveRate()}
-                aria-label="New top-up percent"
-                placeholder="New %"
-                className={inputClass(Boolean(rateError))}
-              />
-              <button
-                type="button"
-                onClick={saveRate}
-                disabled={rateInput.trim() === ''}
-                className="rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Save
-              </button>
-            </div>
-            {rateError ? (
-              <p role="alert" className="text-xs text-rose-600">
-                {rateError}
-              </p>
-            ) : null}
-            {rateSaved ? <p className="text-xs text-emerald-700">Saved for new deliveries.</p> : null}
           </div>
         </Card>
       </div>
@@ -252,7 +204,7 @@ function AccountingReports() {
       <Card
         flush
         title="Merchant statement"
-        subtitle="What each merchant sold, what SDSI earned, and what is owed to them"
+        subtitle="What each merchant sold, what SDSI earned (estimate), and what is remitted to them"
       >
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
@@ -262,7 +214,7 @@ function AccountingReports() {
                 <th className="px-4 py-3 text-right">Orders</th>
                 <th className="px-4 py-3 text-right">Merchant sales</th>
                 <th className="px-4 py-3 text-right">SDSI top-up</th>
-                <th className="px-5 py-3 text-right">Net payable</th>
+                <th className="px-5 py-3 text-right">Remit to merchant</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -283,7 +235,7 @@ function AccountingReports() {
                     <td className="px-4 py-3.5 text-right font-medium text-violet-700">
                       {formatCurrency(topUp)}
                     </td>
-                    <td className="px-5 py-3.5 text-right font-semibold">{formatCurrency(sold - topUp)}</td>
+                    <td className="px-5 py-3.5 text-right font-semibold">{formatCurrency(sold)}</td>
                   </tr>
                 );
               })}

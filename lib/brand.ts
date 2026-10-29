@@ -10,9 +10,7 @@ export const COVER_WARNING_DAYS = 30;
 export const EXPIRY_WARNING_DAYS = 90;
 
 /**
- * PLACEHOLDER. SDSI fulfills orders for merchants, so merchant sales are NOT SDSI revenue.
- * SDSI's own income is a top-up on fulfilled orders. The real rate is still to be decided;
- * Admin can change it on the Accounting page. Each delivered order keeps the rate it was
- * delivered with, so changing it later never rewrites past orders.
+ * SDSI's top-up is the costing mark-up (Costing settings, now 50%) on the merchant's Net SRP,
+ * e.g. 1,485 - 990 = 495 for a 990 SRP. It is an ESTIMATE in pesos. The real top-up is the pickup /
+ * COD price (HKD, converted) less what is remitted to the merchant, to be done later.
  */
-export const DEFAULT_TOP_UP_PERCENT = 5;

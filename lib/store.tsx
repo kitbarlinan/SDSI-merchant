@@ -10,7 +10,6 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { DEFAULT_TOP_UP_PERCENT } from './brand';
 import * as engine from './engine';
 import type { Actor, AppState, PlaceOrderInput } from './engine';
 import { nowISO } from './format';
@@ -43,8 +42,6 @@ interface AppDataValue {
   receipts: StockReceipt[];
   /** Costing table, settings and change log. Show it only to the admin. */
   costing: CostingState;
-  /** Current SDSI top-up percent (placeholder until the real rate is agreed). */
-  topUpPercent: number;
   hydrated: boolean;
   placeOrder: (actor: Actor, input: PlaceOrderInput) => ActionResult<Order>;
   checkoutWalkIn: (
@@ -75,7 +72,6 @@ interface AppDataValue {
   ) => ActionResult<StockReceipt>;
   approveReceipt: (actor: Actor, receiptId: string) => ActionResult<StockReceipt>;
   rejectReceipt: (actor: Actor, receiptId: string, reason: string) => ActionResult<StockReceipt>;
-  setTopUpPercent: (actor: Actor, percent: number) => ActionResult<number>;
   setPickupPrices: (
     actor: Actor,
     changes: { rowId: string; pickupPriceHkd: number }[],
@@ -92,7 +88,7 @@ interface AppDataValue {
 }
 
 // Bumped whenever the saved data shape changes.
-const STORAGE_KEY = 'sdsi-wellness:v6';
+const STORAGE_KEY = 'sdsi-wellness:v7';
 
 const createInitialState = (): AppState => ({
   items: MOCK_INVENTORY.map((item) => ({ ...item })),
@@ -104,7 +100,6 @@ const createInitialState = (): AppState => ({
     log: [],
   },
   poSeq: MOCK_PO_SEQ,
-  topUpPercent: DEFAULT_TOP_UP_PERCENT,
 });
 
 const isSavedState = (value: unknown): value is AppState => {
@@ -116,8 +111,7 @@ const isSavedState = (value: unknown): value is AppState => {
     Array.isArray(candidate.receipts) &&
     !!candidate.costing &&
     Array.isArray(candidate.costing.rows) &&
-    typeof candidate.poSeq === 'number' &&
-    typeof candidate.topUpPercent === 'number'
+    typeof candidate.poSeq === 'number'
   );
 };
 
@@ -176,7 +170,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       orders: state.orders,
       receipts: state.receipts,
       costing: state.costing,
-      topUpPercent: state.topUpPercent,
       hydrated,
       placeOrder: (actor, input) => run((s) => engine.placeMerchantOrder(s, actor, input, nowISO())),
       checkoutWalkIn: (actor, input) => run((s) => engine.checkoutWalkIn(s, actor, input, nowISO())),
@@ -197,7 +190,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         run((s) => engine.approveReceipt(s, actor, receiptId, nowISO())),
       rejectReceipt: (actor, receiptId, reason) =>
         run((s) => engine.rejectReceipt(s, actor, receiptId, reason, nowISO())),
-      setTopUpPercent: (actor, percent) => run((s) => engine.setTopUpPercent(s, actor, percent)),
       setPickupPrices: (actor, changes) =>
         run((s) => engine.setPickupPrices(s, actor, changes, nowISO())),
       setCostingSettings: (actor, patch) =>

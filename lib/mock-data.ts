@@ -1,4 +1,3 @@
-import { DEFAULT_TOP_UP_PERCENT } from './brand';
 import { roundMoney } from './format';
 import { buildDemoCosting, DEFAULT_COSTING_SETTINGS, orderCharges, type CostingState } from './costing';
 import { formatPoid } from './engine';
@@ -429,7 +428,7 @@ function generateOrders(): Order[] {
             rand,
             walkIn ? WALK_IN_PAYMENTS : terms === 'COD' ? COD_PAYMENTS : COP_PAYMENTS,
           );
-          order.topUpRate = DEFAULT_TOP_UP_PERCENT;
+          order.topUpRate = MOCK_COSTING.settings.markupPct;
         }
         if (status === 'cancelled') {
           order.cancelledAt = stamp(date, hour + 2, minute);

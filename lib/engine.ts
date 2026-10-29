@@ -42,8 +42,6 @@ export interface AppState {
   costing: CostingState;
   /** Last PO number handed out. Only ever goes up, so a POID is never reused. */
   poSeq: number;
-  /** Current SDSI top-up, percent of merchant sales. Applied to orders delivered from now on. */
-  topUpPercent: number;
 }
 
 export interface Actor {
@@ -227,7 +225,7 @@ export function checkoutWalkIn(
     deliveredAt: now,
     handledBy: actor.id,
     paymentMethod: input.paymentMethod,
-    topUpRate: state.topUpPercent,
+    topUpRate: state.costing.settings.markupPct,
   }));
 
   const sold = new Map<string, number>();
@@ -349,7 +347,7 @@ export function markDelivered(
     deliveredAt: now,
     handledBy: actor.id,
     paymentMethod,
-    topUpRate: state.topUpPercent,
+    topUpRate: state.costing.settings.markupPct,
   });
   return { ok: true, state: next, value: next.orders.find((o) => o.id === orderId)! };
 }
@@ -559,14 +557,6 @@ export function rejectReceipt(
   return decide(state, actor, receiptId, 'rejected', now, reason.trim());
 }
 
-export function setTopUpPercent(state: AppState, actor: Actor, percent: number): Outcome<number> {
-  if (actor.role !== 'admin') return fail('Only the admin can change the top-up.');
-  if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
-    return fail('Enter a percentage between 0 and 100.');
-  }
-  const rounded = Math.round(percent * 100) / 100;
-  return { ok: true, state: { ...state, topUpPercent: rounded }, value: rounded };
-}
 
 // ---------------------------------------------------------------------------
 // Costing: admin only. Every change is written to the change log, nothing is edited silently.

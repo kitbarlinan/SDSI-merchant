@@ -15,7 +15,7 @@ export interface Summary {
   avgOrder: number;
   /** SDSI's fulfillment top-up. This is SDSI's own revenue. */
   topUp: number;
-  /** What SDSI owes the merchant: sales minus top-up. */
+  /** What SDSI remits to the merchant: the Net SRP of what was delivered. The top-up is on top, not taken out of it. */
   netPayable: number;
 }
 
@@ -45,7 +45,7 @@ export function summarize(lines: SaleLine[]): Summary {
     units,
     avgOrder: orderIds.size > 0 ? roundMoney(revenue / orderIds.size) : 0,
     topUp,
-    netPayable: roundMoney(revenue - topUp),
+    netPayable: roundMoney(revenue),
   };
 }
 
