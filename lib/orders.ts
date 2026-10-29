@@ -99,6 +99,7 @@ export function flattenDelivered(orders: Order[]): SaleLine[] {
         unitPrice: line.unitPrice,
         unitCost: line.unitCost,
         total: line.total,
+        gross: roundMoney(line.total + lineTopUp(line, rate)),
         topUp: lineTopUp(line, rate),
         paymentMethod: order.paymentMethod!,
         terms: order.terms,
@@ -126,3 +127,6 @@ export const toCollectHkd = (orders: Order[]): number =>
 /** What the customer pays, as text: HKD from the live costing, or the peso Net SRP for older orders without a price. */
 export const orderAmountLabel = (order: Order): string =>
   order.amountHkd != null ? formatHkd(order.amountHkd) : formatCurrency(orderTotal(order));
+
+/** Customer price basis of a delivered order: Net SRP plus the mark-up (990 -> 1,485). */
+export const orderGross = (order: Order): number => roundMoney(orderTotal(order) + orderTopUp(order));

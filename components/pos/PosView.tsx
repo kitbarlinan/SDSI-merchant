@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { Field, inputClass } from '@/components/ui/Field';
 import { Icon } from '@/components/ui/Icon';
 import { useAuth } from '@/lib/auth';
-import { isSellable, livePackages } from '@/lib/costing';
+import { isSellable, livePickup } from '@/lib/costing';
 import { formatDate, formatHkd, roundMoney } from '@/lib/format';
 import { MOCK_TODAY } from '@/lib/mock-data';
 import { availableOf, reservedByItem } from '@/lib/orders';
@@ -50,7 +50,7 @@ export function PosView() {
         item,
         available: availableOf(item, reserved),
         expired: item.expiryDate < today,
-        packages: livePackages(costing, item.id),
+        pickupHkd: livePickup(costing, item.id) ?? 0,
       })),
     [items, reserved, today, costing],
   );

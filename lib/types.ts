@@ -144,7 +144,9 @@ export interface SaleLine {
   unitPrice: number;
   unitCost: number;
   total: number;
-  /** SDSI's top-up on this line. */
+  /** Customer price basis: Net SRP plus the mark-up (990 -> 1,485). */
+  gross: number;
+  /** SDSI's top-up on this line (the mark-up, 495 on 990). */
   topUp: number;
   paymentMethod: PaymentMethod;
   terms: OrderTerms;

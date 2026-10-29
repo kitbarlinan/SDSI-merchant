@@ -77,7 +77,6 @@ interface AppDataValue {
     changes: { rowId: string; pickupPriceHkd: number }[],
   ) => ActionResult<number>;
   setCostingSettings: (actor: Actor, patch: Partial<CostingSettings>) => ActionResult<CostingSettings>;
-  addCostingRow: (actor: Actor, input: { itemId: string; qty: number }) => ActionResult<CostingRow>;
   removeCostingRow: (actor: Actor, rowId: string) => ActionResult<CostingRow>;
   approveCostingRow: (actor: Actor, rowId: string) => ActionResult<CostingRow>;
   revokeApproval: (actor: Actor, rowId: string) => ActionResult<CostingRow>;
@@ -88,7 +87,7 @@ interface AppDataValue {
 }
 
 // Bumped whenever the saved data shape changes.
-const STORAGE_KEY = 'sdsi-wellness:v7';
+const STORAGE_KEY = 'sdsi-wellness:v8';
 
 const createInitialState = (): AppState => ({
   items: MOCK_INVENTORY.map((item) => ({ ...item })),
@@ -194,7 +193,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         run((s) => engine.setPickupPrices(s, actor, changes, nowISO())),
       setCostingSettings: (actor, patch) =>
         run((s) => engine.setCostingSettings(s, actor, patch, nowISO())),
-      addCostingRow: (actor, input) => run((s) => engine.addCostingRow(s, actor, input, nowISO())),
       removeCostingRow: (actor, rowId) => run((s) => engine.removeCostingRow(s, actor, rowId, nowISO())),
       approveCostingRow: (actor, rowId) => run((s) => engine.approveCostingRow(s, actor, rowId, nowISO())),
       revokeApproval: (actor, rowId) => run((s) => engine.revokeApproval(s, actor, rowId, nowISO())),

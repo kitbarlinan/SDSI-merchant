@@ -3,6 +3,8 @@ import { eachDay, inRange, type Range } from './period';
 import type { Category, SaleLine } from './types';
 
 export interface Summary {
+  /** Customer price basis (Net SRP x 1.5). Pass-through, not SDSI revenue. */
+  gross: number;
   /** Merchant sales (cash collected on delivered orders). Not SDSI revenue. */
   revenue: number;
   cogs: number;
@@ -15,18 +17,20 @@ export interface Summary {
   avgOrder: number;
   /** SDSI's fulfillment top-up. This is SDSI's own revenue. */
   topUp: number;
-  /** What SDSI remits to the merchant: the Net SRP of what was delivered. The top-up is on top, not taken out of it. */
+  /** What SDSI owes the merchant: the price basis minus the top-up, which equals the Net SRP. */
   netPayable: number;
 }
 
 export function summarize(lines: SaleLine[]): Summary {
   let revenue = 0;
+  let gross = 0;
   let cogs = 0;
   let units = 0;
   let topUp = 0;
   const orderIds = new Set<string>();
   for (const line of lines) {
     revenue += line.total;
+    gross += line.gross;
     cogs += line.quantity * line.unitCost;
     units += line.quantity;
     topUp += line.topUp;
@@ -35,8 +39,10 @@ export function summarize(lines: SaleLine[]): Summary {
   revenue = roundMoney(revenue);
   cogs = roundMoney(cogs);
   topUp = roundMoney(topUp);
+  gross = roundMoney(gross);
   const profit = roundMoney(revenue - cogs);
   return {
+    gross,
     revenue,
     cogs,
     profit,
@@ -45,7 +51,7 @@ export function summarize(lines: SaleLine[]): Summary {
     units,
     avgOrder: orderIds.size > 0 ? roundMoney(revenue / orderIds.size) : 0,
     topUp,
-    netPayable: roundMoney(revenue),
+    netPayable: roundMoney(gross - topUp),
   };
 }
 
@@ -127,6 +133,8 @@ export interface GroupRow {
   orders: number;
   units: number;
   revenue: number;
+  /** Customer price basis (Net SRP plus mark-up). */
+  gross: number;
   cogs: number;
   profit: number;
   topUp: number;
@@ -146,6 +154,7 @@ export function groupSales(lines: SaleLine[], keyOf: (line: SaleLine) => string)
       orders: 0,
       units: 0,
       revenue: 0,
+      gross: 0,
       cogs: 0,
       profit: 0,
       topUp: 0,
@@ -155,6 +164,7 @@ export function groupSales(lines: SaleLine[], keyOf: (line: SaleLine) => string)
     row.orderIds.add(line.orderId);
     row.units += line.quantity;
     row.revenue = roundMoney(row.revenue + line.total);
+    row.gross = roundMoney(row.gross + line.gross);
     row.cogs = roundMoney(row.cogs + line.quantity * line.unitCost);
     row.profit = roundMoney(row.revenue - row.cogs);
     row.topUp = roundMoney(row.topUp + line.topUp);

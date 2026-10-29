@@ -8,9 +8,7 @@
 import { roundMoney } from './format';
 import {
   computeCosting,
-  costingRowFor,
   orderCharges,
-  livePackages,
   isSellable,
   snapshotLive,
   validateSkuCode,
@@ -98,10 +96,6 @@ function buildLines(
     const item = state.items.find((candidate) => candidate.id === itemId);
     if (!item || (merchantId && item.merchantId !== merchantId)) return fail('Product not found.');
     if (!isSellable(item, state.costing)) return fail(`"${item.name}" is not on sale.`);
-    if (!costingRowFor(state.costing.rows, item.id, quantity)?.live) {
-      const offered = livePackages(state.costing, item.id).map((pack) => pack.qty).join(', ');
-      return fail(`No live price for "${item.name}" x${quantity}. Live packages: ${offered}.`);
-    }
     if (!Number.isInteger(quantity) || quantity < 1) {
       return fail('Quantities must be whole numbers of at least 1.');
     }
@@ -623,7 +617,7 @@ export function setPickupPrices(
     if (change.pickupPriceHkd === row.pickupPriceHkd) return fail('A price was not changed.');
     priceOf.set(row.id, change.pickupPriceHkd);
     const item = state.items.find((candidate) => candidate.id === row.itemId);
-    details.push(`${item?.sku ?? row.itemId} x${row.qty}: ${hk(row.pickupPriceHkd)} -> ${hk(change.pickupPriceHkd)}`);
+    details.push(`${item?.sku ?? row.itemId}: ${hk(row.pickupPriceHkd)} -> ${hk(change.pickupPriceHkd)}`);
   }
 
   // A new price is a new draft. Any earlier approval no longer counts. The live version stays in use until the new one goes live.
@@ -670,39 +664,6 @@ export function setCostingSettings(
   };
 }
 
-export function addCostingRow(
-  state: AppState,
-  actor: Actor,
-  input: { itemId: string; qty: number },
-  now: string,
-): Outcome<CostingRow> {
-  const denied = costingGuard(actor);
-  if (denied) return denied;
-  const item = state.items.find((candidate) => candidate.id === input.itemId);
-  if (!item) return fail('Choose a product.');
-  if (!Number.isInteger(input.qty) || input.qty < 1 || input.qty > 99) {
-    return fail('Quantity must be a whole number from 1 to 99.');
-  }
-  if (costingRowFor(state.costing.rows, input.itemId, input.qty)) {
-    return fail('That product and quantity already has a costing row.');
-  }
-  const row: CostingRow = {
-    id: `cst-${item.id.replace('itm-', '')}-${input.qty}`,
-    itemId: item.id,
-    qty: input.qty,
-    pickupPriceHkd: null,
-    status: 'draft',
-    live: null,
-  };
-  return {
-    ok: true,
-    state: logged(state, actor, now, 'Costing row added', [`${item.sku} x${input.qty}`], {
-      rows: [...state.costing.rows, row],
-    }),
-    value: row,
-  };
-}
-
 export function removeCostingRow(
   state: AppState,
   actor: Actor,
@@ -722,7 +683,7 @@ export function removeCostingRow(
       actor,
       now,
       'Costing row removed',
-      [`${item?.sku ?? row.itemId} x${row.qty} (pickup ${hk(row.pickupPriceHkd)})`],
+      [`${item?.sku ?? row.itemId} (pickup ${hk(row.pickupPriceHkd)})`],
       { rows: state.costing.rows.filter((candidate) => candidate.id !== rowId) },
     ),
     value: row,
@@ -730,7 +691,7 @@ export function removeCostingRow(
 }
 
 const rowLabel = (state: AppState, row: CostingRow) =>
-  `${state.items.find((candidate) => candidate.id === row.itemId)?.sku ?? row.itemId} x${row.qty}`;
+  state.items.find((candidate) => candidate.id === row.itemId)?.sku ?? row.itemId;
 
 const replaceRow = (state: AppState, rowId: string, patch: Partial<CostingRow>): CostingRow[] =>
   state.costing.rows.map((row) => (row.id === rowId ? { ...row, ...patch } : row));
@@ -826,8 +787,8 @@ export interface NewSkuInput {
   category: InventoryItem['category'];
   /** Merchant SRP per unit, PHP. */
   unitPrice: number;
-  /** Package quantities to cost, e.g. [1, 2, 3]. */
-  qtys: number[];
+  /** Pieces inside the SKU: 1 for solo, 2 for a twin pack. Each piece adds the +5 HKD SF. */
+  qty: number;
 }
 
 /**
@@ -845,10 +806,8 @@ export function addSku(state: AppState, actor: Actor, input: NewSkuInput, now: s
   if (!Number.isFinite(input.unitPrice) || input.unitPrice <= 0 || input.unitPrice > 1_000_000) {
     return fail('Enter the merchant SRP (PHP) above 0.');
   }
-  const qtys = [...new Set(input.qtys)];
-  if (qtys.length === 0) return fail('Add at least one package quantity.');
-  if (qtys.some((qty) => !Number.isInteger(qty) || qty < 1 || qty > 99)) {
-    return fail('Quantities must be whole numbers from 1 to 99.');
+  if (!Number.isInteger(input.qty) || input.qty < 1 || input.qty > 99) {
+    return fail('Pieces in the SKU must be a whole number from 1 to 99.');
   }
 
   const next = state.items.reduce((max, item) => Math.max(max, Number(item.id.replace('itm-', '')) || 0), 0) + 1;
@@ -865,14 +824,19 @@ export function addSku(state: AppState, actor: Actor, input: NewSkuInput, now: s
     reorderLevel: 10,
     expiryDate: '2099-12-31',
   };
-  const rows: CostingRow[] = qtys
-    .sort((a, b) => a - b)
-    .map((qty) => ({ id: `cst-${String(next).padStart(3, '0')}-${qty}`, itemId: id, qty, pickupPriceHkd: null, status: 'draft', live: null }));
+  const row: CostingRow = {
+    id: `cst-${String(next).padStart(3, '0')}`,
+    itemId: id,
+    qty: input.qty,
+    pickupPriceHkd: null,
+    status: 'draft',
+    live: null,
+  };
   return {
     ok: true,
     state: {
-      ...logged(state, actor, now, 'New SKU added', [`${sku} ${item.name}, SRP ${item.unitPrice}, packages x${qtys.join(', x')}`], {
-        rows: [...state.costing.rows, ...rows],
+      ...logged(state, actor, now, 'New SKU added', [`${sku} ${item.name}, SRP ${item.unitPrice}, ${input.qty} pc${input.qty === 1 ? '' : 's'}`], {
+        rows: [...state.costing.rows, row],
       }),
       items: [...state.items, item],
     },

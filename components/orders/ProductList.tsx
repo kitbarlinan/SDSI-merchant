@@ -10,8 +10,8 @@ export interface ListRow {
   /** How many can still be ordered. */
   available: number;
   expired: boolean;
-  /** Live packages: the quantities that can be ordered and their price (HKD). */
-  packages: { qty: number; pickupHkd: number }[];
+  /** Live price of one piece of this SKU, HKD. */
+  pickupHkd: number;
 }
 
 export interface ParsedQuantities {
@@ -27,7 +27,7 @@ export function parseQuantities(rows: ListRow[], typed: Record<string, string>):
   const lines: ParsedQuantities['lines'] = [];
   const errors: Record<string, string> = {};
   let totalHkd = 0;
-  for (const { item, available, expired, packages } of rows) {
+  for (const { item, available, expired, pickupHkd } of rows) {
     const raw = (typed[item.id] ?? '').trim();
     if (raw === '') continue;
     const quantity = Number(raw);
@@ -35,12 +35,8 @@ export function parseQuantities(rows: ListRow[], typed: Record<string, string>):
     else if (quantity > 0 && expired) errors[item.id] = 'Expired.';
     else if (quantity > available) errors[item.id] = `Only ${formatNumber(available)} available.`;
     else if (quantity > 0) {
-      const pack = packages.find((candidate) => candidate.qty === quantity);
-      if (!pack) errors[item.id] = `No price for ${quantity}. Packages: ${packages.map((p) => p.qty).join(', ')}.`;
-      else {
-        lines.push({ item, quantity });
-        totalHkd += pack.pickupHkd;
-      }
+      lines.push({ item, quantity });
+      totalHkd += quantity * pickupHkd;
     }
   }
   return { lines, totalHkd: roundMoney(totalHkd), errors };
@@ -141,16 +137,13 @@ export function ProductList({
         {visible.length === 0 ? (
           <li className="px-4 py-10 text-center text-sm text-slate-500">No products match your search.</li>
         ) : (
-          visible.map(({ item, available, expired, number, packages }) => {
+          visible.map(({ item, available, expired, number, pickupHkd }) => {
             const raw = typed[item.id] ?? '';
             const quantity = Number(raw);
             const error = errors[item.id];
             const disabled = available <= 0 || expired;
             const merchant = merchants.find((m) => m.id === item.merchantId);
-            const amount =
-              Number.isInteger(quantity) && quantity > 0 && !error
-                ? (packages.find((pack) => pack.qty === quantity)?.pickupHkd ?? 0)
-                : 0;
+            const amount = Number.isInteger(quantity) && quantity > 0 && !error ? quantity * pickupHkd : 0;
             return (
               <li key={item.id} className={`px-4 py-3 ${COLUMNS} ${disabled ? 'bg-slate-50/60' : ''}`}>
                 <span className="hidden text-sm text-slate-500 md:block">{number}</span>
@@ -162,7 +155,7 @@ export function ProductList({
                   </p>
                   <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-slate-500 md:hidden">
                     <span className="font-mono">{item.sku}</span>
-                    <span>{packages.map((pack) => `×${pack.qty} ${formatHkd(pack.pickupHkd)}`).join(' · ')}</span>
+                    <span>{formatHkd(pickupHkd)}</span>
                   </p>
                   {showMerchant && merchant ? (
                     <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-500">
@@ -177,13 +170,7 @@ export function ProductList({
                   ) : null}
                 </div>
 
-                <span className="hidden text-right text-xs leading-5 text-slate-700 md:block">
-                  {packages.map((pack) => (
-                    <span key={pack.qty} className="block">
-                      ×{pack.qty} <span className="font-medium">{formatHkd(pack.pickupHkd)}</span>
-                    </span>
-                  ))}
-                </span>
+                <span className="hidden text-right text-sm md:block">{formatHkd(pickupHkd)}</span>
                 <span
                   className={`mt-1 block text-xs md:mt-0 md:text-right md:text-sm ${
                     disabled ? 'font-medium text-rose-600' : 'text-slate-600'

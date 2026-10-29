@@ -119,17 +119,12 @@ function NewSkuCard({ onAdded }: { onAdded: (message: string) => void }) {
   const [name, setName] = useState('');
   const [category, setCategory] = useState<InventoryItem['category']>(CATEGORIES[0]);
   const [srp, setSrp] = useState('');
-  const [qtys, setQtys] = useState('1,2,3');
+  const [pieces, setPieces] = useState('1');
   const [error, setError] = useState<string | null>(null);
 
   function submit() {
     if (!user) return;
-    const list = qtys
-      .split(',')
-      .map((part) => part.trim())
-      .filter(Boolean)
-      .map(Number);
-    const result = addSku(user, { merchantId, sku, name, category, unitPrice: Number(srp), qtys: list });
+    const result = addSku(user, { merchantId, sku, name, category, unitPrice: Number(srp), qty: Number(pieces) });
     if (!result.ok) return setError(result.error);
     setError(null);
     onAdded(`${result.value.sku} added as draft. Approve and go live a package to put it on sale. Receive stock in Inventory.`);
@@ -139,7 +134,7 @@ function NewSkuCard({ onAdded }: { onAdded: (message: string) => void }) {
   }
 
   return (
-    <Card title="New SKU" subtitle="Same as the sheet: SKU code, product name, merchant SRP and the package quantities. The SKU code must be new and is never reused. It goes on sale only after a package is approved and live.">
+    <Card title="New SKU" subtitle="Same as the sheet: SKU code, product name, merchant SRP and qty. Solo and twin pack are separate SKUs with their own code and SRP (qty 1 and 2). The SKU code must be new and is never reused. It goes on sale only after a package is approved and live.">
       <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <label className="text-xs font-medium text-slate-500">
           Merchant
@@ -171,8 +166,8 @@ function NewSkuCard({ onAdded }: { onAdded: (message: string) => void }) {
           <input type="number" min={0} step="0.01" value={srp} onChange={(event) => setSrp(event.target.value)} placeholder="990" className={`mt-1 ${inputClass(false)}`} />
         </label>
         <label className="text-xs font-medium text-slate-500">
-          Package quantities
-          <input value={qtys} onChange={(event) => setQtys(event.target.value)} placeholder="1,2,3" className={`mt-1 ${inputClass(false)}`} />
+          Pieces inside (qty)
+          <input type="number" min={1} max={99} value={pieces} onChange={(event) => setPieces(event.target.value)} placeholder="1" className={`mt-1 ${inputClass(false)}`} />
         </label>
       </div>
       {error ? <p role="alert" className="mt-3 text-sm text-rose-600">{error}</p> : null}
@@ -197,7 +192,6 @@ function CostingEditor() {
     costing,
     setPickupPrices,
     setCostingSettings,
-    addCostingRow,
     removeCostingRow,
     approveCostingRow,
     revokeApproval,
@@ -212,9 +206,6 @@ function CostingEditor() {
   const [merchantId, setMerchantId] = useState('all');
   const [dialog, setDialog] = useState<DialogState | null>(null);
   const [showNewSku, setShowNewSku] = useState(false);
-  const [newItem, setNewItem] = useState('');
-  const [newQty, setNewQty] = useState('');
-  const [addError, setAddError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const saved = costing.settings;
@@ -242,7 +233,7 @@ function CostingEditor() {
           const needle = query.trim().toLowerCase();
           return !needle || item.name.toLowerCase().includes(needle) || item.sku.toLowerCase().includes(needle);
         })
-        .sort((a, b) => a.item.sku.localeCompare(b.item.sku) || a.row.qty - b.row.qty),
+        .sort((a, b) => a.item.sku.localeCompare(b.item.sku)),
     [costing.rows, items, merchantId, query],
   );
 
@@ -282,15 +273,15 @@ function CostingEditor() {
     const before = computeCosting(item.unitPrice, row.qty, row.pickupPriceHkd, saved);
     const after = computeCosting(item.unitPrice, row.qty, change.value, preview);
     reviewLines.push(
-      `${item.sku} ×${row.qty}: pickup ${before.pickupPriceHkd === null ? 'not set' : formatHkd(before.pickupPriceHkd)} → ${formatHkd(change.value)} · net COD ${
+      `${item.sku}: pickup ${before.pickupPriceHkd === null ? 'not set' : formatHkd(before.pickupPriceHkd)} → ${formatHkd(change.value)} · net COD ${
         before.netCodHkd === null ? '—' : formatHkd(before.netCodHkd)
       } → ${formatHkd(after.netCodHkd ?? 0)}`,
     );
     if (change.value < after.finalBasisHkd) {
-      warnings.push(`${item.sku} ×${row.qty}: pickup ${formatHkd(change.value)} is below the basis ${formatHkd(after.finalBasisHkd)}.`);
+      warnings.push(`${item.sku}: pickup ${formatHkd(change.value)} is below the basis ${formatHkd(after.finalBasisHkd)}.`);
     }
     if (row.pickupPriceHkd !== null && Math.abs(change.value - row.pickupPriceHkd) / row.pickupPriceHkd > 0.1) {
-      warnings.push(`${item.sku} ×${row.qty}: the price moves by more than 10%.`);
+      warnings.push(`${item.sku}: the price moves by more than 10%.`);
     }
   }
 
@@ -329,7 +320,7 @@ function CostingEditor() {
   function askRowAction(kind: 'approve' | 'revoke' | 'live', row: CostingRow, item: InventoryItem) {
     if (!user) return;
     const result = computeCosting(item.unitPrice, row.qty, row.pickupPriceHkd, saved);
-    const label = `${item.sku} ×${row.qty}`;
+    const label = `${item.sku}`;
     const figures = `Pickup ${formatHkd(row.pickupPriceHkd ?? 0)} · SF ${formatHkd(result.sfHkd ?? 0)} · CF ${formatHkd(result.cfHkd ?? 0)} · Net COD ${formatHkd(result.netCodHkd ?? 0)} · Remit ${formatCurrency(result.netRemittancePhp)}`;
     const base = { lines: [label, figures], warnings: [] as string[] };
     if (kind === 'approve') {
@@ -390,14 +381,6 @@ function CostingEditor() {
     });
   }
 
-  function addRow() {
-    if (!user) return;
-    const result = addCostingRow(user, { itemId: newItem, qty: Number(newQty) });
-    if (!result.ok) return setAddError(result.error);
-    setAddError(null);
-    setNewQty('');
-  }
-
   if (!user) return null;
 
   return (
@@ -415,7 +398,7 @@ function CostingEditor() {
 
       <Card
         title="Formula settings"
-        subtitle="Net SRP × (1 + mark-up) ÷ exchange rate = basis. Basis + SF per qty × qty = final basis. Pickup price is set by hand."
+        subtitle="SKU SRP × (1 + mark-up) ÷ exchange rate = basis. Basis + SF per qty × pieces = final basis. Pickup price is set by hand."
       >
         <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {SETTING_KEYS.map((key) => {
@@ -461,7 +444,7 @@ function CostingEditor() {
       <Card
         flush
         title="Costing per package"
-        subtitle="Each row is one product at one quantity. Type the pickup price (HKD), save it as a draft, then Approve, then Go live. Only live rows are used by orders and remittance."
+        subtitle="Each row is one SKU. Type the pickup price (HKD), save it as a draft, then Approve, then Go live. Only live rows are used by orders and remittance."
         action={
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <select
@@ -497,7 +480,7 @@ function CostingEditor() {
               <tr>
                 <th className="px-4 py-3 text-left">SKU</th>
                 <th className="px-3 py-3 text-left">Product</th>
-                <th className="px-3 py-3 text-right">Qty</th>
+                <th className="px-3 py-3 text-right">Qty (pcs)</th>
                 <th className="px-3 py-3 text-right">Net SRP (PHP)</th>
                 <th className="px-3 py-3 text-right">{preview.markupPct}% MU (PHP)</th>
                 <th className="px-3 py-3 text-right">Basis (HKD)</th>
@@ -558,7 +541,7 @@ function CostingEditor() {
                             setPrices((current) => ({ ...current, [row.id]: event.target.value }));
                           }}
                           placeholder={String(result.suggestedPickupHkd)}
-                          aria-label={`Pickup price for ${item.sku} quantity ${row.qty}`}
+                          aria-label={`Pickup price for ${item.sku}`}
                           aria-invalid={Boolean(error)}
                           className={`w-28 rounded-lg border px-2 py-1.5 text-right text-sm font-semibold focus:outline-none focus:ring-2 ${
                             error
@@ -641,7 +624,7 @@ function CostingEditor() {
                         {row.live ? null : <button
                           type="button"
                           onClick={() => {
-                            if (window.confirm(`Remove ${item.sku} ×${row.qty} from the costing?`)) {
+                            if (window.confirm(`Remove ${item.sku} from the costing?`)) {
                               setPrices((current) => {
                                 const next = { ...current };
                                 delete next[row.id];
@@ -650,7 +633,7 @@ function CostingEditor() {
                               removeCostingRow(user, row.id);
                             }
                           }}
-                          aria-label={`Remove ${item.sku} quantity ${row.qty}`}
+                          aria-label={`Remove ${item.sku}`}
                           className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
                         >
                           <Icon name="x" className="h-4 w-4" />
@@ -665,44 +648,7 @@ function CostingEditor() {
         </div>
 
         <div className="flex flex-col gap-3 border-t border-slate-100 p-4 sm:flex-row sm:items-end sm:justify-between">
-          <div className="flex flex-wrap items-end gap-2">
-            <label className="text-xs font-medium text-slate-500">
-              Add package
-              <select
-                value={newItem}
-                onChange={(event) => setNewItem(event.target.value)}
-                className={`mt-1 ${inputClass(false)}`}
-              >
-                <option value="">Choose product…</option>
-                {items.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.sku} · {item.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="text-xs font-medium text-slate-500">
-              Qty
-              <input
-                type="number"
-                min={1}
-                max={99}
-                value={newQty}
-                onChange={(event) => setNewQty(event.target.value)}
-                className={`mt-1 w-20 ${inputClass(false)}`}
-              />
-            </label>
-            <button
-              type="button"
-              onClick={addRow}
-              disabled={!newItem || !newQty}
-              className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Add
-            </button>
-            {addError ? <p className="w-full text-xs text-rose-600">{addError}</p> : null}
-          </div>
-
+          <span />
           <div className="flex items-center gap-3">
             {errorCount > 0 ? (
               <p role="alert" className="text-xs text-rose-600">

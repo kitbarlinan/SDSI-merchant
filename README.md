@@ -51,3 +51,8 @@ Open http://localhost:3000 and pick an account (demo sign-in, no password).
 - **SF is charged once per POID.** **CF is worked out on the order's total collection**: (sum of pickup prices + SF) × CF rate, rounded to a whole HKD, minimum 5. Net COD = pickup total + SF + CF.
 - **Top-up (estimate).** SDSI's top-up is the costing mark-up on Net SRP (50%: 1,485 − 990 = 495 on a 990 SRP), in pesos, for every delivered order. It comes from Costing settings; there is no separate top-up rate. What SDSI remits to the merchant is the Net SRP, with nothing deducted. The real top-up (pickup / COD price in HKD, converted, less the remittance) is still to do.
 - **Orders and POS now run on the live costing, in HKD.** The product list shows each live package price (×1, ×2 …); a quantity with no live package is rejected ("No price for 9. Packages: 1, 2, 3, 4, 5."). COD collects **pickup total + SF (once) + CF**; pickup (COP) and counter sales collect the pickup total. The peso Net SRP stays on every order as the amount remitted to the merchant, and drives the top-up estimate.
+
+## SKU-per-row costing and the price basis
+
+- **One costing row per SKU.** Solo (SKU-001) and twin pack (SKU-002) are separate SKUs with their own code, SRP and pickup price. "Qty (pcs)" is only the number of pieces inside the SKU and drives the +5 HKD SF per piece. A line on an order is priced as quantity × the SKU's live pickup price.
+- **Accounting.** Customer price basis = SRP × (1 + mark-up) (990 → 1,485). SDSI top-up (estimate) = the difference (495). Net payable to the merchant = basis − top-up = the SRP (990).

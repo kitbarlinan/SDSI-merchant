@@ -7,7 +7,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { Field, inputClass } from '@/components/ui/Field';
 import { Icon } from '@/components/ui/Icon';
 import { useAuth } from '@/lib/auth';
-import { isSellable, livePackages, orderCharges } from '@/lib/costing';
+import { isSellable, livePickup, orderCharges } from '@/lib/costing';
 import { formatDate, formatHkd } from '@/lib/format';
 import { MOCK_TODAY } from '@/lib/mock-data';
 import { TERMS_LABEL, availableOf, reservedByItem } from '@/lib/orders';
@@ -48,7 +48,7 @@ export function NewOrderForm() {
           item,
           available: availableOf(item, reserved),
           expired: item.expiryDate < today,
-          packages: livePackages(costing, item.id),
+          pickupHkd: livePickup(costing, item.id) ?? 0,
         })),
     [items, reserved, user, today, costing],
   );

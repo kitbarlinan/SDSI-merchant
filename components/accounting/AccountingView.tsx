@@ -13,7 +13,7 @@ import { StatCard } from '@/components/ui/StatCard';
 import { CostingView } from '@/components/accounting/CostingView';
 import { useAuth } from '@/lib/auth';
 import { formatCurrency, formatDate, formatNumber, formatPercent } from '@/lib/format';
-import { flattenDelivered, orderTopUp, orderTotal } from '@/lib/orders';
+import { flattenDelivered, orderGross, orderTopUp } from '@/lib/orders';
 import { previousOf, trendWindow } from '@/lib/period';
 import { buildTrend, filterByRange, groupSales, pctChange, summarize } from '@/lib/reports';
 import { useAppData } from '@/lib/store';
@@ -81,13 +81,13 @@ function AccountingReports() {
       'Customer',
       'Terms',
       'Paid via',
-      'Merchant sales',
+      'Customer price basis',
       'Mark-up % (costing)',
       'SDSI top-up (estimate)',
-      'Remit to merchant',
+      'Net payable to merchant',
     ];
     const lines = ledger.map((order) => {
-      const total = orderTotal(order);
+      const gross = orderGross(order);
       const topUp = orderTopUp(order);
       return [
         order.deliveredAt ?? '',
@@ -96,10 +96,10 @@ function AccountingReports() {
         order.customerName ?? 'Walk-in',
         order.terms,
         order.paymentMethod ?? '',
-        total.toFixed(2),
+        gross.toFixed(2),
         order.topUpRate ?? 0,
         topUp.toFixed(2),
-        total.toFixed(2),
+        (gross - topUp).toFixed(2),
       ]
         .map(csvCell)
         .join(',');
@@ -143,10 +143,11 @@ function AccountingReports() {
         <p className="font-medium">How the numbers work</p>
         <p className="mt-1 text-violet-800">
           SDSI fulfills orders for the merchants, so the cash we collect belongs to them. SDSI&apos;s own
-          revenue is only the <strong>top-up</strong>: the costing mark-up ({formatPercent(topUpPercent)}) on the
-          merchant&apos;s Net SRP, so 1,485 less 990 = 495 on a 990 SRP. This is an <strong>estimate in pesos</strong>.
-          The real top-up (pickup / COD price in HKD, converted, less what we remit) comes later. What SDSI remits
-          to the merchant is the Net SRP, with nothing taken out.
+          revenue is only the <strong>top-up</strong>. The customer price basis is the merchant&apos;s SRP plus the
+          costing mark-up ({formatPercent(topUpPercent)}): 990 becomes 1,485. The difference, <strong>495</strong>, is
+          SDSI&apos;s top-up. <strong>Net payable</strong> to the merchant is the basis minus the top-up, so 1,485 − 495 = 990.
+          The top-up is an <strong>estimate in pesos</strong>; the real one (pickup / COD price in HKD, converted, less what we
+          remit) comes later.
         </p>
       </div>
 
@@ -168,16 +169,16 @@ function AccountingReports() {
         />
         <StatCard
           icon="orders"
-          label="Merchant sales handled"
-          value={formatCurrency(summary.revenue)}
-          hint="Pass-through, not SDSI revenue"
-          delta={pctChange(summary.revenue, prev.revenue)}
+          label="Customer price basis"
+          value={formatCurrency(summary.gross)}
+          hint="SRP × 1.5, pass-through"
+          delta={pctChange(summary.gross, prev.gross)}
         />
         <StatCard
           icon="leaf"
-          label="Remit to merchants"
+          label="Net payable to merchants"
           value={formatCurrency(summary.netPayable)}
-          hint="Net SRP of delivered orders"
+          hint="Basis minus top-up (= Net SRP)"
         />
       </div>
 
@@ -204,7 +205,7 @@ function AccountingReports() {
       <Card
         flush
         title="Merchant statement"
-        subtitle="What each merchant sold, what SDSI earned (estimate), and what is remitted to them"
+        subtitle="What each merchant sold, what SDSI earned (estimate), and what is owed to them"
       >
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
@@ -212,15 +213,15 @@ function AccountingReports() {
               <tr>
                 <th className="px-5 py-3">Merchant</th>
                 <th className="px-4 py-3 text-right">Orders</th>
-                <th className="px-4 py-3 text-right">Merchant sales</th>
+                <th className="px-4 py-3 text-right">Customer price basis</th>
                 <th className="px-4 py-3 text-right">SDSI top-up</th>
-                <th className="px-5 py-3 text-right">Remit to merchant</th>
+                <th className="px-5 py-3 text-right">Net payable</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {merchants.map((merchant) => {
                 const row = byMerchant.find((r) => r.key === merchant.id);
-                const sold = row?.revenue ?? 0;
+                const sold = row?.gross ?? 0;
                 const topUp = row?.topUp ?? 0;
                 return (
                   <tr key={merchant.id}>
@@ -235,7 +236,7 @@ function AccountingReports() {
                     <td className="px-4 py-3.5 text-right font-medium text-violet-700">
                       {formatCurrency(topUp)}
                     </td>
-                    <td className="px-5 py-3.5 text-right font-semibold">{formatCurrency(sold)}</td>
+                    <td className="px-5 py-3.5 text-right font-semibold">{formatCurrency(sold - topUp)}</td>
                   </tr>
                 );
               })}
@@ -244,7 +245,7 @@ function AccountingReports() {
               <tr>
                 <td className="px-5 py-3">Total</td>
                 <td className="px-4 py-3 text-right">{formatNumber(summary.orders)}</td>
-                <td className="px-4 py-3 text-right">{formatCurrency(summary.revenue)}</td>
+                <td className="px-4 py-3 text-right">{formatCurrency(summary.gross)}</td>
                 <td className="px-4 py-3 text-right text-violet-700">{formatCurrency(summary.topUp)}</td>
                 <td className="px-5 py-3 text-right">{formatCurrency(summary.netPayable)}</td>
               </tr>
@@ -260,7 +261,7 @@ function AccountingReports() {
             centerValue={formatCurrency(summary.revenue)}
             slices={byPayment.map((row) => ({
               label: row.key,
-              value: row.revenue,
+              value: row.gross,
               color: PAYMENT_COLORS[row.key as PaymentMethod],
             }))}
           />
@@ -271,7 +272,7 @@ function AccountingReports() {
             centerValue={formatNumber(summary.orders)}
             slices={byTerms.map((row) => ({
               label: row.key,
-              value: row.revenue,
+              value: row.gross,
               color: TERMS_COLORS[row.key as OrderTerms],
             }))}
           />
@@ -303,9 +304,9 @@ function AccountingReports() {
                 <th className="px-4 py-3">Merchant</th>
                 <th className="px-4 py-3">Terms</th>
                 <th className="px-4 py-3">Paid via</th>
-                <th className="px-4 py-3 text-right">Sales</th>
+                <th className="px-4 py-3 text-right">Price basis</th>
                 <th className="px-4 py-3 text-right">Top-up</th>
-                <th className="px-5 py-3 text-right">Net</th>
+                <th className="px-5 py-3 text-right">Net payable</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -317,7 +318,7 @@ function AccountingReports() {
                 </tr>
               ) : (
                 ledger.slice(0, limit).map((order) => {
-                  const total = orderTotal(order);
+                  const gross = orderGross(order);
                   const topUp = orderTopUp(order);
                   return (
                     <tr key={order.id}>
@@ -328,9 +329,9 @@ function AccountingReports() {
                       <td className="px-4 py-3">{merchantName(order.merchantId)}</td>
                       <td className="px-4 py-3">{order.terms}</td>
                       <td className="px-4 py-3">{order.paymentMethod}</td>
-                      <td className="px-4 py-3 text-right">{formatCurrency(total)}</td>
+                      <td className="px-4 py-3 text-right">{formatCurrency(gross)}</td>
                       <td className="px-4 py-3 text-right text-violet-700">{formatCurrency(topUp)}</td>
-                      <td className="px-5 py-3 text-right font-medium">{formatCurrency(total - topUp)}</td>
+                      <td className="px-5 py-3 text-right font-medium">{formatCurrency(gross - topUp)}</td>
                     </tr>
                   );
                 })

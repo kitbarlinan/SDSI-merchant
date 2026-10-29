@@ -1,12 +1,13 @@
 /**
  * Costing for COD pickup pricing (Hong Kong). Pure functions, no UI.
  *
- * Per package (a product and a quantity), following the costing sheet:
+ * One row per SKU (solo and twin pack are separate SKUs with their own codes), following the costing sheet.
+ * "qty" is the number of pieces inside the SKU (1 for solo, 2 for a twin pack) and only drives the +5 HKD.
  *
- *   Net SRP (PHP)        = merchant SRP x qty
+ *   Net SRP (PHP)        = merchant SRP of the SKU
  *   50% MU (PHP)         = Net SRP x (1 + markup%)               <- gross payable
  *   Basis HKD            = 50% MU / PHP-per-HKD rate             (rounded to 2 decimals)
- *   Final basis          = Basis HKD + 5 HKD x qty               (the +5 applies to EVERY unit)
+ *   Final basis          = Basis HKD + 5 HKD x qty               (the +5 applies to EVERY piece)
  *   Pickup price (HKD)   = set by the admin by hand (the basis is only a guide)
  *   SF                   = 34 HKD, automatic
  *   CF (collection fee)  = (Pickup price + SF) x 2.5%, rounded to a whole HKD, never below 5 HKD
@@ -123,12 +124,12 @@ export function collectionFee(
 }
 
 export function computeCosting(
-  unitSrpPhp: number,
+  srpPhp: number,
   qty: number,
   pickupPriceHkd: number | null,
   settings: CostingSettings,
 ): CostingResult {
-  const netSrpPhp = roundMoney(unitSrpPhp * qty);
+  const netSrpPhp = roundMoney(srpPhp);
   const grossPayablePhp = roundMoney(netSrpPhp * (1 + settings.markupPct / 100));
   const basisHkd = roundMoney(grossPayablePhp / settings.fxPhpPerHkd);
   const finalBasisHkd = roundMoney(basisHkd + settings.sfPerQtyHkd * qty);
@@ -154,11 +155,8 @@ export function computeCosting(
   };
 }
 
-export const costingRowFor = (
-  rows: CostingRow[],
-  itemId: string,
-  qty: number,
-): CostingRow | undefined => rows.find((row) => row.itemId === itemId && row.qty === qty);
+export const costingRowFor = (rows: CostingRow[], itemId: string): CostingRow | undefined =>
+  rows.find((row) => row.itemId === itemId);
 
 /** SF, CF and net COD (HKD) of an order, from the LIVE costing only. */
 export interface OrderCharges {
@@ -175,8 +173,8 @@ export interface OrderCharges {
  *   - CF is worked out on the order's TOTAL collection: (sum of the pickup prices + SF) x CF rate,
  *     rounded to a whole HKD, never below the minimum.
  *   - Net COD = sum of pickup prices + SF + CF.
- * Pickup prices come from LIVE packages (same product and quantity). null when any line has no live
- * package, so a partial number is never shown as complete.
+ * Each line is priced as quantity x the SKU's LIVE pickup price. null when any line has no live price,
+ * so a partial number is never shown as complete.
  */
 export function orderCharges(
   lines: { itemId: string; quantity: number }[],
@@ -185,9 +183,9 @@ export function orderCharges(
   if (lines.length === 0) return null;
   let pickupTotal = 0;
   for (const line of lines) {
-    const live = costingRowFor(costing.rows, line.itemId, line.quantity)?.live;
+    const live = costingRowFor(costing.rows, line.itemId)?.live;
     if (!live) return null;
-    pickupTotal += live.pickupPriceHkd;
+    pickupTotal += live.pickupPriceHkd * line.quantity;
   }
   pickupTotal = roundMoney(pickupTotal);
   const sfHkd = costing.settings.shippingFeeHkd;
@@ -195,13 +193,9 @@ export function orderCharges(
   return { pickupHkd: pickupTotal, sfHkd, cfHkd, netCodHkd: roundMoney(pickupTotal + sfHkd + cfHkd) };
 }
 
-/** The live packages of a product: the quantities that can be ordered, with their pickup price (HKD). */
-export function livePackages(costing: CostingState, itemId: string): { qty: number; pickupHkd: number }[] {
-  return costing.rows
-    .filter((row) => row.itemId === itemId && row.live)
-    .map((row) => ({ qty: row.qty, pickupHkd: row.live!.pickupPriceHkd }))
-    .sort((a, b) => a.qty - b.qty);
-}
+/** The live pickup price (HKD) of one SKU, or null when it has none. */
+export const livePickup = (costing: CostingState, itemId: string): number | null =>
+  costingRowFor(costing.rows, itemId)?.live?.pickupPriceHkd ?? null;
 
 /** Freezes the current working price and settings into what orders will use. */
 export function snapshotLive(
@@ -279,21 +273,16 @@ export function validateSettings(patch: Partial<CostingSettings>): string | null
   return null;
 }
 
-/** Demo packages: every product at qty 1 to 3, priced at the suggested pickup price. */
+/** Demo costing: one row per SKU, priced at the suggested pickup price. */
 export function buildDemoCosting(items: InventoryItem[], settings = DEFAULT_COSTING_SETTINGS): CostingRow[] {
-  const rows: CostingRow[] = [];
-  for (const item of items) {
-    for (const qty of [1, 2, 3, 4, 5]) {
-      rows.push({
-        id: `cst-${item.id.replace('itm-', '')}-${qty}`,
-        itemId: item.id,
-        qty,
-        pickupPriceHkd: computeCosting(item.unitPrice, qty, null, settings).suggestedPickupHkd,
-        status: 'live',
-        live: null,
-      });
-    }
-  }
+  const rows: CostingRow[] = items.map((item) => ({
+    id: `cst-${item.id.replace('itm-', '')}`,
+    itemId: item.id,
+    qty: 1,
+    pickupPriceHkd: computeCosting(item.unitPrice, 1, null, settings).suggestedPickupHkd,
+    status: 'live',
+    live: null,
+  }));
   // Demo rows start live so the app works out of the box.
   return rows.map((row) => {
     const item = items.find((candidate) => candidate.id === row.itemId)!;
