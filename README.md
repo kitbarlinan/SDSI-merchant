@@ -37,13 +37,13 @@ Open http://localhost:3000 and pick an account (demo sign-in, no password).
 
 ## Costing, For Approval and CF
 
-- **Accounting → Costing (admin only, password-locked).** Per product + quantity: Net SRP → mark-up (50%) → basis in HKD (FX 8.1432) → final basis (+5 HKD per qty) → pickup price (set by hand) → SF 34 → collection fee = (pickup + SF) × 2.5%, rounded to whole HKD, minimum 5 → Net COD. Net remittance (PHP) = Net SRP. Saving needs a review screen and the costing password; every change is written to the change log. The lock is a demo: real protection needs Supabase RLS and server-side checks.
+- **Accounting → Costing (admin only).** Per product + quantity: Net SRP → mark-up (50%) → basis in HKD (FX 8.1432) → final basis (+5 HKD per qty) → pickup price (set by hand) → SF 34 → collection fee = (pickup + SF) × 2.5%, rounded to whole HKD, minimum 5 → Net COD. Net remittance (PHP) = Net SRP. Saving needs a review screen; every change is written to the change log.
 - **For Approval** (Admin, Inventory Clerk): approve or reject received stock and RTS receipts. Clerk lands here after sign-in.
 - **CF** (HKD) is shown under the total on COD orders and in the merchant New Order form. It is a snapshot taken when the order is placed, and only when every line matches a priced package.
 
 ## Costing workflow (draft → approved → live)
 
-- A price you type is saved as a **Draft**. **Approve** (red) then **Go live** (blue). Each step asks for the costing password and is logged.
+- A price you type is saved as a **Draft**. **Approve** (red) then **Go live** (blue). Each step asks for a confirmation and is logged.
 - Orders, the New Order form and the POS use only the **live** version (frozen pickup, SF, CF, net COD). Editing a live row makes a new draft; the old live version stays in use until the new one goes live.
 - **New SKU**: SKU code, name, merchant, SRP, package quantities. The code must be unique (case-insensitive) and is never reused, even after disabling. A new SKU can receive stock but is not on sale until one package is live.
 - **Disable SKU** blocks new orders and sales. Open orders are untouched. Packages that have been live cannot be deleted, only the SKU disabled.

@@ -1,7 +1,6 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { CostingGate, type CostingSession } from '@/components/accounting/CostingGate';
 import { Card } from '@/components/ui/Card';
 import { inputClass } from '@/components/ui/Field';
 import { Icon } from '@/components/ui/Icon';
@@ -13,7 +12,6 @@ import {
   validateSettings,
   type CostingSettings,
 } from '@/lib/costing';
-import { passwordProblem } from '@/lib/costing-lock';
 import { formatCurrency, formatDateTime, formatHkd } from '@/lib/format';
 import { CATEGORIES, type InventoryItem } from '@/lib/types';
 import type { CostingRow } from '@/lib/costing';
@@ -27,7 +25,7 @@ interface DialogState {
   confirmLabel: string;
   lines: string[];
   warnings: string[];
-  /** Runs after the password is right. Returns an error text, or null when done. */
+  /** Runs after the admin confirms. Returns an error text, or null when done. */
   apply: () => string | null;
 }
 
@@ -46,15 +44,14 @@ function ReviewDialog({
   lines: string[];
   warnings: string[];
   onCancel: () => void;
-  onConfirm: (password: string) => Promise<string | null>;
+  onConfirm: () => string | null;
 }) {
-  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function submit() {
+  function submit() {
     setBusy(true);
-    setError(await onConfirm(password));
+    setError(onConfirm());
     setBusy(false);
   }
 
@@ -86,18 +83,6 @@ function ReviewDialog({
           </div>
         ) : null}
 
-        <label className="mt-4 block text-sm font-medium text-slate-700">
-          Costing password
-          <input
-            type="password"
-            autoFocus
-            autoComplete="current-password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            onKeyDown={(event) => event.key === 'Enter' && password && submit()}
-            className={`mt-1 ${inputClass(Boolean(error))}`}
-          />
-        </label>
         {error ? (
           <p role="alert" className="mt-2 text-sm text-rose-600">
             {error}
@@ -115,7 +100,7 @@ function ReviewDialog({
           <button
             type="button"
             onClick={submit}
-            disabled={busy || password === ''}
+            disabled={busy}
             className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busy ? 'Working…' : confirmLabel}
@@ -123,62 +108,6 @@ function ReviewDialog({
         </div>
       </div>
     </div>
-  );
-}
-
-function PasswordPanel({ session, onClose }: { session: CostingSession; onClose: () => void }) {
-  const [current, setCurrent] = useState('');
-  const [next, setNext] = useState('');
-  const [again, setAgain] = useState('');
-  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
-
-  async function submit() {
-    const problem = passwordProblem(next);
-    if (problem) return setMessage({ ok: false, text: problem });
-    if (next !== again) return setMessage({ ok: false, text: 'The new passwords do not match.' });
-    try {
-      await session.changePassword(current, next);
-      setCurrent('');
-      setNext('');
-      setAgain('');
-      setMessage({ ok: true, text: 'Password changed.' });
-    } catch (cause) {
-      setMessage({ ok: false, text: cause instanceof Error ? cause.message : 'Could not change it.' });
-    }
-  }
-
-  return (
-    <Card title="Change costing password" action={<button type="button" onClick={onClose} className="text-xs font-medium text-slate-500 hover:underline">Close</button>}>
-      <div className="mt-3 grid gap-3 sm:grid-cols-3">
-        {[
-          ['Current password', current, setCurrent],
-          ['New password', next, setNext],
-          ['Repeat new password', again, setAgain],
-        ].map(([label, value, setter]) => (
-          <label key={label as string} className="text-xs font-medium text-slate-500">
-            {label as string}
-            <input
-              type="password"
-              value={value as string}
-              onChange={(event) => (setter as (v: string) => void)(event.target.value)}
-              className={`mt-1 ${inputClass(false)}`}
-            />
-          </label>
-        ))}
-      </div>
-      {message ? (
-        <p role="alert" className={`mt-3 text-sm ${message.ok ? 'text-emerald-700' : 'text-rose-600'}`}>
-          {message.text}
-        </p>
-      ) : null}
-      <button
-        type="button"
-        onClick={submit}
-        className="mt-3 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
-      >
-        Change password
-      </button>
-    </Card>
   );
 }
 
@@ -259,7 +188,7 @@ function NewSkuCard({ onAdded }: { onAdded: (message: string) => void }) {
   );
 }
 
-function CostingEditor({ session }: { session: CostingSession }) {
+function CostingEditor() {
   const { user } = useAuth();
   const {
     items,
@@ -283,7 +212,6 @@ function CostingEditor({ session }: { session: CostingSession }) {
   const [merchantId, setMerchantId] = useState('all');
   const [dialog, setDialog] = useState<DialogState | null>(null);
   const [showNewSku, setShowNewSku] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
   const [newItem, setNewItem] = useState('');
   const [newQty, setNewQty] = useState('');
   const [addError, setAddError] = useState<string | null>(null);
@@ -474,30 +402,10 @@ function CostingEditor({ session }: { session: CostingSession }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-violet-200 bg-violet-50 p-4 text-sm text-violet-900">
-        <p>
-          <span className="font-semibold">Restricted.</span> Admin only. Every change needs your costing
-          password and is written to the change log.
-        </p>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => setShowPassword((current) => !current)}
-            className="rounded-xl border border-violet-300 bg-white px-3 py-1.5 text-xs font-medium text-violet-800 hover:bg-violet-100"
-          >
-            Change password
-          </button>
-          <button
-            type="button"
-            onClick={session.lock}
-            className="rounded-xl bg-violet-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-600"
-          >
-            Lock now
-          </button>
-        </div>
+      <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4 text-sm text-violet-900">
+        <span className="font-semibold">Restricted.</span> Admin only. Every change is reviewed before saving and
+        written to the change log.
       </div>
-
-      {showPassword ? <PasswordPanel session={session} onClose={() => setShowPassword(false)} /> : null}
 
       {notice ? (
         <p role="status" className="rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800">
@@ -862,8 +770,7 @@ function CostingEditor({ session }: { session: CostingSession }) {
           lines={dialog.lines}
           warnings={dialog.warnings}
           onCancel={() => setDialog(null)}
-          onConfirm={async (password) => {
-            if (!(await session.confirmPassword(password))) return 'Wrong password.';
+          onConfirm={() => {
             const error = dialog.apply();
             if (!error) setDialog(null);
             return error;
@@ -875,5 +782,5 @@ function CostingEditor({ session }: { session: CostingSession }) {
 }
 
 export function CostingView() {
-  return <CostingGate>{(session) => <CostingEditor session={session} />}</CostingGate>;
+  return <CostingEditor />;
 }
