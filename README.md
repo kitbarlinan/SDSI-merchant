@@ -48,3 +48,4 @@ Open http://localhost:3000 and pick an account (demo sign-in, no password).
 - **New SKU**: SKU code, name, merchant, SRP, package quantities. The code must be unique (case-insensitive) and is never reused, even after disabling. A new SKU can receive stock but is not on sale until one package is live.
 - **Disable SKU** blocks new orders and sales. Open orders are untouched. Packages that have been live cannot be deleted, only the SKU disabled.
 - COD orders store **SF, CF and net COD (HKD)** from the live costing when placed.
+- **SF is charged once per POID.** **CF is worked out on the order's total collection**: (sum of pickup prices + SF) × CF rate, rounded to a whole HKD, minimum 5. Net COD = pickup total + SF + CF.

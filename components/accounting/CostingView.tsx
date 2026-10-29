@@ -274,7 +274,7 @@ function CostingEditor() {
     reviewLines.push(`${SETTING_LABEL[key]}: ${saved[key]} → ${preview[key]}`);
   }
   if (settingChanges.length > 0) {
-    warnings.push('A setting change shows in every row below, but packages already live keep their frozen SF and CF until they are approved and go live again.');
+    warnings.push('SF and the collection fee rate apply to new orders right away. Pickup prices of live packages stay frozen until a new price goes live.');
   }
   for (const change of priceChanges) {
     const row = costing.rows.find((candidate) => candidate.id === change.rowId)!;

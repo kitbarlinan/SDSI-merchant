@@ -168,25 +168,29 @@ export interface OrderCharges {
 }
 
 /**
- * Charges for an order: the sum over its lines, each matched to a LIVE package (same product and
- * quantity). null when any line has no live package, so a partial number is never shown as complete.
+ * Charges for one order (one POID):
+ *   - SF is charged ONCE per order, never per item.
+ *   - CF is worked out on the order's TOTAL collection: (sum of the pickup prices + SF) x CF rate,
+ *     rounded to a whole HKD, never below the minimum.
+ *   - Net COD = sum of pickup prices + SF + CF.
+ * Pickup prices come from LIVE packages (same product and quantity). null when any line has no live
+ * package, so a partial number is never shown as complete.
  */
 export function orderCharges(
   lines: { itemId: string; quantity: number }[],
   costing: CostingState,
 ): OrderCharges | null {
   if (lines.length === 0) return null;
-  let sf = 0;
-  let cf = 0;
-  let net = 0;
+  let pickupTotal = 0;
   for (const line of lines) {
     const live = costingRowFor(costing.rows, line.itemId, line.quantity)?.live;
     if (!live) return null;
-    sf += live.sfHkd;
-    cf += live.cfHkd;
-    net += live.netCodHkd;
+    pickupTotal += live.pickupPriceHkd;
   }
-  return { sfHkd: roundMoney(sf), cfHkd: roundMoney(cf), netCodHkd: roundMoney(net) };
+  pickupTotal = roundMoney(pickupTotal);
+  const sfHkd = costing.settings.shippingFeeHkd;
+  const cfHkd = collectionFee(pickupTotal, costing.settings).fee;
+  return { sfHkd, cfHkd, netCodHkd: roundMoney(pickupTotal + sfHkd + cfHkd) };
 }
 
 /** Freezes the current working price and settings into what orders will use. */
