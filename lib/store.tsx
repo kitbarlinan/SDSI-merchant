@@ -6,60 +6,86 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
-import { roundMoney } from './format';
-import { MOCK_INVENTORY, MOCK_SALES } from './mock-data';
-import type { InventoryItem, Sale, SaleInput } from './types';
+import { DEFAULT_TOP_UP_PERCENT } from './brand';
+import * as engine from './engine';
+import type { Actor, AppState, PlaceOrderInput } from './engine';
+import { nowISO } from './format';
+import { MOCK_INVENTORY, MOCK_MERCHANTS, MOCK_ORDERS, MOCK_USERS } from './mock-data';
+import type { InventoryItem, Merchant, Order, PaymentMethod, User } from './types';
 
-interface State {
+export type ActionResult<T> = { ok: true; value: T } | { ok: false; error: string };
+
+interface AppDataValue {
+  merchants: Merchant[];
+  users: User[];
   items: InventoryItem[];
-  sales: Sale[];
-}
-
-export type AddSaleResult = { ok: true; sale: Sale } | { ok: false; error: string };
-
-interface MerchantContextValue {
-  items: InventoryItem[];
-  sales: Sale[];
+  orders: Order[];
+  /** Current SDSI top-up percent (placeholder until the real rate is agreed). */
+  topUpPercent: number;
   hydrated: boolean;
-  /** Records a sale and deducts the sold quantity from inventory in one step. */
-  addSale: (input: SaleInput) => AddSaleResult;
-  restock: (itemId: string, quantity: number) => void;
+  placeOrder: (actor: Actor, input: PlaceOrderInput) => ActionResult<Order>;
+  checkoutWalkIn: (
+    actor: Actor,
+    input: { lines: { itemId: string; quantity: number }[]; paymentMethod: PaymentMethod },
+  ) => ActionResult<Order[]>;
+  markPacked: (actor: Actor, orderId: string) => ActionResult<Order>;
+  markDelivered: (actor: Actor, orderId: string, paymentMethod: PaymentMethod) => ActionResult<Order>;
+  cancelOrder: (actor: Actor, orderId: string, reason: string) => ActionResult<Order>;
+  receiveStock: (actor: Actor, itemId: string, quantity: number) => ActionResult<InventoryItem>;
+  setTopUpPercent: (actor: Actor, percent: number) => ActionResult<number>;
   resetDemo: () => void;
 }
 
-// Bumped from v1 because the data shape changed (category, expiry, channel).
-const STORAGE_KEY = 'sdsi-wellness:v2';
+// Bumped whenever the saved data shape changes.
+const STORAGE_KEY = 'sdsi-wellness:v3';
 
-const createInitialState = (): State => ({
+const createInitialState = (): AppState => ({
   items: MOCK_INVENTORY.map((item) => ({ ...item })),
-  sales: MOCK_SALES.map((sale) => ({ ...sale })),
+  orders: MOCK_ORDERS.map((order) => ({ ...order, lines: order.lines.map((line) => ({ ...line })) })),
+  topUpPercent: DEFAULT_TOP_UP_PERCENT,
 });
 
-const MerchantContext = createContext<MerchantContextValue | null>(null);
+const isSavedState = (value: unknown): value is AppState => {
+  const candidate = value as Partial<AppState> | null;
+  return (
+    !!candidate &&
+    Array.isArray(candidate.items) &&
+    Array.isArray(candidate.orders) &&
+    typeof candidate.topUpPercent === 'number'
+  );
+};
 
-export function MerchantProvider({ children }: { children: ReactNode }) {
+const AppDataContext = createContext<AppDataValue | null>(null);
+
+export function AppDataProvider({ children }: { children: ReactNode }) {
   // Start from mock data so server and client render identically,
   // then swap in any saved data after mount.
-  const [state, setState] = useState<State>(createInitialState);
+  const [state, setState] = useState<AppState>(createInitialState);
   const [hydrated, setHydrated] = useState(false);
+  // Always holds the latest state so two actions in the same tick never overwrite each other.
+  const stateRef = useRef<AppState>(state);
+
+  const commit = useCallback((next: AppState) => {
+    stateRef.current = next;
+    setState(next);
+  }, []);
 
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);
       if (raw) {
-        const parsed = JSON.parse(raw) as State;
-        if (Array.isArray(parsed.items) && Array.isArray(parsed.sales)) {
-          setState(parsed);
-        }
+        const parsed: unknown = JSON.parse(raw);
+        if (isSavedState(parsed)) commit(parsed);
       }
     } catch {
       // Ignore corrupt or unavailable storage and keep the demo data.
     }
     setHydrated(true);
-  }, []);
+  }, [commit]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -70,76 +96,44 @@ export function MerchantProvider({ children }: { children: ReactNode }) {
     }
   }, [state, hydrated]);
 
-  const addSale = useCallback(
-    (input: SaleInput): AddSaleResult => {
-      const item = state.items.find((candidate) => candidate.id === input.itemId);
-      if (!item) return { ok: false, error: 'That product no longer exists.' };
-      if (input.quantity > item.stock) {
-        return { ok: false, error: `Only ${item.stock} of "${item.name}" left in stock.` };
-      }
-
-      const lastNumber = state.sales.reduce(
-        (max, sale) => Math.max(max, Number(sale.id.replace(/\D/g, '')) || 0),
-        1000,
-      );
-      const sale: Sale = {
-        id: `S-${lastNumber + 1}`,
-        date: input.date,
-        itemId: item.id,
-        itemName: item.name,
-        sku: item.sku,
-        category: item.category,
-        quantity: input.quantity,
-        unitPrice: input.unitPrice,
-        unitCost: item.unitCost,
-        total: roundMoney(input.quantity * input.unitPrice),
-        paymentMethod: input.paymentMethod,
-        channel: input.channel,
-        customerName: input.customerName.trim(),
-      };
-
-      setState((prev) => ({
-        items: prev.items.map((candidate) =>
-          candidate.id === item.id
-            ? { ...candidate, stock: candidate.stock - input.quantity }
-            : candidate,
-        ),
-        sales: [sale, ...prev.sales],
-      }));
-
-      return { ok: true, sale };
+  const run = useCallback(
+    <T,>(action: (current: AppState) => engine.Outcome<T>): ActionResult<T> => {
+      const outcome = action(stateRef.current);
+      if (!outcome.ok) return { ok: false, error: outcome.error };
+      commit(outcome.state);
+      return { ok: true, value: outcome.value };
     },
-    [state],
+    [commit],
   );
 
-  const restock = useCallback((itemId: string, quantity: number) => {
-    setState((prev) => ({
-      ...prev,
-      items: prev.items.map((item) =>
-        item.id === itemId ? { ...item, stock: item.stock + quantity } : item,
-      ),
-    }));
-  }, []);
-
-  const resetDemo = useCallback(() => setState(createInitialState()), []);
-
-  const value = useMemo<MerchantContextValue>(
+  const value = useMemo<AppDataValue>(
     () => ({
+      merchants: MOCK_MERCHANTS,
+      users: MOCK_USERS,
       items: state.items,
-      sales: state.sales,
+      orders: state.orders,
+      topUpPercent: state.topUpPercent,
       hydrated,
-      addSale,
-      restock,
-      resetDemo,
+      placeOrder: (actor, input) => run((s) => engine.placeMerchantOrder(s, actor, input, nowISO())),
+      checkoutWalkIn: (actor, input) => run((s) => engine.checkoutWalkIn(s, actor, input, nowISO())),
+      markPacked: (actor, orderId) => run((s) => engine.markPacked(s, actor, orderId, nowISO())),
+      markDelivered: (actor, orderId, paymentMethod) =>
+        run((s) => engine.markDelivered(s, actor, orderId, paymentMethod, nowISO())),
+      cancelOrder: (actor, orderId, reason) =>
+        run((s) => engine.cancelOrder(s, actor, orderId, reason, nowISO())),
+      receiveStock: (actor, itemId, quantity) =>
+        run((s) => engine.receiveStock(s, actor, itemId, quantity)),
+      setTopUpPercent: (actor, percent) => run((s) => engine.setTopUpPercent(s, actor, percent)),
+      resetDemo: () => commit(createInitialState()),
     }),
-    [state, hydrated, addSale, restock, resetDemo],
+    [state, hydrated, run, commit],
   );
 
-  return <MerchantContext.Provider value={value}>{children}</MerchantContext.Provider>;
+  return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;
 }
 
-export function useMerchant(): MerchantContextValue {
-  const context = useContext(MerchantContext);
-  if (!context) throw new Error('useMerchant must be used inside <MerchantProvider>.');
+export function useAppData(): AppDataValue {
+  const context = useContext(AppDataContext);
+  if (!context) throw new Error('useAppData must be used inside <AppDataProvider>.');
   return context;
 }

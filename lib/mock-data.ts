@@ -1,130 +1,171 @@
+import { DEFAULT_TOP_UP_PERCENT } from './brand';
 import { roundMoney } from './format';
 import { addDays, weekdayOf } from './period';
-import type { InventoryItem, PaymentMethod, Sale, SalesChannel } from './types';
+import type {
+  InventoryItem,
+  Merchant,
+  Order,
+  OrderLine,
+  OrderStatus,
+  PaymentMethod,
+  User,
+} from './types';
 
 /**
  * Demo data is generated deterministically (same output on server and client).
- * "Today" for the demo is fixed so the sales history always lines up with the stock levels below.
+ * "Today" for the demo is fixed so the order history always lines up with the stock levels below.
  */
 export const MOCK_TODAY = '2026-10-29';
 const HISTORY_DAYS = 75;
 
-/** Current stock levels. Mix of healthy, low, out-of-stock and soon-to-expire items on purpose. */
+export const MOCK_MERCHANTS: Merchant[] = [
+  { id: 'mrc-1', name: 'Green Leaf Naturals', color: '#059669' },
+  { id: 'mrc-2', name: 'Pure Glow Beauty', color: '#e11d48' },
+  { id: 'mrc-3', name: 'Everyday Health PH', color: '#0284c7' },
+];
+
+export const MOCK_USERS: User[] = [
+  { id: 'usr-admin', name: 'Kit', role: 'admin' },
+  { id: 'usr-cashier', name: 'Ana Cruz', role: 'cashier' },
+  { id: 'usr-m1', name: 'Liza Fernandez', role: 'merchant', merchantId: 'mrc-1' },
+  { id: 'usr-m2', name: 'Bea Ramirez', role: 'merchant', merchantId: 'mrc-2' },
+  { id: 'usr-m3', name: 'Carlo Navarro', role: 'merchant', merchantId: 'mrc-3' },
+];
+
+const CASHIER_ID = 'usr-cashier';
+
+/**
+ * Each merchant's stock held in SDSI's warehouse (on hand).
+ * Mix of healthy, low, out-of-stock and soon-to-expire items on purpose.
+ */
 export const MOCK_INVENTORY: InventoryItem[] = [
+  // Green Leaf Naturals
   {
     id: 'itm-001',
+    merchantId: 'mrc-1',
     sku: 'GRN-BAR-200',
     name: 'Organic Barley Grass Powder 200g',
     category: 'Greens & Superfoods',
     unitCost: 420,
     unitPrice: 690,
-    stock: 96,
+    stock: 140,
     reorderLevel: 40,
     expiryDate: '2027-09-30',
   },
   {
     id: 'itm-002',
+    merchantId: 'mrc-1',
     sku: 'GRN-BAR-TAB',
     name: 'Barley Grass Tablets (120s)',
     category: 'Greens & Superfoods',
     unitCost: 310,
     unitPrice: 520,
-    stock: 11, // low stock
-    reorderLevel: 15,
+    stock: 14, // low stock
+    reorderLevel: 20,
     expiryDate: '2027-06-30',
   },
   {
     id: 'itm-003',
+    merchantId: 'mrc-1',
     sku: 'GRN-SPI-100',
     name: 'Spirulina 500mg (100 tablets)',
     category: 'Greens & Superfoods',
     unitCost: 260,
     unitPrice: 420,
-    stock: 32,
-    reorderLevel: 15,
+    stock: 60,
+    reorderLevel: 20,
     expiryDate: '2026-12-20', // expiring soon
   },
   {
     id: 'itm-004',
+    merchantId: 'mrc-1',
     sku: 'HRB-MAL-60',
     name: 'Malunggay Capsules (60s)',
     category: 'Herbal',
     unitCost: 150,
     unitPrice: 260,
-    stock: 8, // low stock + expiring soon
-    reorderLevel: 12,
+    stock: 18, // low stock + expiring soon
+    reorderLevel: 25,
     expiryDate: '2027-01-25',
   },
+  // Pure Glow Beauty
+  {
+    id: 'itm-008',
+    merchantId: 'mrc-2',
+    sku: 'BTY-GLU-30',
+    name: 'Glutathione + Vitamin C (30 caps)',
+    category: 'Beauty & Skin',
+    unitCost: 480,
+    unitPrice: 799,
+    stock: 70,
+    reorderLevel: 20,
+    expiryDate: '2027-05-31',
+  },
+  {
+    id: 'itm-009',
+    merchantId: 'mrc-2',
+    sku: 'BTY-COL-300',
+    name: 'Collagen Peptides Powder 300g',
+    category: 'Beauty & Skin',
+    unitCost: 520,
+    unitPrice: 880,
+    stock: 26, // running low on cover
+    reorderLevel: 15,
+    expiryDate: '2027-07-31',
+  },
+  // Everyday Health PH
   {
     id: 'itm-005',
+    merchantId: 'mrc-3',
     sku: 'HRB-LUY-60',
     name: 'Turmeric + Black Pepper (60 caps)',
     category: 'Herbal',
     unitCost: 175,
     unitPrice: 295,
-    stock: 50,
-    reorderLevel: 15,
+    stock: 90,
+    reorderLevel: 25,
     expiryDate: '2027-10-31',
   },
   {
     id: 'itm-006',
+    merchantId: 'mrc-3',
     sku: 'VIT-CZN-100',
     name: 'Vitamin C 500mg + Zinc (100 tabs)',
     category: 'Vitamins & Minerals',
     unitCost: 190,
     unitPrice: 320,
-    stock: 57,
-    reorderLevel: 25,
+    stock: 120,
+    reorderLevel: 40,
     expiryDate: '2027-12-31',
   },
   {
     id: 'itm-007',
+    merchantId: 'mrc-3',
     sku: 'VIT-D3-60',
     name: 'Vitamin D3 1000 IU (60 softgels)',
     category: 'Vitamins & Minerals',
     unitCost: 210,
     unitPrice: 350,
     stock: 0, // out of stock
-    reorderLevel: 12,
+    reorderLevel: 20,
     expiryDate: '2027-08-31',
   },
   {
-    id: 'itm-008',
-    sku: 'BTY-GLU-30',
-    name: 'Glutathione + Vitamin C (30 caps)',
-    category: 'Beauty & Skin',
-    unitCost: 480,
-    unitPrice: 799,
-    stock: 21,
-    reorderLevel: 10,
-    expiryDate: '2027-05-31',
-  },
-  {
-    id: 'itm-009',
-    sku: 'BTY-COL-300',
-    name: 'Collagen Peptides Powder 300g',
-    category: 'Beauty & Skin',
-    unitCost: 520,
-    unitPrice: 880,
-    stock: 14,
-    reorderLevel: 10,
-    expiryDate: '2027-07-31',
-  },
-  {
     id: 'itm-010',
+    merchantId: 'mrc-3',
     sku: 'HRT-OM3-60',
     name: 'Omega-3 Fish Oil 1000mg (60 softgels)',
     category: 'Heart & Wellness',
     unitCost: 240,
     unitPrice: 399,
-    stock: 29,
-    reorderLevel: 12,
+    stock: 40,
+    reorderLevel: 20,
     expiryDate: '2027-11-30',
   },
 ];
 
 // ---------------------------------------------------------------------------
-// Sales history generator
+// Order history generator
 // ---------------------------------------------------------------------------
 
 /** Small seeded PRNG so the demo data never changes between renders. */
@@ -138,7 +179,7 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-function pickWeighted<T>(rand: () => number, options: readonly [T, number][]): T {
+function pickWeighted<T>(rand: () => number, options: readonly (readonly [T, number])[]): T {
   const total = options.reduce((sum, [, weight]) => sum + weight, 0);
   let roll = rand() * total;
   for (const [value, weight] of options) {
@@ -161,21 +202,8 @@ const PRODUCT_WEIGHTS: Record<string, { weight: number; maxQty: number }> = {
   'itm-010': { weight: 8, maxQty: 3 },
 };
 
-const CHANNEL_WEIGHTS: readonly [SalesChannel, number][] = [
-  ['Direct Sales', 30],
-  ['Shopee', 28],
-  ['TikTok Shop', 20],
-  ['Shopify', 8],
-  ['Retail Branch', 14],
-];
-
-const PAYMENT_WEIGHTS: readonly [PaymentMethod, number][] = [
-  ['GCash', 36],
-  ['Cash', 22],
-  ['Bank Transfer', 18],
-  ['Maya', 12],
-  ['Card', 12],
-];
+/** Average merchant orders per day. */
+const MERCHANT_VOLUME: Record<string, number> = { 'mrc-1': 1.8, 'mrc-2': 0.9, 'mrc-3': 1.4 };
 
 const CUSTOMERS = [
   'Maria Santos',
@@ -190,18 +218,57 @@ const CUSTOMERS = [
   'Paolo Castillo',
   'Rhea Domingo',
   'Mark Gonzales',
-  'Bea Ramirez',
   'Noel Pascual',
   'Cecilia Tan',
   'Dennis Lim',
   'Aileen Soriano',
-  'Walk-in Customer',
 ];
 
-function generateSales(): Sale[] {
+const ADDRESSES = [
+  'Brgy. Sumacab Este, Cabanatuan City',
+  'Brgy. Bitas, Cabanatuan City',
+  'Brgy. Zulueta, Cabanatuan City',
+  'Brgy. Caalibangbangan, Cabanatuan City',
+  'Brgy. Poblacion, Gapan City',
+  'Brgy. Sto. Niño, San Jose City',
+  'Brgy. Bantug, Science City of Muñoz',
+  'Brgy. Mabini, Palayan City',
+];
+
+const CANCEL_REASONS = [
+  'Customer unreachable',
+  'Customer refused the order',
+  'Wrong or incomplete address',
+  'Customer could not pay on delivery',
+];
+
+const WALK_IN_PAYMENTS: readonly (readonly [PaymentMethod, number])[] = [
+  ['Cash', 50],
+  ['GCash', 30],
+  ['Maya', 10],
+  ['Card', 10],
+];
+const COD_PAYMENTS: readonly (readonly [PaymentMethod, number])[] = [
+  ['Cash', 70],
+  ['GCash', 20],
+  ['Bank Transfer', 5],
+  ['Maya', 5],
+];
+const COP_PAYMENTS: readonly (readonly [PaymentMethod, number])[] = [
+  ['Cash', 55],
+  ['GCash', 30],
+  ['Maya', 10],
+  ['Bank Transfer', 5],
+];
+
+const two = (value: number): string => String(value).padStart(2, '0');
+const stamp = (date: string, hour: number, minute: number): string =>
+  `${date}T${two(Math.min(hour, 21))}:${two(minute)}`;
+
+function generateOrders(): Order[] {
   const rand = mulberry32(20261029);
-  const itemWeights = MOCK_INVENTORY.map((item) => [item, PRODUCT_WEIGHTS[item.id].weight] as const);
-  const sales: Sale[] = [];
+  const orders: Order[] = [];
+  const reserved = new Map<string, number>();
   let counter = 1000;
 
   for (let offset = HISTORY_DAYS - 1; offset >= 0; offset -= 1) {
@@ -209,44 +276,118 @@ function generateSales(): Sale[] {
     const dayOfMonth = Number(date.slice(8, 10));
     const weekday = weekdayOf(date);
     const progress = 1 - offset / HISTORY_DAYS; // business grows a little over time
+    const isPayday = [14, 15, 16, 29, 30, 31, 1].includes(dayOfMonth);
 
-    let mean = weekday === 0 || weekday === 6 ? 2.3 : 1.8;
-    mean *= 1 + progress * 0.45;
-    // Filipino paydays (15th and end of month) drive extra orders.
-    if ([14, 15, 16, 29, 30, 31, 1].includes(dayOfMonth)) mean += 1.4;
+    for (const merchant of MOCK_MERCHANTS) {
+      const catalog = MOCK_INVENTORY.filter((item) => item.merchantId === merchant.id);
+      const volume = MERCHANT_VOLUME[merchant.id];
+      let mean = volume * (weekday === 0 || weekday === 6 ? 1.2 : 1) * (1 + progress * 0.45);
+      if (isPayday) mean += volume * 0.7;
+      const count = Math.max(0, Math.round(mean + (rand() - 0.5) * 2));
 
-    const orders = Math.max(0, Math.round(mean + (rand() - 0.5) * 2.6));
+      for (let n = 0; n < count; n += 1) {
+        // 1 to 3 different products per order.
+        const lineCount = Math.min(catalog.length, rand() < 0.6 ? 1 : rand() < 0.85 ? 2 : 3);
+        const pool = [...catalog];
+        const lines: OrderLine[] = [];
+        for (let l = 0; l < lineCount; l += 1) {
+          const item = pickWeighted(
+            rand,
+            pool.map((candidate) => [candidate, PRODUCT_WEIGHTS[candidate.id].weight] as const),
+          );
+          pool.splice(pool.indexOf(item), 1);
+          const { maxQty } = PRODUCT_WEIGHTS[item.id];
+          const quantity = rand() < 0.6 ? 1 : 2 + Math.floor(rand() * (maxQty - 1));
+          const unitPrice = rand() < 0.08 ? Math.round(item.unitPrice * 0.9) : item.unitPrice;
+          lines.push({
+            itemId: item.id,
+            sku: item.sku,
+            name: item.name,
+            category: item.category,
+            quantity,
+            unitPrice,
+            unitCost: item.unitCost,
+            total: roundMoney(quantity * unitPrice),
+          });
+        }
 
-    for (let order = 0; order < orders; order += 1) {
-      const item = pickWeighted(rand, itemWeights as unknown as readonly [InventoryItem, number][]);
-      const { maxQty } = PRODUCT_WEIGHTS[item.id];
-      const quantity = rand() < 0.6 ? 1 : 2 + Math.floor(rand() * (maxQty - 1));
-      const channel = pickWeighted(rand, CHANNEL_WEIGHTS);
-      const paymentMethod =
-        channel === 'Retail Branch' && rand() < 0.5 ? 'Cash' : pickWeighted(rand, PAYMENT_WEIGHTS);
-      const unitPrice = rand() < 0.1 ? Math.round(item.unitPrice * 0.9) : item.unitPrice; // occasional promo
-      const customerName = CUSTOMERS[Math.floor(rand() * CUSTOMERS.length)];
+        const walkIn = rand() < 0.14;
+        const terms = walkIn || rand() < 0.45 ? 'COP' : 'COD';
+        const hour = offset === 0 ? 8 + Math.floor(rand() * 4) : 9 + Math.floor(rand() * 9);
+        const minute = Math.floor(rand() * 60);
+        const createdAt = stamp(date, hour, minute);
 
-      counter += 1;
-      sales.push({
-        id: `S-${counter}`,
-        date,
-        itemId: item.id,
-        itemName: item.name,
-        sku: item.sku,
-        category: item.category,
-        quantity,
-        unitPrice,
-        unitCost: item.unitCost,
-        total: roundMoney(quantity * unitPrice),
-        paymentMethod,
-        channel,
-        customerName,
-      });
+        let status: OrderStatus;
+        const roll = rand();
+        if (walkIn) status = 'delivered';
+        else if (offset >= 2) status = roll < 0.93 ? 'delivered' : 'cancelled';
+        else if (offset === 1) {
+          status = roll < 0.72 ? 'delivered' : roll < 0.87 ? 'packed' : roll < 0.95 ? 'pending' : 'cancelled';
+        } else {
+          status = roll < 0.45 ? 'pending' : roll < 0.7 ? 'packed' : roll < 0.95 ? 'delivered' : 'cancelled';
+        }
+
+        // Open orders must fit in the stock that is actually on the shelf.
+        if (status === 'pending' || status === 'packed') {
+          const fits = lines.every((line) => {
+            const item = MOCK_INVENTORY.find((candidate) => candidate.id === line.itemId)!;
+            return item.stock - (reserved.get(line.itemId) ?? 0) >= line.quantity;
+          });
+          if (fits) {
+            for (const line of lines) {
+              reserved.set(line.itemId, (reserved.get(line.itemId) ?? 0) + line.quantity);
+            }
+          } else {
+            status = 'delivered';
+          }
+        }
+
+        counter += 1;
+        const merchantUser = MOCK_USERS.find((user) => user.merchantId === merchant.id)!;
+        const order: Order = {
+          id: `ORD-${counter}`,
+          merchantId: merchant.id,
+          source: walkIn ? 'walk-in' : 'merchant',
+          createdBy: walkIn ? CASHIER_ID : merchantUser.id,
+          createdAt,
+          customerName: walkIn ? null : CUSTOMERS[Math.floor(rand() * CUSTOMERS.length)],
+          contactNo: walkIn ? '' : `09${Math.floor(100000000 + rand() * 899999999)}`,
+          address: !walkIn && terms === 'COD' ? ADDRESSES[Math.floor(rand() * ADDRESSES.length)] : '',
+          notes: '',
+          terms,
+          lines,
+          status,
+        };
+
+        if (status !== 'pending') {
+          order.packedAt = stamp(date, hour + 1, minute);
+          order.handledBy = CASHIER_ID;
+        }
+        if (status === 'delivered') {
+          const nextDay = !walkIn && offset >= 1 && terms === 'COD' && rand() < 0.25;
+          order.deliveredAt = walkIn
+            ? createdAt
+            : nextDay
+              ? stamp(addDays(date, 1), 9 + Math.floor(rand() * 8), Math.floor(rand() * 60))
+              : stamp(date, hour + 1 + Math.floor(rand() * 4), Math.floor(rand() * 60));
+          order.paymentMethod = pickWeighted(
+            rand,
+            walkIn ? WALK_IN_PAYMENTS : terms === 'COD' ? COD_PAYMENTS : COP_PAYMENTS,
+          );
+          order.topUpRate = DEFAULT_TOP_UP_PERCENT;
+        }
+        if (status === 'cancelled') {
+          order.cancelledAt = stamp(date, hour + 2, minute);
+          order.cancelReason = CANCEL_REASONS[Math.floor(rand() * CANCEL_REASONS.length)];
+        }
+        orders.push(order);
+      }
     }
   }
 
-  return sales.reverse(); // newest first
+  return orders.sort((a, b) =>
+    a.createdAt === b.createdAt ? b.id.localeCompare(a.id) : b.createdAt.localeCompare(a.createdAt),
+  );
 }
 
-export const MOCK_SALES: Sale[] = generateSales();
+export const MOCK_ORDERS: Order[] = generateOrders();

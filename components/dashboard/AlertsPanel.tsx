@@ -4,14 +4,15 @@ import Link from 'next/link';
 import { useMemo, type ReactNode } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Icon } from '@/components/ui/Icon';
-import { SUPPLIER_LEAD_TIME_DAYS } from '@/lib/brand';
+import { COVER_WARNING_DAYS } from '@/lib/brand';
 import { formatShortDate } from '@/lib/format';
 import { coverDays, getExpiry, getStockStatus, needsReorder, recentUnitsByItem } from '@/lib/inventory';
-import type { InventoryItem, Sale } from '@/lib/types';
+import type { InventoryItem, Merchant, SaleLine } from '@/lib/types';
 
 interface Row {
   id: string;
   name: string;
+  owner?: string;
   detail: string;
   tone: 'red' | 'amber';
 }
@@ -27,7 +28,10 @@ function Group({ title, count, rows }: { title: string; count: number; rows: Row
       <ul className="space-y-1.5">
         {rows.map((row) => (
           <li key={row.id} className="flex items-center justify-between gap-3 text-sm">
-            <span className="min-w-0 truncate text-slate-800">{row.name}</span>
+            <span className="min-w-0 truncate text-slate-800">
+              {row.name}
+              {row.owner ? <span className="text-xs text-slate-500"> · {row.owner}</span> : null}
+            </span>
             <span
               className={`shrink-0 text-xs font-medium ${row.tone === 'red' ? 'text-rose-600' : 'text-amber-700'}`}
             >
@@ -47,10 +51,13 @@ export function AlertsPanel({
   items,
   sales,
   today,
+  merchants,
 }: {
   items: InventoryItem[];
-  sales: Sale[];
+  sales: SaleLine[];
   today: string;
+  /** Pass for staff views so each alert shows which merchant owns the product. */
+  merchants?: Merchant[];
 }) {
   const groups = useMemo(() => {
     const units = recentUnitsByItem(sales, today);
@@ -59,26 +66,31 @@ export function AlertsPanel({
       .filter((item) => getStockStatus(item) !== 'ok')
       .sort((a, b) => a.stock - b.stock);
 
-    const expiring = items
-      .map((item) => ({ item, expiry: getExpiry(item, today) }))
-      .filter(({ expiry }) => expiry.status !== 'ok')
-      .sort((a, b) => a.expiry.daysLeft - b.expiry.daysLeft);
+    const expiring = today
+      ? items
+          .map((item) => ({ item, expiry: getExpiry(item, today) }))
+          .filter(({ expiry }) => expiry.status !== 'ok')
+          .sort((a, b) => a.expiry.daysLeft - b.expiry.daysLeft)
+      : [];
 
-    const reorder = items
-      .map((item) => ({ item, cover: coverDays(item.stock, units.get(item.id) ?? 0) }))
-      .filter(({ item, cover }) => needsReorder(cover) && getStockStatus(item) === 'ok')
-      .sort((a, b) => (a.cover ?? 0) - (b.cover ?? 0));
+    const reorder = today
+      ? items
+          .map((item) => ({ item, cover: coverDays(item.stock, units.get(item.id) ?? 0) }))
+          .filter(({ item, cover }) => needsReorder(cover) && getStockStatus(item) === 'ok')
+          .sort((a, b) => (a.cover ?? 0) - (b.cover ?? 0))
+      : [];
 
     return { stock, expiring, reorder };
   }, [items, sales, today]);
 
+  const ownerOf = (item: InventoryItem) => merchants?.find((m) => m.id === item.merchantId)?.name;
   const total = groups.stock.length + groups.expiring.length + groups.reorder.length;
 
   const body: ReactNode =
     total === 0 ? (
       <div className="flex items-center gap-3 rounded-xl bg-emerald-50 p-4 text-sm text-emerald-800">
         <Icon name="check" className="h-5 w-5 shrink-0 text-emerald-600" />
-        Stock levels, expiry dates and reorder timing all look healthy.
+        Stock levels, expiry dates and cover all look healthy.
       </div>
     ) : (
       <div className="space-y-5">
@@ -88,6 +100,7 @@ export function AlertsPanel({
           rows={groups.stock.slice(0, 4).map((item) => ({
             id: item.id,
             name: item.name,
+            owner: ownerOf(item),
             detail: item.stock === 0 ? 'Out of stock' : `${item.stock} left`,
             tone: item.stock === 0 ? 'red' : 'amber',
           }))}
@@ -98,6 +111,7 @@ export function AlertsPanel({
           rows={groups.expiring.slice(0, 4).map(({ item, expiry }) => ({
             id: item.id,
             name: item.name,
+            owner: ownerOf(item),
             detail:
               expiry.status === 'expired'
                 ? 'Expired'
@@ -106,13 +120,14 @@ export function AlertsPanel({
           }))}
         />
         <Group
-          title={`Reorder (under ${SUPPLIER_LEAD_TIME_DAYS} days of cover)`}
+          title={`Running low (under ${COVER_WARNING_DAYS} days of cover)`}
           count={groups.reorder.length}
           rows={groups.reorder.slice(0, 4).map(({ item, cover }) => ({
             id: item.id,
             name: item.name,
+            owner: ownerOf(item),
             detail: `${cover ?? 0} days left`,
-            tone: (cover ?? 0) < 45 ? 'red' : 'amber',
+            tone: (cover ?? 0) < 14 ? 'red' : 'amber',
           }))}
         />
       </div>
@@ -121,7 +136,7 @@ export function AlertsPanel({
   return (
     <Card
       title="Inventory alerts"
-      subtitle="Stock, expiry and reorder timing"
+      subtitle="Stock, expiry and days of cover"
       action={
         <Link href="/inventory" className="text-xs font-medium text-emerald-700 hover:underline">
           Open inventory

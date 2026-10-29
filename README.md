@@ -1,65 +1,31 @@
-# SDSI Wellness
+# SDSI Wellness: fulfillment & merchant portal
 
-Supplements sales and inventory app. Next.js 15 (App Router) + React 19 + TypeScript + Tailwind CSS. No chart library: all charts are plain SVG.
+Demo web app for SDSI, which fulfills orders for 3 supplement merchants. Built with Next.js 15 (App Router), React 19, TypeScript and Tailwind. Data is mock data saved in the browser (no backend yet).
 
-| Route | Module | What it does |
-| --- | --- | --- |
-| `/dashboard` | Dashboard | KPI cards with change vs. previous period, revenue and profit trend (hover for daily figures), sales by category, top products, channels, payment methods, inventory alerts, recent orders. Period switch: 7 / 30 / 90 days / all time |
-| `/sales` | Sales Input | Form with real-time validation, auto total, sales channel, confirmation banner, recent sales |
-| `/inventory` | Inventory | SKU, category, stock, unit cost / price, margin, expiry date, days of cover, low-stock status, search and filters, restock button |
-| `/reports` | Accounting & Reports | Revenue, estimated COGS, net profit (est.), sales by product with margin, by category / channel / payment method, top customers, searchable ledger, CSV export |
-
-## Setup
+## Run it
 
 ```bash
 npm install
-npm run dev        # http://localhost:3000
-npm run build      # production build
-npm run typecheck  # tsc --noEmit
+npm run dev
 ```
 
-Requires Node 18.18+ (Node 20+ recommended).
+Open http://localhost:3000 and pick an account (demo sign-in, no password).
 
-## Structure
+| Role | Account | What they do |
+| --- | --- | --- |
+| Admin | Kit | Sees everything: sales and running inventory per merchant, accounting, top-up setting |
+| Cashier | Ana Cruz | Sees incoming orders, packs them, marks delivered (after collecting payment) or not delivered. Runs the walk-in POS |
+| Merchant | Liza (Green Leaf), Bea (Pure Glow), Carlo (Everyday Health) | Places COP / COD orders, sees own sales and running inventory |
 
-```
-app/                     Routes: dashboard, sales, inventory, reports
-components/
-  charts/                TrendChart, DonutChart, BarList (SVG, no dependencies)
-  dashboard/             DashboardView, AlertsPanel
-  inventory/             InventoryView, StockBadge, ExpiryBadge
-  layout/                AppShell (sidebar / mobile tabs), PageHeader
-  reports/               ReportsView
-  sales/                 SalesForm, RecentSales
-  ui/                    Badge, Card, Field, Icon, PeriodTabs, StatCard
-lib/
-  brand.ts               App name, supplier lead time (90 days), expiry warning window (90 days)
-  types.ts               Domain types, payment methods, sales channels, categories
-  mock-data.ts           10 supplements + ~200 generated sales over 75 days (deterministic)
-  store.tsx              React context store (addSale deducts stock), localStorage persistence
-  reports.ts             Pure selectors: summarize, groupSales, buildTrend, breakdownByItem
-  inventory.ts           Stock status, expiry status, days of cover
-  period.ts              Period ranges and date math (timezone-safe)
-  validation.ts          Pure sale-form validation
-  theme.ts               Chart colors
-  format.ts              PHP currency / date helpers
-```
+## How it works
 
-## Rename the app
+- **Order flow:** Merchant places order (pending) -> Cashier packs (packed) -> Cashier marks delivered once payment is collected, or not delivered with a reason.
+- **Stock:** Reserved when an order is placed. On hand drops only at delivery. Available = on hand - reserved.
+- **Walk-in POS:** No customer name. Cart, payment method, cash tendered and change. A cart with several merchants' products is split into one order per merchant.
+- **Accounting:** Merchant sales are pass-through, not SDSI sales. SDSI revenue = top-up % on delivered orders. Net payable to merchant = sales - top-up. The **5% top-up is a placeholder** until the real rate is agreed; each order keeps the rate it was delivered with.
 
-Edit `lib/brand.ts`. The name and tagline appear in the sidebar, page title and README only from there.
+## Notes
 
-## Design notes
-
-- **Single source of truth.** `store.tsx` holds `items` and `sales`. `addSale` records the sale and deducts stock in one update, so Dashboard, Inventory and Reports always agree.
-- **Derived, not duplicated.** Every figure is computed from `sales` in `lib/reports.ts`.
-- **COGS accuracy.** Each sale keeps a snapshot of `unitCost` and `category` at the time of sale, so later changes do not rewrite history.
-- **Net profit** is revenue minus COGS (gross profit). Operating expenses are not tracked yet.
-- **Expiry.** Expired products cannot be sold. Products expiring within 90 days are flagged.
-- **Days of cover** = stock / average daily units sold over the last 30 days. Under the 90-day supplier lead time means it is time to reorder.
-- **Persistence.** Data is saved to `localStorage` (key `sdsi-wellness:v2`). "Reset demo data" restores the generated demo set.
-- **Demo date.** The demo sales history ends on 2026-10-29. Period filters count back from today's real date, so after about 90 days the demo data ages out of the shorter periods. Use "All time", or reset after connecting a real database.
-
-## Moving to a real backend
-
-Replace the bodies of `addSale`, `restock` and the initial load in `lib/store.tsx` with calls to Route Handlers or Server Actions backed by a database (for example Supabase/Postgres). Components only depend on the `useMerchant()` interface. For multi-user use, make the stock deduction and the sale insert a single database transaction.
+- Sign-in and permissions are demo-only. Real enforcement needs a backend (planned: Supabase Auth + row-level security).
+- `lib/engine.ts` holds the business rules as pure functions; `lib/store.tsx` wraps them for React.
+- "Reset demo data" (admin, sidebar) restores the seeded data.

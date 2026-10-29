@@ -3,7 +3,15 @@
 import { useId, useState, type PointerEvent } from 'react';
 import { formatCompactPeso, formatCurrency, formatShortDate } from '@/lib/format';
 import type { TrendPoint } from '@/lib/reports';
-import { PROFIT_COLOR, REVENUE_COLOR } from '@/lib/theme';
+import { PROFIT_COLOR, REVENUE_COLOR, TOP_UP_COLOR } from '@/lib/theme';
+
+export type TrendMetric = 'revenue' | 'profit' | 'topUp';
+
+const METRIC: Record<TrendMetric, { label: string; color: string }> = {
+  revenue: { label: 'Sales', color: REVENUE_COLOR },
+  profit: { label: 'Gross profit', color: PROFIT_COLOR },
+  topUp: { label: 'SDSI top-up', color: TOP_UP_COLOR },
+};
 
 const WIDTH = 720;
 const HEIGHT = 280;
@@ -19,7 +27,17 @@ function niceMax(value: number): number {
   return step * magnitude;
 }
 
-export function TrendChart({ data }: { data: TrendPoint[] }) {
+export function TrendChart({
+  data,
+  primary = 'revenue',
+  secondary,
+}: {
+  data: TrendPoint[];
+  primary?: TrendMetric;
+  secondary?: TrendMetric;
+}) {
+  const main = METRIC[primary];
+  const second = secondary ? METRIC[secondary] : null;
   const [hover, setHover] = useState<number | null>(null);
   const gradientId = `rev-${useId().replace(/:/g, '')}`;
 
@@ -30,7 +48,7 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
   const innerWidth = WIDTH - PAD.left - PAD.right;
   const innerHeight = HEIGHT - PAD.top - PAD.bottom;
   const baseline = PAD.top + innerHeight;
-  const max = niceMax(Math.max(...data.map((point) => point.revenue), 1));
+  const max = niceMax(Math.max(...data.map((point) => point[primary]), ...(secondary ? data.map((point) => point[secondary]) : []), 1));
 
   const x = (index: number) =>
     PAD.left + (data.length === 1 ? innerWidth / 2 : (index / (data.length - 1)) * innerWidth);
@@ -41,7 +59,7 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
       .map((point, index) => `${index === 0 ? 'M' : 'L'}${x(index).toFixed(1)} ${y(pick(point)).toFixed(1)}`)
       .join(' ');
 
-  const areaPath = `${path((point) => point.revenue)} L${x(data.length - 1).toFixed(1)} ${baseline} L${x(0).toFixed(1)} ${baseline} Z`;
+  const areaPath = `${path((point) => point[primary])} L${x(data.length - 1).toFixed(1)} ${baseline} L${x(0).toFixed(1)} ${baseline} Z`;
 
   const gridValues = [0, 0.25, 0.5, 0.75, 1].map((fraction) => fraction * max);
 
@@ -68,13 +86,15 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
     <div>
       <div className="mb-3 flex items-center gap-4 text-xs text-slate-600">
         <span className="flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-full" style={{ background: REVENUE_COLOR }} />
-          Revenue
+          <span className="h-2.5 w-2.5 rounded-full" style={{ background: main.color }} />
+          {main.label}
         </span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-full" style={{ background: PROFIT_COLOR }} />
-          Gross profit
-        </span>
+        {second ? (
+          <span className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-full" style={{ background: second.color }} />
+            {second.label}
+          </span>
+        ) : null}
       </div>
 
       <div className="relative">
@@ -82,14 +102,14 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
           viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
           className="h-auto w-full touch-pan-y"
           role="img"
-          aria-label="Revenue and gross profit over time"
+          aria-label={`${main.label} over time`}
           onPointerMove={handleMove}
           onPointerLeave={() => setHover(null)}
         >
           <defs>
             <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={REVENUE_COLOR} stopOpacity="0.3" />
-              <stop offset="100%" stopColor={REVENUE_COLOR} stopOpacity="0" />
+              <stop offset="0%" stopColor={main.color} stopOpacity="0.3" />
+              <stop offset="100%" stopColor={main.color} stopOpacity="0" />
             </linearGradient>
           </defs>
 
@@ -117,21 +137,23 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
 
           <path d={areaPath} fill={`url(#${gradientId})`} />
           <path
-            d={path((point) => point.revenue)}
+            d={path((point) => point[primary])}
             fill="none"
-            stroke={REVENUE_COLOR}
+            stroke={main.color}
             strokeWidth="2.5"
             strokeLinejoin="round"
             strokeLinecap="round"
           />
-          <path
-            d={path((point) => point.profit)}
-            fill="none"
-            stroke={PROFIT_COLOR}
-            strokeWidth="2"
-            strokeLinejoin="round"
-            strokeLinecap="round"
-          />
+          {secondary && second ? (
+            <path
+              d={path((point) => point[secondary])}
+              fill="none"
+              stroke={second.color}
+              strokeWidth="2"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+          ) : null}
 
           {labelIndexes.map((index) => (
             <text
@@ -149,8 +171,10 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
           {hover !== null && active ? (
             <g>
               <line x1={x(hover)} x2={x(hover)} y1={PAD.top} y2={baseline} stroke="#94a3b8" strokeDasharray="3 3" />
-              <circle cx={x(hover)} cy={y(active.revenue)} r="4.5" fill="#fff" stroke={REVENUE_COLOR} strokeWidth="2.5" />
-              <circle cx={x(hover)} cy={y(active.profit)} r="4" fill="#fff" stroke={PROFIT_COLOR} strokeWidth="2.5" />
+              <circle cx={x(hover)} cy={y(active[primary])} r="4.5" fill="#fff" stroke={main.color} strokeWidth="2.5" />
+              {secondary && second ? (
+                <circle cx={x(hover)} cy={y(active[secondary])} r="4" fill="#fff" stroke={second.color} strokeWidth="2.5" />
+              ) : null}
             </g>
           ) : null}
         </svg>
@@ -166,13 +190,15 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
                 : `${formatShortDate(active.date)} – ${formatShortDate(active.endDate)}`}
             </p>
             <p className="flex justify-between text-slate-600">
-              <span>Revenue</span>
-              <span className="font-medium text-slate-900">{formatCurrency(active.revenue)}</span>
+              <span>{main.label}</span>
+              <span className="font-medium text-slate-900">{formatCurrency(active[primary])}</span>
             </p>
-            <p className="flex justify-between text-slate-600">
-              <span>Gross profit</span>
-              <span className="font-medium text-slate-900">{formatCurrency(active.profit)}</span>
-            </p>
+            {secondary && second ? (
+              <p className="flex justify-between text-slate-600">
+                <span>{second.label}</span>
+                <span className="font-medium text-slate-900">{formatCurrency(active[secondary])}</span>
+              </p>
+            ) : null}
             <p className="flex justify-between text-slate-600">
               <span>Orders</span>
               <span className="font-medium text-slate-900">{active.orders}</span>

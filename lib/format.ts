@@ -23,7 +23,7 @@ export function formatCompactPeso(value: number): string {
 export const roundMoney = (value: number): number => Math.round(value * 100) / 100;
 
 function utcDate(iso: string): Date {
-  const [year, month, day] = iso.split('-').map(Number);
+  const [year, month, day] = iso.slice(0, 10).split('-').map(Number);
   return new Date(Date.UTC(year, month - 1, day));
 }
 
@@ -46,9 +46,28 @@ export function formatShortDate(iso: string): string {
   });
 }
 
+/** "9:05 AM" from a YYYY-MM-DDTHH:mm string. */
+export function formatTime(dateTime: string): string {
+  const [hours, minutes] = dateTime.slice(11, 16).split(':').map(Number);
+  const suffix = hours >= 12 ? 'PM' : 'AM';
+  const hour12 = ((hours + 11) % 12) + 1;
+  return `${hour12}:${String(minutes).padStart(2, '0')} ${suffix}`;
+}
+
+/** "Oct 29, 9:05 AM" */
+export const formatDateTime = (dateTime: string): string =>
+  `${formatShortDate(dateTime)}, ${formatTime(dateTime)}`;
+
 /** Today's date in the user's local timezone, as YYYY-MM-DD. */
 export function todayISO(): string {
   const now = new Date();
   const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
   return local.toISOString().slice(0, 10);
+}
+
+/** Current local date and time, as YYYY-MM-DDTHH:mm. */
+export function nowISO(): string {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
 }

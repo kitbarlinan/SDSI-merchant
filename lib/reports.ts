@@ -1,43 +1,56 @@
 import { roundMoney } from './format';
 import { eachDay, inRange, type Range } from './period';
-import type { Category, Sale } from './types';
+import type { Category, SaleLine } from './types';
 
 export interface Summary {
+  /** Merchant sales (cash collected on delivered orders). Not SDSI revenue. */
   revenue: number;
   cogs: number;
+  /** Revenue minus the merchant's own cost of goods. */
   profit: number;
   /** Profit as a percentage of revenue. */
   margin: number;
-  transactions: number;
+  orders: number;
   units: number;
   avgOrder: number;
+  /** SDSI's fulfillment top-up. This is SDSI's own revenue. */
+  topUp: number;
+  /** What SDSI owes the merchant: sales minus top-up. */
+  netPayable: number;
 }
 
-export function summarize(sales: Sale[]): Summary {
+export function summarize(lines: SaleLine[]): Summary {
   let revenue = 0;
   let cogs = 0;
   let units = 0;
-  for (const sale of sales) {
-    revenue += sale.total;
-    cogs += sale.quantity * sale.unitCost;
-    units += sale.quantity;
+  let topUp = 0;
+  const orderIds = new Set<string>();
+  for (const line of lines) {
+    revenue += line.total;
+    cogs += line.quantity * line.unitCost;
+    units += line.quantity;
+    topUp += line.topUp;
+    orderIds.add(line.orderId);
   }
   revenue = roundMoney(revenue);
   cogs = roundMoney(cogs);
+  topUp = roundMoney(topUp);
   const profit = roundMoney(revenue - cogs);
   return {
     revenue,
     cogs,
     profit,
     margin: revenue > 0 ? (profit / revenue) * 100 : 0,
-    transactions: sales.length,
+    orders: orderIds.size,
     units,
-    avgOrder: sales.length > 0 ? roundMoney(revenue / sales.length) : 0,
+    avgOrder: orderIds.size > 0 ? roundMoney(revenue / orderIds.size) : 0,
+    topUp,
+    netPayable: roundMoney(revenue - topUp),
   };
 }
 
-export const filterByRange = (sales: Sale[], range: Range): Sale[] =>
-  sales.filter((sale) => inRange(sale.date, range));
+export const filterByRange = (lines: SaleLine[], range: Range): SaleLine[] =>
+  lines.filter((line) => inRange(line.date, range));
 
 /** Percent change from previous to current. null when there is nothing to compare against. */
 export function pctChange(current: number, previous: number): number | null {
@@ -53,19 +66,29 @@ export interface TrendPoint {
   revenue: number;
   cogs: number;
   profit: number;
+  topUp: number;
   orders: number;
 }
 
 /** Daily totals between start and end; switches to weekly buckets for very long ranges. */
-export function buildTrend(sales: Sale[], start: string, end: string): TrendPoint[] {
-  const byDay = new Map<string, { revenue: number; cogs: number; orders: number }>();
-  for (const sale of sales) {
-    if (sale.date < start || sale.date > end) continue;
-    const entry = byDay.get(sale.date) ?? { revenue: 0, cogs: 0, orders: 0 };
-    entry.revenue += sale.total;
-    entry.cogs += sale.quantity * sale.unitCost;
-    entry.orders += 1;
-    byDay.set(sale.date, entry);
+export function buildTrend(lines: SaleLine[], start: string, end: string): TrendPoint[] {
+  const byDay = new Map<
+    string,
+    { revenue: number; cogs: number; topUp: number; orderIds: Set<string> }
+  >();
+  for (const line of lines) {
+    if (line.date < start || line.date > end) continue;
+    const entry = byDay.get(line.date) ?? {
+      revenue: 0,
+      cogs: 0,
+      topUp: 0,
+      orderIds: new Set<string>(),
+    };
+    entry.revenue += line.total;
+    entry.cogs += line.quantity * line.unitCost;
+    entry.topUp += line.topUp;
+    entry.orderIds.add(line.orderId);
+    byDay.set(line.date, entry);
   }
 
   const days = eachDay(start, end);
@@ -75,13 +98,15 @@ export function buildTrend(sales: Sale[], start: string, end: string): TrendPoin
     const slice = days.slice(index, index + bucket);
     let revenue = 0;
     let cogs = 0;
+    let topUp = 0;
     let orders = 0;
     for (const day of slice) {
       const entry = byDay.get(day);
       if (entry) {
         revenue += entry.revenue;
         cogs += entry.cogs;
-        orders += entry.orders;
+        topUp += entry.topUp;
+        orders += entry.orderIds.size;
       }
     }
     points.push({
@@ -90,6 +115,7 @@ export function buildTrend(sales: Sale[], start: string, end: string): TrendPoin
       revenue: roundMoney(revenue),
       cogs: roundMoney(cogs),
       profit: roundMoney(revenue - cogs),
+      topUp: roundMoney(topUp),
       orders,
     });
   }
@@ -103,27 +129,43 @@ export interface GroupRow {
   revenue: number;
   cogs: number;
   profit: number;
+  topUp: number;
   /** Share of total revenue, 0-100. */
   share: number;
 }
 
-/** Groups sales by any key (category, channel, payment method, customer...). Sorted by revenue. */
-export function groupSales(sales: Sale[], keyOf: (sale: Sale) => string): GroupRow[] {
-  const map = new Map<string, GroupRow>();
+/** Groups sale lines by any key (merchant, category, payment method, terms...). Sorted by revenue. */
+export function groupSales(lines: SaleLine[], keyOf: (line: SaleLine) => string): GroupRow[] {
+  const map = new Map<string, GroupRow & { orderIds: Set<string> }>();
   let total = 0;
-  for (const sale of sales) {
-    total += sale.total;
-    const key = keyOf(sale);
-    const row = map.get(key) ?? { key, orders: 0, units: 0, revenue: 0, cogs: 0, profit: 0, share: 0 };
-    row.orders += 1;
-    row.units += sale.quantity;
-    row.revenue = roundMoney(row.revenue + sale.total);
-    row.cogs = roundMoney(row.cogs + sale.quantity * sale.unitCost);
+  for (const line of lines) {
+    total += line.total;
+    const key = keyOf(line);
+    const row = map.get(key) ?? {
+      key,
+      orders: 0,
+      units: 0,
+      revenue: 0,
+      cogs: 0,
+      profit: 0,
+      topUp: 0,
+      share: 0,
+      orderIds: new Set<string>(),
+    };
+    row.orderIds.add(line.orderId);
+    row.units += line.quantity;
+    row.revenue = roundMoney(row.revenue + line.total);
+    row.cogs = roundMoney(row.cogs + line.quantity * line.unitCost);
     row.profit = roundMoney(row.revenue - row.cogs);
+    row.topUp = roundMoney(row.topUp + line.topUp);
     map.set(key, row);
   }
   return [...map.values()]
-    .map((row) => ({ ...row, share: total > 0 ? (row.revenue / total) * 100 : 0 }))
+    .map(({ orderIds, ...row }) => ({
+      ...row,
+      orders: orderIds.size,
+      share: total > 0 ? (row.revenue / total) * 100 : 0,
+    }))
     .sort((a, b) => b.revenue - a.revenue);
 }
 
@@ -134,22 +176,16 @@ export interface ItemBreakdownRow extends GroupRow {
   category: Category;
 }
 
-export function breakdownByItem(sales: Sale[]): ItemBreakdownRow[] {
+export function breakdownByItem(lines: SaleLine[]): ItemBreakdownRow[] {
   const meta = new Map<string, { name: string; sku: string; category: Category }>();
-  for (const sale of sales) {
-    if (!meta.has(sale.itemId)) {
-      meta.set(sale.itemId, { name: sale.itemName, sku: sale.sku, category: sale.category });
+  for (const line of lines) {
+    if (!meta.has(line.itemId)) {
+      meta.set(line.itemId, { name: line.itemName, sku: line.sku, category: line.category });
     }
   }
-  return groupSales(sales, (sale) => sale.itemId).map((row) => {
-    const info = meta.get(row.key)!;
-    return { ...row, itemId: row.key, ...info };
-  });
-}
-
-/** Newest first, ties broken by sale id. */
-export function sortLedger(sales: Sale[]): Sale[] {
-  return [...sales].sort((a, b) =>
-    a.date === b.date ? b.id.localeCompare(a.id) : b.date.localeCompare(a.date),
-  );
+  return groupSales(lines, (line) => line.itemId).map((row) => ({
+    ...row,
+    itemId: row.key,
+    ...meta.get(row.key)!,
+  }));
 }

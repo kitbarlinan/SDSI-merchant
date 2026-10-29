@@ -3,70 +3,182 @@
 import { useMemo, useState } from 'react';
 import { ExpiryBadge } from '@/components/inventory/ExpiryBadge';
 import { StockBadge } from '@/components/inventory/StockBadge';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { Card } from '@/components/ui/Card';
 import { Icon } from '@/components/ui/Icon';
 import { StatCard } from '@/components/ui/StatCard';
-import { SUPPLIER_LEAD_TIME_DAYS } from '@/lib/brand';
+import { useAuth } from '@/lib/auth';
+import { COVER_WARNING_DAYS } from '@/lib/brand';
 import { formatCurrency, formatDate, formatNumber } from '@/lib/format';
 import { coverDays, getExpiry, getStockStatus, recentUnitsByItem } from '@/lib/inventory';
-import { useMerchant } from '@/lib/store';
+import { availableOf, flattenDelivered, reservedByItem } from '@/lib/orders';
+import { useAppData } from '@/lib/store';
 import { CATEGORY_COLORS } from '@/lib/theme';
-import { CATEGORIES, type Category } from '@/lib/types';
+import { CATEGORIES, type Category, type InventoryItem } from '@/lib/types';
 import { useToday } from '@/lib/use-today';
 
-const RESTOCK_QTY = 10;
+function ReceiveCell({ item }: { item: InventoryItem }) {
+  const { user } = useAuth();
+  const { receiveStock } = useAppData();
+  const [open, setOpen] = useState(false);
+  const [qty, setQty] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  if (!user) return null;
+
+  function submit() {
+    const result = receiveStock(user!, item.id, Number(qty));
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setOpen(false);
+    setQty('');
+    setError(null);
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="whitespace-nowrap rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+      >
+        Receive stock
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <div className="flex items-center gap-1.5">
+        <input
+          type="number"
+          min={1}
+          step={1}
+          inputMode="numeric"
+          autoFocus
+          value={qty}
+          onChange={(event) => setQty(event.target.value)}
+          onKeyDown={(event) => event.key === 'Enter' && submit()}
+          aria-label={`Units received for ${item.name}`}
+          placeholder="Qty"
+          className="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+        />
+        <button
+          type="button"
+          onClick={submit}
+          className="rounded-lg bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500"
+        >
+          Add
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setOpen(false);
+            setError(null);
+          }}
+          aria-label="Cancel"
+          className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"
+        >
+          <Icon name="x" className="h-4 w-4" />
+        </button>
+      </div>
+      {error ? <p className="text-xs text-rose-600">{error}</p> : null}
+    </div>
+  );
+}
 
 export function InventoryView() {
-  const { items, sales, restock } = useMerchant();
+  const { user } = useAuth();
+  const { items, orders, merchants } = useAppData();
   const today = useToday();
+
+  const isMerchant = user?.role === 'merchant';
+  const isStaff = !isMerchant;
+  const showCost = user?.role !== 'cashier';
+
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<Category | 'all'>('all');
+  const [merchantId, setMerchantId] = useState('all');
   const [alertsOnly, setAlertsOnly] = useState(false);
 
+  const scopedItems = useMemo(() => {
+    if (!user) return [];
+    if (user.role === 'merchant') return items.filter((item) => item.merchantId === user.merchantId);
+    return merchantId === 'all' ? items : items.filter((item) => item.merchantId === merchantId);
+  }, [items, user, merchantId]);
+
+  const reserved = useMemo(() => reservedByItem(orders), [orders]);
   const recentUnits = useMemo(
-    () => (today ? recentUnitsByItem(sales, today) : new Map<string, number>()),
-    [sales, today],
+    () => (today ? recentUnitsByItem(flattenDelivered(orders), today) : new Map<string, number>()),
+    [orders, today],
   );
 
   const stats = useMemo(() => {
     let costValue = 0;
     let retailValue = 0;
+    let units = 0;
     let stockAlerts = 0;
     let expiring = 0;
-    for (const item of items) {
+    for (const item of scopedItems) {
       costValue += item.stock * item.unitCost;
       retailValue += item.stock * item.unitPrice;
+      units += item.stock;
       if (getStockStatus(item) !== 'ok') stockAlerts += 1;
       if (today && getExpiry(item, today).status !== 'ok') expiring += 1;
     }
-    return { costValue, retailValue, stockAlerts, expiring };
-  }, [items, today]);
+    return { costValue, retailValue, units, stockAlerts, expiring };
+  }, [scopedItems, today]);
 
   const rows = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return items.filter((item) => {
+    return scopedItems.filter((item) => {
       if (category !== 'all' && item.category !== category) return false;
       if (alertsOnly && getStockStatus(item) === 'ok') return false;
       if (!needle) return true;
       return item.name.toLowerCase().includes(needle) || item.sku.toLowerCase().includes(needle);
     });
-  }, [items, query, category, alertsOnly]);
+  }, [scopedItems, query, category, alertsOnly]);
+
+  if (!user) return null;
+
+  const colCount = 8 + (isStaff ? 2 : 0) + (showCost ? 1 : 0);
 
   return (
     <div className="space-y-6">
+      <PageHeader
+        title="Inventory"
+        description={
+          isMerchant
+            ? 'Your running stock. On hand drops when the cashier marks an order delivered.'
+            : 'Running stock per merchant. Receive new stock here when merchants drop it off.'
+        }
+      />
+
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          variant="primary"
-          icon="inventory"
-          label="Stock value (at cost)"
-          value={formatCurrency(stats.costValue)}
-          hint={`${formatCurrency(stats.retailValue)} at selling price`}
-        />
+        {showCost ? (
+          <StatCard
+            variant="primary"
+            icon="inventory"
+            label="Stock value (at cost)"
+            value={formatCurrency(stats.costValue)}
+            hint={`${formatCurrency(stats.retailValue)} at selling price`}
+          />
+        ) : (
+          <StatCard
+            variant="primary"
+            icon="inventory"
+            label="Units on hand"
+            value={formatNumber(stats.units)}
+            hint={`${formatCurrency(stats.retailValue)} at selling price`}
+          />
+        )}
         <StatCard
           icon="leaf"
           label="Products"
-          value={formatNumber(items.length)}
-          hint={`${formatNumber(items.reduce((sum, item) => sum + item.stock, 0))} units on hand`}
+          value={formatNumber(scopedItems.length)}
+          hint={`${formatNumber(stats.units)} units on hand`}
         />
         <StatCard
           icon="alert"
@@ -84,10 +196,27 @@ export function InventoryView() {
 
       <Card
         flush
-        title="Stock levels"
-        subtitle={`Days of cover = how long stock lasts at the last 30 days' sales pace. Supplier lead time is about ${SUPPLIER_LEAD_TIME_DAYS} days.`}
+        title="Running inventory"
+        subtitle={`On hand = physically in the warehouse. Reserved = promised to open orders. Available = what can still be ordered. Days of cover = how long it lasts at the last 30 days' pace (alert under ${COVER_WARNING_DAYS}).`}
         action={
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            {isStaff ? (
+              <label>
+                <span className="sr-only">Filter by merchant</span>
+                <select
+                  value={merchantId}
+                  onChange={(event) => setMerchantId(event.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                >
+                  <option value="all">All merchants</option>
+                  {merchants.map((merchant) => (
+                    <option key={merchant.id} value={merchant.id}>
+                      {merchant.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             <label className="relative block">
               <span className="sr-only">Search inventory</span>
               <Icon
@@ -99,7 +228,7 @@ export function InventoryView() {
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search product or SKU"
-                className="w-full rounded-xl border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200 sm:w-56"
+                className="w-full rounded-xl border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200 sm:w-52"
               />
             </label>
             <label>
@@ -134,51 +263,50 @@ export function InventoryView() {
             <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-5 py-3">Product</th>
-                <th className="px-4 py-3 text-right">Stock</th>
-                <th className="px-4 py-3 text-right">Unit cost</th>
+                <th className="px-4 py-3 text-right">On hand</th>
+                <th className="px-4 py-3 text-right">Reserved</th>
+                <th className="px-4 py-3 text-right">Available</th>
+                {showCost ? <th className="px-4 py-3 text-right">Unit cost</th> : null}
                 <th className="px-4 py-3 text-right">Unit price</th>
-                <th className="px-4 py-3 text-right">Margin</th>
                 <th className="px-4 py-3">Expiry</th>
-                <th className="px-4 py-3 text-right" title="Days the current stock lasts at the recent sales pace">
-                  Days of cover
-                </th>
+                <th className="px-4 py-3 text-right">Days of cover</th>
                 <th className="px-4 py-3">Status</th>
-                <th className="px-5 py-3 text-right">
-                  <span className="sr-only">Actions</span>
-                </th>
+                {isStaff ? (
+                  <th className="px-5 py-3 text-right">
+                    <span className="sr-only">Actions</span>
+                  </th>
+                ) : null}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-5 py-10 text-center text-slate-500">
+                  <td colSpan={colCount} className="px-5 py-10 text-center text-slate-500">
                     No products match your filters.
                   </td>
                 </tr>
               ) : (
                 rows.map((item) => {
                   const status = getStockStatus(item);
-                  const margin =
-                    item.unitPrice > 0 ? ((item.unitPrice - item.unitCost) / item.unitPrice) * 100 : 0;
-                  const fill = Math.min(100, (item.stock / (item.reorderLevel * 3)) * 100);
-                  const barColor =
-                    status === 'ok' ? 'bg-emerald-500' : status === 'low' ? 'bg-amber-500' : 'bg-rose-500';
+                  const held = reserved.get(item.id) ?? 0;
+                  const available = availableOf(item, reserved);
                   const expiry = today ? getExpiry(item, today) : null;
                   const cover = today ? coverDays(item.stock, recentUnits.get(item.id) ?? 0) : null;
                   const coverTone =
                     cover === null
                       ? 'text-slate-400'
-                      : cover < 45
+                      : cover < 14
                         ? 'font-semibold text-rose-600'
-                        : cover < SUPPLIER_LEAD_TIME_DAYS
+                        : cover < COVER_WARNING_DAYS
                           ? 'font-semibold text-amber-700'
                           : 'text-slate-700';
+                  const merchant = merchants.find((m) => m.id === item.merchantId);
 
                   return (
                     <tr key={item.id} className={status === 'ok' ? '' : 'bg-amber-50/40'}>
                       <td className="px-5 py-4">
                         <p className="font-medium text-slate-900">{item.name}</p>
-                        <p className="mt-0.5 flex items-center gap-2 text-xs text-slate-500">
+                        <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
                           <span className="font-mono">{item.sku}</span>
                           <span className="inline-flex items-center gap-1">
                             <span
@@ -187,26 +315,25 @@ export function InventoryView() {
                             />
                             {item.category}
                           </span>
+                          {isStaff && merchant ? (
+                            <span className="inline-flex items-center gap-1">
+                              <span className="h-2 w-2 rounded-full" style={{ background: merchant.color }} />
+                              {merchant.name}
+                            </span>
+                          ) : null}
                         </p>
                       </td>
-                      <td className="px-4 py-4">
-                        <div className="flex flex-col items-end gap-1.5">
-                          <span className="font-semibold">{formatNumber(item.stock)}</span>
-                          <span
-                            className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-100"
-                            role="img"
-                            aria-label={`Stock level ${Math.round(fill)}%`}
-                          >
-                            <span
-                              className={`block h-full rounded-full ${barColor}`}
-                              style={{ width: `${fill}%` }}
-                            />
-                          </span>
-                        </div>
+                      <td className="px-4 py-4 text-right font-semibold">{formatNumber(item.stock)}</td>
+                      <td className="px-4 py-4 text-right text-slate-600">
+                        {held > 0 ? formatNumber(held) : '—'}
                       </td>
-                      <td className="px-4 py-4 text-right">{formatCurrency(item.unitCost)}</td>
+                      <td className="px-4 py-4 text-right font-semibold text-emerald-700">
+                        {formatNumber(available)}
+                      </td>
+                      {showCost ? (
+                        <td className="px-4 py-4 text-right">{formatCurrency(item.unitCost)}</td>
+                      ) : null}
                       <td className="px-4 py-4 text-right">{formatCurrency(item.unitPrice)}</td>
-                      <td className="px-4 py-4 text-right text-slate-600">{margin.toFixed(1)}%</td>
                       <td className="px-4 py-4">
                         <p className="whitespace-nowrap text-slate-700">{formatDate(item.expiryDate)}</p>
                         {expiry ? (
@@ -221,15 +348,11 @@ export function InventoryView() {
                       <td className="px-4 py-4">
                         <StockBadge status={status} />
                       </td>
-                      <td className="px-5 py-4 text-right">
-                        <button
-                          type="button"
-                          onClick={() => restock(item.id, RESTOCK_QTY)}
-                          className="whitespace-nowrap rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
-                        >
-                          Restock +{RESTOCK_QTY}
-                        </button>
-                      </td>
+                      {isStaff ? (
+                        <td className="px-5 py-4 text-right">
+                          <ReceiveCell item={item} />
+                        </td>
+                      ) : null}
                     </tr>
                   );
                 })
@@ -238,8 +361,8 @@ export function InventoryView() {
           </table>
         </div>
         <p className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
-          Low Stock means quantity is at or below the product&apos;s reorder level. Days of cover in red
-          is under 45 days, amber is under the {SUPPLIER_LEAD_TIME_DAYS}-day supplier lead time.
+          Low Stock means on hand is at or below the product&apos;s reorder level. Days of cover in red
+          is under 14 days, amber is under {COVER_WARNING_DAYS}.
         </p>
       </Card>
     </div>

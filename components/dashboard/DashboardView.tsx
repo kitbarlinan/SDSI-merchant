@@ -2,248 +2,441 @@
 
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
-import { BarList } from '@/components/charts/BarList';
-import { DonutChart } from '@/components/charts/DonutChart';
-import { TrendChart } from '@/components/charts/TrendChart';
 import { AlertsPanel } from '@/components/dashboard/AlertsPanel';
+import { BarList } from '@/components/charts/BarList';
+import { TrendChart } from '@/components/charts/TrendChart';
+import { StockBadge } from '@/components/inventory/StockBadge';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { OrderStatusBadge, TermsBadge } from '@/components/orders/OrderBadges';
 import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import { PeriodTabs } from '@/components/ui/PeriodTabs';
 import { StatCard } from '@/components/ui/StatCard';
+import { useAuth } from '@/lib/auth';
+import { formatCurrency, formatDateTime, formatNumber, formatPercent } from '@/lib/format';
+import { getStockStatus } from '@/lib/inventory';
+import { MOCK_TODAY } from '@/lib/mock-data';
 import {
-  formatCompactPeso,
-  formatCurrency,
-  formatNumber,
-  formatPercent,
-  formatShortDate,
-} from '@/lib/format';
-import { currentRange, diffDays, previousRange, type PeriodKey } from '@/lib/period';
-import {
-  breakdownByItem,
-  buildTrend,
-  filterByRange,
-  groupSales,
-  pctChange,
-  sortLedger,
-  summarize,
-} from '@/lib/reports';
-import { useMerchant } from '@/lib/store';
-import { CATEGORY_COLORS, CHANNEL_COLORS, PAYMENT_COLORS } from '@/lib/theme';
+  availableOf,
+  flattenDelivered,
+  isOpen,
+  orderTotal,
+  reservedByItem,
+  sortNewestFirst,
+} from '@/lib/orders';
+import { currentRange, previousRange, type PeriodKey } from '@/lib/period';
+import { buildTrend, filterByRange, groupSales, pctChange, summarize } from '@/lib/reports';
+import { useAppData } from '@/lib/store';
 import { useToday } from '@/lib/use-today';
-import type { Category, PaymentMethod, SalesChannel } from '@/lib/types';
+import type { InventoryItem, Merchant, Order, SaleLine } from '@/lib/types';
 
-function DashboardSkeleton() {
+function RecentOrders({
+  orders,
+  merchants,
+  showMerchant,
+}: {
+  orders: Order[];
+  merchants: Merchant[];
+  showMerchant: boolean;
+}) {
+  const recent = useMemo(() => sortNewestFirst(orders).slice(0, 6), [orders]);
   return (
-    <div className="animate-pulse space-y-6" aria-busy="true">
-      <div className="h-12 w-72 rounded-xl bg-slate-200" />
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {[0, 1, 2, 3].map((index) => (
-          <div key={index} className="h-32 rounded-2xl bg-slate-200" />
-        ))}
+    <Card
+      flush
+      title="Recent orders"
+      action={
+        <Link href="/orders" className="text-xs font-medium text-emerald-700 hover:underline">
+          View all
+        </Link>
+      }
+    >
+      {recent.length === 0 ? (
+        <p className="px-5 pb-6 text-sm text-slate-500">No orders yet.</p>
+      ) : (
+        <ul className="divide-y divide-slate-100">
+          {recent.map((order) => {
+            const merchant = merchants.find((m) => m.id === order.merchantId);
+            return (
+              <li key={order.id} className="flex items-center justify-between gap-3 px-5 py-3 text-sm">
+                <div className="min-w-0">
+                  <p className="truncate font-medium text-slate-900">
+                    <span className="font-mono">{order.id}</span>
+                    <span className="font-normal text-slate-500">
+                      {' '}
+                      · {order.customerName ?? 'Walk-in'}
+                    </span>
+                  </p>
+                  <p className="truncate text-xs text-slate-500">
+                    {showMerchant && merchant ? `${merchant.name} · ` : ''}
+                    {formatDateTime(order.createdAt)}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <TermsBadge terms={order.terms} />
+                  <OrderStatusBadge status={order.status} />
+                  <span className="w-20 text-right font-semibold text-slate-900">
+                    {formatCurrency(orderTotal(order))}
+                  </span>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+/** Per-merchant running inventory: on hand, reserved, available and value. */
+function InventoryByMerchant({
+  merchants,
+  items,
+  reserved,
+}: {
+  merchants: Merchant[];
+  items: InventoryItem[];
+  reserved: Map<string, number>;
+}) {
+  return (
+    <Card
+      flush
+      title="Running inventory by merchant"
+      subtitle="Live stock held in the SDSI warehouse"
+      action={
+        <Link href="/inventory" className="text-xs font-medium text-emerald-700 hover:underline">
+          Open inventory
+        </Link>
+      }
+    >
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-sm">
+          <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="px-5 py-3">Merchant</th>
+              <th className="px-4 py-3 text-right">Products</th>
+              <th className="px-4 py-3 text-right">On hand</th>
+              <th className="px-4 py-3 text-right">Reserved</th>
+              <th className="px-4 py-3 text-right">Available</th>
+              <th className="px-4 py-3 text-right">Value (cost)</th>
+              <th className="px-5 py-3 text-right">Alerts</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {merchants.map((merchant) => {
+              const own = items.filter((item) => item.merchantId === merchant.id);
+              const onHand = own.reduce((sum, item) => sum + item.stock, 0);
+              const held = own.reduce((sum, item) => sum + (reserved.get(item.id) ?? 0), 0);
+              const available = own.reduce((sum, item) => sum + availableOf(item, reserved), 0);
+              const value = own.reduce((sum, item) => sum + item.stock * item.unitCost, 0);
+              const alerts = own.filter((item) => getStockStatus(item) !== 'ok').length;
+              return (
+                <tr key={merchant.id}>
+                  <td className="px-5 py-3.5 font-medium text-slate-900">
+                    <span className="flex items-center gap-2">
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ background: merchant.color }} />
+                      {merchant.name}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3.5 text-right">{own.length}</td>
+                  <td className="px-4 py-3.5 text-right font-semibold">{formatNumber(onHand)}</td>
+                  <td className="px-4 py-3.5 text-right text-slate-600">{formatNumber(held)}</td>
+                  <td className="px-4 py-3.5 text-right font-semibold text-emerald-700">
+                    {formatNumber(available)}
+                  </td>
+                  <td className="px-4 py-3.5 text-right">{formatCurrency(value)}</td>
+                  <td className="px-5 py-3.5 text-right">
+                    {alerts > 0 ? <Badge tone="amber">{alerts}</Badge> : <Badge tone="green">OK</Badge>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
-      <div className="h-80 rounded-2xl bg-slate-200" />
-    </div>
+    </Card>
+  );
+}
+
+function AdminDashboard({
+  period,
+  asOf,
+}: {
+  period: PeriodKey;
+  asOf: string;
+}) {
+  const { merchants, items, orders } = useAppData();
+  const sales = useMemo(() => flattenDelivered(orders), [orders]);
+  const reserved = useMemo(() => reservedByItem(orders), [orders]);
+
+  const range = currentRange(period, asOf);
+  const prevRange = previousRange(period, asOf);
+  const current = useMemo(() => filterByRange(sales, range), [sales, range.start, range.end]); // eslint-disable-line react-hooks/exhaustive-deps
+  const summary = summarize(current);
+  const prev = prevRange ? summarize(filterByRange(sales, prevRange)) : null;
+  const trend = useMemo(
+    () => buildTrend(current, range.start ?? current.reduce((m, l) => (l.date < m ? l.date : m), asOf), range.end),
+    [current, range.start, range.end, asOf],
+  );
+
+  const byMerchant = useMemo(() => groupSales(current, (line) => line.merchantId), [current]);
+  const openOrders = orders.filter(isOpen);
+  const stockAlerts = items.filter((item) => getStockStatus(item) !== 'ok').length;
+
+  return (
+    <>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          variant="primary"
+          icon="wallet"
+          label="Total merchant sales"
+          value={formatCurrency(summary.revenue)}
+          hint="Cash collected on delivered orders"
+          delta={prev ? pctChange(summary.revenue, prev.revenue) : undefined}
+        />
+        <StatCard
+          icon="truck"
+          label="Orders delivered"
+          value={formatNumber(summary.orders)}
+          hint={`${formatNumber(summary.units)} units`}
+          delta={prev ? pctChange(summary.orders, prev.orders) : undefined}
+        />
+        <StatCard
+          icon="orders"
+          label="Open orders"
+          value={formatNumber(openOrders.length)}
+          hint={`${formatNumber(openOrders.filter((o) => o.status === 'pending').length)} still to pack`}
+        />
+        <StatCard
+          icon="alert"
+          label="Stock alerts"
+          value={formatNumber(stockAlerts)}
+          hint="Low or out-of-stock products"
+        />
+      </div>
+
+      <div>
+        <h2 className="mb-3 text-sm font-semibold text-slate-900">Total sales per merchant</h2>
+        <div className="grid gap-4 md:grid-cols-3">
+          {merchants.map((merchant) => {
+            const row = byMerchant.find((r) => r.key === merchant.id);
+            const own = items.filter((item) => item.merchantId === merchant.id);
+            const units = own.reduce((sum, item) => sum + item.stock, 0);
+            const open = openOrders.filter((o) => o.merchantId === merchant.id).length;
+            return (
+              <div
+                key={merchant.id}
+                className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm"
+                style={{ borderTop: `3px solid ${merchant.color}` }}
+              >
+                <p className="text-sm font-semibold text-slate-900">{merchant.name}</p>
+                <p className="mt-3 text-2xl font-semibold tracking-tight text-slate-900">
+                  {formatCurrency(row?.revenue ?? 0)}
+                </p>
+                <p className="text-xs text-slate-500">
+                  {formatNumber(row?.orders ?? 0)} delivered orders · {formatPercent(row?.share ?? 0)} of
+                  all sales
+                </p>
+                <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-100 pt-3 text-xs">
+                  <div>
+                    <dt className="text-slate-500">Stock on hand</dt>
+                    <dd className="mt-0.5 text-sm font-semibold text-slate-900">
+                      {formatNumber(units)} units
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-slate-500">Open orders</dt>
+                    <dd className="mt-0.5 text-sm font-semibold text-slate-900">{open}</dd>
+                  </div>
+                </dl>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-2" title="Sales trend" subtitle="All merchants combined">
+          <TrendChart data={trend} primary="revenue" />
+        </Card>
+        <Card title="Sales by merchant">
+          <BarList
+            items={merchants
+              .map((merchant) => {
+                const row = byMerchant.find((r) => r.key === merchant.id);
+                return {
+                  key: merchant.id,
+                  label: merchant.name,
+                  sublabel: `${formatNumber(row?.orders ?? 0)} orders`,
+                  value: row?.revenue ?? 0,
+                  display: formatCurrency(row?.revenue ?? 0),
+                  color: merchant.color,
+                };
+              })
+              .sort((a, b) => b.value - a.value)}
+          />
+        </Card>
+      </div>
+
+      <InventoryByMerchant merchants={merchants} items={items} reserved={reserved} />
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <AlertsPanel items={items} sales={sales} today={asOf} merchants={merchants} />
+        <RecentOrders orders={orders} merchants={merchants} showMerchant />
+      </div>
+    </>
+  );
+}
+
+function MerchantDashboard({ period, asOf, merchantId }: { period: PeriodKey; asOf: string; merchantId: string }) {
+  const { merchants, items: allItems, orders: allOrders } = useAppData();
+  const items = useMemo(() => allItems.filter((i) => i.merchantId === merchantId), [allItems, merchantId]);
+  const orders = useMemo(() => allOrders.filter((o) => o.merchantId === merchantId), [allOrders, merchantId]);
+  const sales: SaleLine[] = useMemo(() => flattenDelivered(orders), [orders]);
+  const reserved = useMemo(() => reservedByItem(orders), [orders]);
+
+  const range = currentRange(period, asOf);
+  const prevRange = previousRange(period, asOf);
+  const current = useMemo(() => filterByRange(sales, range), [sales, range.start, range.end]); // eslint-disable-line react-hooks/exhaustive-deps
+  const summary = summarize(current);
+  const prev = prevRange ? summarize(filterByRange(sales, prevRange)) : null;
+  const trend = useMemo(
+    () => buildTrend(current, range.start ?? current.reduce((m, l) => (l.date < m ? l.date : m), asOf), range.end),
+    [current, range.start, range.end, asOf],
+  );
+  const byItem = useMemo(() => groupSales(current, (line) => line.itemName).slice(0, 5), [current]);
+
+  const open = orders.filter(isOpen);
+  const stockAlerts = items.filter((item) => getStockStatus(item) !== 'ok').length;
+  const toCollect = open.reduce((sum, order) => sum + orderTotal(order), 0);
+
+  return (
+    <>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          variant="primary"
+          icon="wallet"
+          label="My total sales"
+          value={formatCurrency(summary.revenue)}
+          hint="Collected on delivered orders"
+          delta={prev ? pctChange(summary.revenue, prev.revenue) : undefined}
+        />
+        <StatCard
+          icon="truck"
+          label="Orders delivered"
+          value={formatNumber(summary.orders)}
+          hint={`${formatNumber(summary.units)} units`}
+          delta={prev ? pctChange(summary.orders, prev.orders) : undefined}
+        />
+        <StatCard
+          icon="orders"
+          label="Open orders"
+          value={formatNumber(open.length)}
+          hint={`${formatCurrency(toCollect)} still to be collected`}
+        />
+        <StatCard
+          icon="alert"
+          label="Stock alerts"
+          value={formatNumber(stockAlerts)}
+          hint="Low or out-of-stock products"
+        />
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-2" title="Sales trend" subtitle="Your delivered orders">
+          <TrendChart data={trend} primary="revenue" />
+        </Card>
+        <Card title="Top products">
+          <BarList
+            items={byItem.map((row) => ({
+              key: row.key,
+              label: row.key,
+              sublabel: `${formatNumber(row.units)} units`,
+              value: row.revenue,
+              display: formatCurrency(row.revenue),
+              color: merchants.find((m) => m.id === merchantId)?.color,
+            }))}
+          />
+        </Card>
+      </div>
+
+      <Card
+        flush
+        title="My running inventory"
+        subtitle="On hand drops when an order is delivered. Reserved is held for open orders."
+        action={
+          <Link href="/inventory" className="text-xs font-medium text-emerald-700 hover:underline">
+            Details
+          </Link>
+        }
+      >
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-5 py-3">Product</th>
+                <th className="px-4 py-3 text-right">On hand</th>
+                <th className="px-4 py-3 text-right">Reserved</th>
+                <th className="px-4 py-3 text-right">Available</th>
+                <th className="px-5 py-3">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {items.map((item) => (
+                <tr key={item.id}>
+                  <td className="px-5 py-3.5">
+                    <p className="font-medium text-slate-900">{item.name}</p>
+                    <p className="font-mono text-xs text-slate-500">{item.sku}</p>
+                  </td>
+                  <td className="px-4 py-3.5 text-right font-semibold">{formatNumber(item.stock)}</td>
+                  <td className="px-4 py-3.5 text-right text-slate-600">
+                    {formatNumber(reserved.get(item.id) ?? 0)}
+                  </td>
+                  <td className="px-4 py-3.5 text-right font-semibold text-emerald-700">
+                    {formatNumber(availableOf(item, reserved))}
+                  </td>
+                  <td className="px-5 py-3.5">
+                    <StockBadge status={getStockStatus(item)} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <AlertsPanel items={items} sales={sales} today={asOf} />
+        <RecentOrders orders={orders} merchants={merchants} showMerchant={false} />
+      </div>
+    </>
   );
 }
 
 export function DashboardView() {
-  const { sales, items } = useMerchant();
+  const { user } = useAuth();
   const today = useToday();
   const [period, setPeriod] = useState<PeriodKey>('30d');
+  const asOf = today || MOCK_TODAY;
 
-  const data = useMemo(() => {
-    if (!today) return null;
-
-    const range = currentRange(period, today);
-    const prevRange = previousRange(period, today);
-    const current = filterByRange(sales, range);
-    const previous = prevRange ? filterByRange(sales, prevRange) : null;
-
-    const firstSale = sales.reduce<string | null>(
-      (min, sale) => (min === null || sale.date < min ? sale.date : min),
-      null,
-    );
-    const start = range.start ?? firstSale ?? today;
-
-    return {
-      summary: summarize(current),
-      // No sales in the earlier window means there is nothing meaningful to compare against.
-      previous: previous && previous.length > 0 ? summarize(previous) : null,
-      trend: buildTrend(current, start, range.end),
-      byCategory: groupSales(current, (sale) => sale.category),
-      byChannel: groupSales(current, (sale) => sale.channel),
-      byPayment: groupSales(current, (sale) => sale.paymentMethod),
-      topProducts: breakdownByItem(current).slice(0, 6),
-      recent: sortLedger(current).slice(0, 6),
-      periodDays: range.start ? diffDays(range.start, range.end) + 1 : null,
-    };
-  }, [sales, today, period]);
-
-  if (!data) return <DashboardSkeleton />;
-
-  const { summary, previous } = data;
-  const compareHint = data.periodDays ? `vs previous ${data.periodDays} days` : 'all-time totals';
+  if (!user) return null;
+  const isAdmin = user.role === 'admin';
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Dashboard"
-        description="How the business is doing at a glance."
+        title={isAdmin ? 'Admin dashboard' : 'My dashboard'}
+        description={
+          isAdmin
+            ? 'Sales and running inventory for every merchant.'
+            : 'Your sales and running inventory at SDSI.'
+        }
         actions={<PeriodTabs value={period} onChange={setPeriod} />}
       />
-
-      {/* KPIs */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          variant="primary"
-          icon="reports"
-          label="Total revenue"
-          value={formatCurrency(summary.revenue)}
-          delta={previous ? pctChange(summary.revenue, previous.revenue) : undefined}
-          hint={previous ? compareHint : `${formatNumber(summary.units)} units sold`}
-        />
-        <StatCard
-          icon="inventory"
-          label="Estimated COGS"
-          value={formatCurrency(summary.cogs)}
-          delta={previous ? pctChange(summary.cogs, previous.cogs) : undefined}
-          invertDelta
-          hint={previous ? compareHint : 'Quantity × unit cost'}
-        />
-        <StatCard
-          icon="leaf"
-          label="Gross profit"
-          value={formatCurrency(summary.profit)}
-          delta={previous ? pctChange(summary.profit, previous.profit) : undefined}
-          hint={`${formatPercent(summary.margin)} margin`}
-        />
-        <StatCard
-          icon="sales"
-          label="Orders"
-          value={formatNumber(summary.transactions)}
-          delta={previous ? pctChange(summary.transactions, previous.transactions) : undefined}
-          hint={`Avg ${formatCurrency(summary.avgOrder)} per order`}
-        />
-      </div>
-
-      {/* Trend + categories */}
-      <div className="grid gap-6 lg:grid-cols-5">
-        <Card
-          className="lg:col-span-3"
-          title="Revenue & profit"
-          subtitle="Hover the chart for daily figures"
-        >
-          <TrendChart data={data.trend} />
-        </Card>
-        <Card className="lg:col-span-2" title="Sales by category" subtitle="Share of revenue">
-          <DonutChart
-            centerLabel="Revenue"
-            centerValue={formatCompactPeso(summary.revenue)}
-            slices={data.byCategory.map((row) => ({
-              label: row.key,
-              value: row.revenue,
-              color: CATEGORY_COLORS[row.key as Category] ?? '#94a3b8',
-            }))}
-          />
-        </Card>
-      </div>
-
-      {/* Products, channels, payments */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        <Card title="Top products" subtitle="By revenue">
-          <BarList
-            items={data.topProducts.map((row) => ({
-              key: row.itemId,
-              label: row.name,
-              sublabel: `${formatNumber(row.units)} units · profit ${formatCurrency(row.profit)}`,
-              value: row.revenue,
-              display: formatCurrency(row.revenue),
-              color: CATEGORY_COLORS[row.category],
-            }))}
-          />
-        </Card>
-        <Card title="Sales channels" subtitle="Where orders come from">
-          <BarList
-            items={data.byChannel.map((row) => ({
-              key: row.key,
-              label: row.key,
-              sublabel: `${formatNumber(row.orders)} orders · ${formatPercent(row.share)}`,
-              value: row.revenue,
-              display: formatCurrency(row.revenue),
-              color: CHANNEL_COLORS[row.key as SalesChannel],
-            }))}
-          />
-        </Card>
-        <Card title="Payment methods" subtitle="How customers pay">
-          <BarList
-            items={data.byPayment.map((row) => ({
-              key: row.key,
-              label: row.key,
-              sublabel: `${formatNumber(row.orders)} orders · ${formatPercent(row.share)}`,
-              value: row.revenue,
-              display: formatCurrency(row.revenue),
-              color: PAYMENT_COLORS[row.key as PaymentMethod],
-            }))}
-          />
-        </Card>
-      </div>
-
-      {/* Alerts + recent orders */}
-      <div className="grid gap-6 lg:grid-cols-5">
-        <div className="lg:col-span-2">
-          <AlertsPanel items={items} sales={sales} today={today} />
-        </div>
-        <Card
-          className="lg:col-span-3"
-          flush
-          title="Recent orders"
-          action={
-            <Link href="/reports" className="text-xs font-medium text-emerald-700 hover:underline">
-              Full ledger
-            </Link>
-          }
-        >
-          {data.recent.length === 0 ? (
-            <p className="px-5 py-10 text-center text-sm text-slate-500">No orders in this period.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead className="text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="px-5 py-2.5">Order</th>
-                    <th className="px-3 py-2.5">Product</th>
-                    <th className="hidden px-3 py-2.5 sm:table-cell">Channel</th>
-                    <th className="px-5 py-2.5 text-right">Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {data.recent.map((sale) => (
-                    <tr key={sale.id}>
-                      <td className="whitespace-nowrap px-5 py-3">
-                        <p className="font-mono text-xs text-slate-500">{sale.id}</p>
-                        <p className="text-xs text-slate-500">{formatShortDate(sale.date)}</p>
-                      </td>
-                      <td className="px-3 py-3">
-                        <p className="max-w-[16rem] truncate font-medium text-slate-900">
-                          {sale.quantity} × {sale.itemName}
-                        </p>
-                        <p className="text-xs text-slate-500">{sale.customerName}</p>
-                      </td>
-                      <td className="hidden px-3 py-3 sm:table-cell">
-                        <Badge tone="slate">{sale.channel}</Badge>
-                      </td>
-                      <td className="whitespace-nowrap px-5 py-3 text-right font-semibold">
-                        {formatCurrency(sale.total)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
-      </div>
+      {isAdmin ? (
+        <AdminDashboard period={period} asOf={asOf} />
+      ) : user.merchantId ? (
+        <MerchantDashboard period={period} asOf={asOf} merchantId={user.merchantId} />
+      ) : null}
     </div>
   );
 }
