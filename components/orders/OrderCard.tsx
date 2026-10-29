@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/Badge';
 import { inputClass } from '@/components/ui/Field';
 import { Icon } from '@/components/ui/Icon';
 import { useAuth } from '@/lib/auth';
-import { formatCurrency, formatDateTime, formatNumber } from '@/lib/format';
+import { formatCurrency, formatDateTime, formatHkd, formatNumber } from '@/lib/format';
 import { TERMS_LABEL, orderTotal } from '@/lib/orders';
 import { isStaff } from '@/lib/roles';
 import { useAppData, type ActionResult } from '@/lib/store';
@@ -149,6 +149,16 @@ export function OrderCard({
             </span>
             <span className="text-lg font-semibold text-slate-900">{formatCurrency(total)}</span>
           </div>
+          {isCod ? (
+            <div className="flex items-baseline justify-between text-xs">
+              <span className="text-slate-500">CF (collection fee, HKD)</span>
+              {order.collectionFeeHkd != null ? (
+                <span className="font-semibold text-slate-800">{formatHkd(order.collectionFeeHkd)}</span>
+              ) : (
+                <span className="text-amber-700">CF not set</span>
+              )}
+            </div>
+          ) : null}
 
           {order.status === 'delivered' && order.deliveredAt ? (
             <p className="text-xs text-emerald-700">

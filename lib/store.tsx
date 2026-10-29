@@ -15,6 +15,7 @@ import * as engine from './engine';
 import type { Actor, AppState, PlaceOrderInput } from './engine';
 import { nowISO } from './format';
 import {
+  MOCK_COSTING,
   MOCK_INVENTORY,
   MOCK_MERCHANTS,
   MOCK_ORDERS,
@@ -22,6 +23,7 @@ import {
   MOCK_RECEIPTS,
   MOCK_USERS,
 } from './mock-data';
+import type { CostingRow, CostingSettings, CostingState } from './costing';
 import type {
   InventoryItem,
   Merchant,
@@ -39,6 +41,8 @@ interface AppDataValue {
   items: InventoryItem[];
   orders: Order[];
   receipts: StockReceipt[];
+  /** Costing table, settings and change log. Show it only to the admin. */
+  costing: CostingState;
   /** Current SDSI top-up percent (placeholder until the real rate is agreed). */
   topUpPercent: number;
   hydrated: boolean;
@@ -72,16 +76,28 @@ interface AppDataValue {
   approveReceipt: (actor: Actor, receiptId: string) => ActionResult<StockReceipt>;
   rejectReceipt: (actor: Actor, receiptId: string, reason: string) => ActionResult<StockReceipt>;
   setTopUpPercent: (actor: Actor, percent: number) => ActionResult<number>;
+  setPickupPrices: (
+    actor: Actor,
+    changes: { rowId: string; pickupPriceHkd: number }[],
+  ) => ActionResult<number>;
+  setCostingSettings: (actor: Actor, patch: Partial<CostingSettings>) => ActionResult<CostingSettings>;
+  addCostingRow: (actor: Actor, input: { itemId: string; qty: number }) => ActionResult<CostingRow>;
+  removeCostingRow: (actor: Actor, rowId: string) => ActionResult<CostingRow>;
   resetDemo: () => void;
 }
 
 // Bumped whenever the saved data shape changes.
-const STORAGE_KEY = 'sdsi-wellness:v4';
+const STORAGE_KEY = 'sdsi-wellness:v5';
 
 const createInitialState = (): AppState => ({
   items: MOCK_INVENTORY.map((item) => ({ ...item })),
   orders: MOCK_ORDERS.map((order) => ({ ...order, lines: order.lines.map((line) => ({ ...line })) })),
   receipts: MOCK_RECEIPTS.map((receipt) => ({ ...receipt, lines: receipt.lines.map((line) => ({ ...line })) })),
+  costing: {
+    settings: { ...MOCK_COSTING.settings },
+    rows: MOCK_COSTING.rows.map((row) => ({ ...row })),
+    log: [],
+  },
   poSeq: MOCK_PO_SEQ,
   topUpPercent: DEFAULT_TOP_UP_PERCENT,
 });
@@ -93,6 +109,8 @@ const isSavedState = (value: unknown): value is AppState => {
     Array.isArray(candidate.items) &&
     Array.isArray(candidate.orders) &&
     Array.isArray(candidate.receipts) &&
+    !!candidate.costing &&
+    Array.isArray(candidate.costing.rows) &&
     typeof candidate.poSeq === 'number' &&
     typeof candidate.topUpPercent === 'number'
   );
@@ -152,6 +170,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       items: state.items,
       orders: state.orders,
       receipts: state.receipts,
+      costing: state.costing,
       topUpPercent: state.topUpPercent,
       hydrated,
       placeOrder: (actor, input) => run((s) => engine.placeMerchantOrder(s, actor, input, nowISO())),
@@ -174,6 +193,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       rejectReceipt: (actor, receiptId, reason) =>
         run((s) => engine.rejectReceipt(s, actor, receiptId, reason, nowISO())),
       setTopUpPercent: (actor, percent) => run((s) => engine.setTopUpPercent(s, actor, percent)),
+      setPickupPrices: (actor, changes) =>
+        run((s) => engine.setPickupPrices(s, actor, changes, nowISO())),
+      setCostingSettings: (actor, patch) =>
+        run((s) => engine.setCostingSettings(s, actor, patch, nowISO())),
+      addCostingRow: (actor, input) => run((s) => engine.addCostingRow(s, actor, input, nowISO())),
+      removeCostingRow: (actor, rowId) => run((s) => engine.removeCostingRow(s, actor, rowId, nowISO())),
       resetDemo: () => commit(createInitialState()),
     }),
     [state, hydrated, run, commit],

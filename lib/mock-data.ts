@@ -1,5 +1,6 @@
 import { DEFAULT_TOP_UP_PERCENT } from './brand';
 import { roundMoney } from './format';
+import { buildDemoCosting, DEFAULT_COSTING_SETTINGS, orderCollectionFee, type CostingState } from './costing';
 import { formatPoid } from './engine';
 import { addDays, weekdayOf } from './period';
 import type {
@@ -276,6 +277,16 @@ const two = (value: number): string => String(value).padStart(2, '0');
 const stamp = (date: string, hour: number, minute: number): string =>
   `${date}T${two(Math.min(hour, 21))}:${two(minute)}`;
 
+/**
+ * DEMO costing. The pickup prices are only the suggested prices from the formula, so the screen
+ * has something to show. The admin must set the real pickup prices.
+ */
+export const MOCK_COSTING: CostingState = {
+  settings: { ...DEFAULT_COSTING_SETTINGS },
+  rows: buildDemoCosting(MOCK_INVENTORY),
+  log: [],
+};
+
 function generateOrders(): Order[] {
   const rand = mulberry32(20261029);
   const orders: Order[] = [];
@@ -386,6 +397,13 @@ function generateOrders(): Order[] {
         if (status !== 'pending') {
           order.packedAt = stamp(date, hour + 1, minute);
           order.handledBy = CASHIER_ID;
+        }
+        if (terms === 'COD' && !walkIn) {
+          const cf = orderCollectionFee(
+            lines.map((line) => ({ itemId: line.itemId, quantity: line.quantity })),
+            MOCK_COSTING,
+          );
+          if (cf !== null) order.collectionFeeHkd = cf;
         }
         if (terms === 'COD' && !walkIn && (status === 'shipped' || status === 'rts' || status === 'delivered')) {
           waybillCounter += 1;

@@ -6,6 +6,18 @@
  * rules must be enforced on the server (row level security / server actions).
  */
 import { roundMoney } from './format';
+import {
+  computeCosting,
+  costingRowFor,
+  orderCollectionFee,
+  validatePickupPrice,
+  validateSettings,
+  SETTING_LABEL,
+  type CostingLogEntry,
+  type CostingRow,
+  type CostingSettings,
+  type CostingState,
+} from './costing';
 import { availableOf, reservedByItem } from './orders';
 import {
   PAYMENT_METHODS,
@@ -23,6 +35,8 @@ export interface AppState {
   items: InventoryItem[];
   orders: Order[];
   receipts: StockReceipt[];
+  /** Pickup-price costing. Admin only. */
+  costing: CostingState;
   /** Last PO number handed out. Only ever goes up, so a POID is never reused. */
   poSeq: number;
   /** Current SDSI top-up, percent of merchant sales. Applied to orders delivered from now on. */
@@ -143,6 +157,13 @@ export function placeMerchantOrder(
     lines: built.lines,
     status: 'pending',
   };
+  if (input.terms === 'COD') {
+    const cf = orderCollectionFee(
+      built.lines.map((line) => ({ itemId: line.itemId, quantity: line.quantity })),
+      state.costing,
+    );
+    if (cf !== null) order.collectionFeeHkd = cf;
+  }
   return {
     ok: true,
     state: { ...state, poSeq, orders: [order, ...state.orders] },
@@ -538,3 +559,157 @@ export function setTopUpPercent(state: AppState, actor: Actor, percent: number):
   const rounded = Math.round(percent * 100) / 100;
   return { ok: true, state: { ...state, topUpPercent: rounded }, value: rounded };
 }
+
+// ---------------------------------------------------------------------------
+// Costing: admin only. Every change is written to the change log, nothing is edited silently.
+// ---------------------------------------------------------------------------
+
+const hk = (value: number | null): string => (value === null ? 'not set' : `HK$${value.toFixed(2)}`);
+
+function logged(
+  state: AppState,
+  actor: Actor,
+  now: string,
+  summary: string,
+  details: string[],
+  change: Partial<CostingState>,
+): AppState {
+  const entry: CostingLogEntry = {
+    id: `CL-${String(state.costing.log.length + 1).padStart(6, '0')}`,
+    at: now,
+    by: actor.id,
+    summary,
+    details,
+  };
+  return { ...state, costing: { ...state.costing, ...change, log: [entry, ...state.costing.log] } };
+}
+
+const costingGuard = (actor: Actor) =>
+  actor.role === 'admin' ? null : fail('Only the admin can change the costing.');
+
+/** Sets the pickup price (HKD) of one or more packages. All changes are checked first, then saved together. */
+export function setPickupPrices(
+  state: AppState,
+  actor: Actor,
+  changes: { rowId: string; pickupPriceHkd: number }[],
+  now: string,
+): Outcome<number> {
+  const denied = costingGuard(actor);
+  if (denied) return denied;
+  if (changes.length === 0) return fail('There is nothing to save.');
+
+  const details: string[] = [];
+  const priceOf = new Map<string, number>();
+  for (const change of changes) {
+    const row = state.costing.rows.find((candidate) => candidate.id === change.rowId);
+    if (!row) return fail('Costing row not found.');
+    const problem = validatePickupPrice(change.pickupPriceHkd);
+    if (problem) return fail(problem);
+    if (priceOf.has(row.id)) return fail('The same row was changed twice.');
+    priceOf.set(row.id, change.pickupPriceHkd);
+    const item = state.items.find((candidate) => candidate.id === row.itemId);
+    details.push(`${item?.sku ?? row.itemId} x${row.qty}: ${hk(row.pickupPriceHkd)} -> ${hk(change.pickupPriceHkd)}`);
+  }
+
+  const rows = state.costing.rows.map((row) =>
+    priceOf.has(row.id) ? { ...row, pickupPriceHkd: priceOf.get(row.id)! } : row,
+  );
+  return {
+    ok: true,
+    state: logged(
+      state,
+      actor,
+      now,
+      `Pickup price changed on ${changes.length} package${changes.length === 1 ? '' : 's'}`,
+      details,
+      { rows },
+    ),
+    value: changes.length,
+  };
+}
+
+export function setCostingSettings(
+  state: AppState,
+  actor: Actor,
+  patch: Partial<CostingSettings>,
+  now: string,
+): Outcome<CostingSettings> {
+  const denied = costingGuard(actor);
+  if (denied) return denied;
+  const keys = (Object.keys(patch) as (keyof CostingSettings)[]).filter(
+    (key) => patch[key] !== state.costing.settings[key],
+  );
+  if (keys.length === 0) return fail('No setting was changed.');
+  const problem = validateSettings(patch);
+  if (problem) return fail(problem);
+
+  const settings = { ...state.costing.settings, ...patch };
+  const details = keys.map((key) => `${SETTING_LABEL[key]}: ${state.costing.settings[key]} -> ${patch[key]}`);
+  return {
+    ok: true,
+    state: logged(state, actor, now, 'Costing settings changed', details, { settings }),
+    value: settings,
+  };
+}
+
+export function addCostingRow(
+  state: AppState,
+  actor: Actor,
+  input: { itemId: string; qty: number },
+  now: string,
+): Outcome<CostingRow> {
+  const denied = costingGuard(actor);
+  if (denied) return denied;
+  const item = state.items.find((candidate) => candidate.id === input.itemId);
+  if (!item) return fail('Choose a product.');
+  if (!Number.isInteger(input.qty) || input.qty < 1 || input.qty > 99) {
+    return fail('Quantity must be a whole number from 1 to 99.');
+  }
+  if (costingRowFor(state.costing.rows, input.itemId, input.qty)) {
+    return fail('That product and quantity already has a costing row.');
+  }
+  const row: CostingRow = {
+    id: `cst-${item.id.replace('itm-', '')}-${input.qty}`,
+    itemId: item.id,
+    qty: input.qty,
+    pickupPriceHkd: null,
+  };
+  return {
+    ok: true,
+    state: logged(state, actor, now, 'Costing row added', [`${item.sku} x${input.qty}`], {
+      rows: [...state.costing.rows, row],
+    }),
+    value: row,
+  };
+}
+
+export function removeCostingRow(
+  state: AppState,
+  actor: Actor,
+  rowId: string,
+  now: string,
+): Outcome<CostingRow> {
+  const denied = costingGuard(actor);
+  if (denied) return denied;
+  const row = state.costing.rows.find((candidate) => candidate.id === rowId);
+  if (!row) return fail('Costing row not found.');
+  const item = state.items.find((candidate) => candidate.id === row.itemId);
+  return {
+    ok: true,
+    state: logged(
+      state,
+      actor,
+      now,
+      'Costing row removed',
+      [`${item?.sku ?? row.itemId} x${row.qty} (pickup ${hk(row.pickupPriceHkd)})`],
+      { rows: state.costing.rows.filter((candidate) => candidate.id !== rowId) },
+    ),
+    value: row,
+  };
+}
+
+/** Convenience for the UI: the full computed line for one costing row. */
+export const costingLine = (state: AppState, row: CostingRow) => {
+  const item = state.items.find((candidate) => candidate.id === row.itemId);
+  return item ? computeCosting(item.unitPrice, row.qty, row.pickupPriceHkd, state.costing.settings) : null;
+};

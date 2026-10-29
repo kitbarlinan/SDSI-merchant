@@ -71,3 +71,6 @@ export function nowISO(): string {
   const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
   return local.toISOString().slice(0, 16);
 }
+
+const hkdFormatter = new Intl.NumberFormat('en-HK', { style: 'currency', currency: 'HKD' });
+export const formatHkd = (value: number): string => hkdFormatter.format(value);

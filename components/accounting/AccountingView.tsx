@@ -11,6 +11,7 @@ import { Icon } from '@/components/ui/Icon';
 import { DateFilter } from '@/components/ui/DateFilter';
 import { MerchantFilter } from '@/components/ui/MerchantFilter';
 import { StatCard } from '@/components/ui/StatCard';
+import { CostingView } from '@/components/accounting/CostingView';
 import { useAuth } from '@/lib/auth';
 import { formatCurrency, formatDate, formatNumber, formatPercent } from '@/lib/format';
 import { flattenDelivered, orderTopUp, orderTotal } from '@/lib/orders';
@@ -28,7 +29,7 @@ function csvCell(value: string | number): string {
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
-export function AccountingView() {
+function AccountingReports() {
   const { user } = useAuth();
   const { orders: allOrders, merchants: allMerchants, topUpPercent, setTopUpPercent } = useAppData();
   const { today, range, setRange } = useDayRange();
@@ -397,6 +398,43 @@ export function AccountingView() {
           </div>
         ) : null}
       </Card>
+    </div>
+  );
+}
+
+type AccountingTab = 'reports' | 'costing';
+
+export function AccountingView() {
+  const [tab, setTab] = useState<AccountingTab>('reports');
+  return (
+    <div className="space-y-6">
+      <div role="tablist" aria-label="Accounting sections" className="inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+        {([
+          ['reports', 'Reports'],
+          ['costing', 'Costing (restricted)'],
+        ] as const).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={tab === key}
+            onClick={() => setTab(key)}
+            className={`rounded-lg px-4 py-1.5 text-sm font-medium ${
+              tab === key ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {tab === 'reports' ? (
+        <AccountingReports />
+      ) : (
+        <div className="space-y-6">
+          <PageHeader title="Costing" description="Pickup prices, collection fee and net COD per package. These numbers decide what merchants are paid." />
+          <CostingView />
+        </div>
+      )}
     </div>
   );
 }

@@ -8,7 +8,7 @@ export const ROLE_LABEL: Record<Role, string> = {
 };
 
 /** Where each role lands after signing in. */
-export const homeFor = (role: Role): string => (role === 'cashier' ? '/orders' : role === 'clerk' ? '/inventory' : '/dashboard');
+export const homeFor = (role: Role): string => (role === 'cashier' ? '/orders' : role === 'clerk' ? '/approvals' : '/dashboard');
 
 /** Handles orders and the counter. */
 export const isStaff = (role: Role): boolean => role === 'admin' || role === 'cashier';

@@ -7,7 +7,8 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { Field, inputClass } from '@/components/ui/Field';
 import { Icon } from '@/components/ui/Icon';
 import { useAuth } from '@/lib/auth';
-import { formatCurrency, formatDate } from '@/lib/format';
+import { orderCollectionFee } from '@/lib/costing';
+import { formatCurrency, formatDate, formatHkd } from '@/lib/format';
 import { MOCK_TODAY } from '@/lib/mock-data';
 import { TERMS_LABEL, availableOf, reservedByItem } from '@/lib/orders';
 import { useAppData } from '@/lib/store';
@@ -26,7 +27,7 @@ const EMPTY_FORM: RawOrderForm = {
 
 export function NewOrderForm() {
   const { user } = useAuth();
-  const { items, orders, merchants, placeOrder } = useAppData();
+  const { items, orders, merchants, costing, placeOrder } = useAppData();
   const today = useToday() || MOCK_TODAY;
 
   const [typed, setTyped] = useState<Record<string, string>>({});
@@ -53,6 +54,13 @@ export function NewOrderForm() {
 
   const parsed = parseQuantities(rows, typed);
   const errors = validateOrderForm(form, parsed.lines.length);
+  const cf =
+    parsed.lines.length > 0
+      ? orderCollectionFee(
+          parsed.lines.map((line) => ({ itemId: line.item.id, quantity: line.quantity })),
+          costing,
+        )
+      : null;
   const hasRowErrors = Object.keys(parsed.errors).length > 0;
   const showError = (field: OrderField) => (touched[field] || submitted ? errors[field] : undefined);
   const touch = (field: OrderField) => () => setTouched((prev) => ({ ...prev, [field]: true }));
@@ -285,6 +293,14 @@ export function NewOrderForm() {
                   <span>Net total (to collect)</span>
                   <span>{formatCurrency(parsed.total)}</span>
                 </p>
+                {form.terms === 'COD' && parsed.lines.length > 0 ? (
+                  <p className="flex justify-between text-xs text-slate-600">
+                    <span>CF (collection fee, HKD)</span>
+                    <span>
+                      {cf === null ? 'Not set for this package' : formatHkd(cf)}
+                    </span>
+                  </p>
+                ) : null}
               </div>
               <label className="block text-xs font-medium text-slate-500">
                 Note for the cashier (optional)

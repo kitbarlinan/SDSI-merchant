@@ -13,7 +13,7 @@ import { useAppData } from '@/lib/store';
 import type { StockReceipt } from '@/lib/types';
 import { useToday } from '@/lib/use-today';
 
-function ReceiptRow({ receipt, merchantFilter }: { receipt: StockReceipt; merchantFilter: string }) {
+export function ReceiptRow({ receipt, merchantFilter }: { receipt: StockReceipt; merchantFilter: string }) {
   const { user } = useAuth();
   const { users, merchants, approveReceipt, rejectReceipt } = useAppData();
   const [rejecting, setRejecting] = useState(false);

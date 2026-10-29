@@ -115,6 +115,8 @@ export interface Order {
   topUpRate?: number;
   cancelledAt?: string;
   cancelReason?: string;
+  /** COD collection fee in HKD, snapshotted from the costing when the order was placed. */
+  collectionFeeHkd?: number;
 }
 
 /** One delivered order line, flattened for reporting. Dated by the day payment was collected. */

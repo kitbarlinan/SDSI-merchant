@@ -20,7 +20,7 @@ interface NavItem {
   merchantLabel?: string;
   icon: IconName;
   roles: Role[];
-  badge?: 'orders' | 'inventory';
+  badge?: 'orders' | 'inventory' | 'approvals';
 }
 
 const NAV: NavItem[] = [
@@ -42,6 +42,7 @@ const NAV: NavItem[] = [
     roles: ['admin', 'cashier', 'clerk', 'merchant'],
     badge: 'inventory',
   },
+  { href: '/approvals', label: 'For Approval', icon: 'check', roles: ['admin', 'clerk'], badge: 'approvals' },
   { href: '/accounting', label: 'Accounting', icon: 'wallet', roles: ['admin'] },
 ];
 
@@ -85,16 +86,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
 
   const badges = useMemo(() => {
-    if (!user) return { orders: 0, inventory: 0 };
+    if (!user) return { orders: 0, inventory: 0, approvals: 0 };
     const mine = <T extends { merchantId: string }>(rows: T[]) =>
       user.role === 'merchant' ? rows.filter((row) => row.merchantId === user.merchantId) : rows;
-    // Approvers see how many receipts wait for them; everyone else sees low-stock products.
-    const approver = canApprove(user.role);
     return {
       orders: mine(orders).filter(isOpen).length,
-      inventory: approver
-        ? receipts.filter((receipt) => receipt.status === 'pending').length
-        : mine(items).filter((item) => getStockStatus(item) !== 'ok').length,
+      inventory: mine(items).filter((item) => getStockStatus(item) !== 'ok').length,
+      approvals: canApprove(user.role) ? receipts.filter((receipt) => receipt.status === 'pending').length : 0,
     };
   }, [user, orders, items, receipts]);
 

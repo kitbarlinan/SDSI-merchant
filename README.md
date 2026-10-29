@@ -34,3 +34,9 @@ Open http://localhost:3000 and pick an account (demo sign-in, no password).
 - Sign-in and permissions are demo-only. Real enforcement needs a backend (planned: Supabase Auth + row-level security).
 - `lib/engine.ts` holds the business rules as pure functions; `lib/store.tsx` wraps them for React.
 - "Reset demo data" (admin, sidebar) restores the seeded data.
+
+## Costing, For Approval and CF
+
+- **Accounting → Costing (admin only, password-locked).** Per product + quantity: Net SRP → mark-up (50%) → basis in HKD (FX 8.1432) → final basis (+5 HKD per qty) → pickup price (set by hand) → SF 34 → collection fee = (pickup + SF) × 2.5%, rounded to whole HKD, minimum 5 → Net COD. Net remittance (PHP) = Net SRP. Saving needs a review screen and the costing password; every change is written to the change log. The lock is a demo: real protection needs Supabase RLS and server-side checks.
+- **For Approval** (Admin, Inventory Clerk): approve or reject received stock and RTS receipts. Clerk lands here after sign-in.
+- **CF** (HKD) is shown under the total on COD orders and in the merchant New Order form. It is a snapshot taken when the order is placed, and only when every line matches a priced package.
