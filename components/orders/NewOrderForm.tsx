@@ -2,33 +2,36 @@
 
 import Link from 'next/link';
 import { useMemo, useState, type FormEvent } from 'react';
+import { ProductList, parseQuantities, type ListRow } from '@/components/orders/ProductList';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { Card } from '@/components/ui/Card';
 import { Field, inputClass } from '@/components/ui/Field';
 import { Icon } from '@/components/ui/Icon';
 import { useAuth } from '@/lib/auth';
-import { formatCurrency, formatNumber, roundMoney } from '@/lib/format';
+import { formatCurrency, formatDate } from '@/lib/format';
+import { MOCK_TODAY } from '@/lib/mock-data';
 import { TERMS_LABEL, availableOf, reservedByItem } from '@/lib/orders';
 import { useAppData } from '@/lib/store';
-import { CATEGORY_COLORS } from '@/lib/theme';
-import { ORDER_TERMS, type Order, type OrderTerms } from '@/lib/types';
+import { ORDER_TERMS, type Order } from '@/lib/types';
 import { useToday } from '@/lib/use-today';
 import { validateOrderForm, type OrderField, type RawOrderForm } from '@/lib/validation';
 
-const EMPTY_FORM: RawOrderForm = { customerName: '', contactNo: '', address: '', terms: 'COD' };
-
-const TERMS_HINT: Record<OrderTerms, string> = {
-  COP: 'Customer pays when they pick the order up.',
-  COD: 'Customer pays the rider on delivery. Address required.',
+const EMPTY_FORM: RawOrderForm = {
+  customerName: '',
+  contactNo: '',
+  address: '',
+  barangay: '',
+  city: '',
+  terms: 'COD',
 };
 
 export function NewOrderForm() {
   const { user } = useAuth();
-  const { items, orders, placeOrder } = useAppData();
-  const today = useToday();
+  const { items, orders, merchants, placeOrder } = useAppData();
+  const today = useToday() || MOCK_TODAY;
 
-  const [quantities, setQuantities] = useState<Record<string, string>>({});
+  const [typed, setTyped] = useState<Record<string, string>>({});
   const [form, setForm] = useState<RawOrderForm>(EMPTY_FORM);
+  const [landmarks, setLandmarks] = useState('');
   const [notes, setNotes] = useState('');
   const [touched, setTouched] = useState<Partial<Record<OrderField, boolean>>>({});
   const [submitted, setSubmitted] = useState(false);
@@ -36,44 +39,23 @@ export function NewOrderForm() {
   const [placed, setPlaced] = useState<Order | null>(null);
 
   const reserved = useMemo(() => reservedByItem(orders), [orders]);
-  const catalog = useMemo(
-    () => items.filter((item) => item.merchantId === user?.merchantId),
-    [items, user],
+  const rows: ListRow[] = useMemo(
+    () =>
+      items
+        .filter((item) => item.merchantId === user?.merchantId)
+        .map((item) => ({
+          item,
+          available: availableOf(item, reserved),
+          expired: item.expiryDate < today,
+        })),
+    [items, reserved, user, today],
   );
 
-  // Per-product checks: whole number, and no more than what is still available.
-  const rows = catalog.map((item) => {
-    const raw = quantities[item.id] ?? '';
-    const quantity = raw.trim() === '' ? 0 : Number(raw);
-    const available = availableOf(item, reserved);
-    const expired = Boolean(today) && item.expiryDate < today;
-    let error: string | undefined;
-    if (raw.trim() !== '') {
-      if (!Number.isInteger(quantity) || quantity < 0) error = 'Whole number only.';
-      else if (quantity > available) error = `Only ${available} available.`;
-    }
-    return { item, raw, quantity: error ? 0 : quantity, available, expired, error };
-  });
-
-  const chosen = rows.filter((row) => row.quantity > 0);
-  const total = roundMoney(chosen.reduce((sum, row) => sum + row.quantity * row.item.unitPrice, 0));
-  const rowErrors = rows.some((row) => row.error);
-
-  const errors = validateOrderForm(form, chosen.length);
-  const showError = (field: OrderField) =>
-    touched[field] || submitted ? errors[field] : undefined;
+  const parsed = parseQuantities(rows, typed);
+  const errors = validateOrderForm(form, parsed.lines.length);
+  const hasRowErrors = Object.keys(parsed.errors).length > 0;
+  const showError = (field: OrderField) => (touched[field] || submitted ? errors[field] : undefined);
   const touch = (field: OrderField) => () => setTouched((prev) => ({ ...prev, [field]: true }));
-
-  const setQuantity = (itemId: string, value: string) => {
-    setQuantities((prev) => ({ ...prev, [itemId]: value }));
-    setServerError(null);
-  };
-
-  const step = (itemId: string, delta: number, max: number) => {
-    const current = Number(quantities[itemId] || 0);
-    const next = Math.max(0, Math.min(max, (Number.isInteger(current) ? current : 0) + delta));
-    setQuantity(itemId, next === 0 ? '' : String(next));
-  };
 
   function update<K extends keyof RawOrderForm>(key: K, value: RawOrderForm[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -83,15 +65,24 @@ export function NewOrderForm() {
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitted(true);
-    if (!user || rowErrors || Object.keys(errors).length > 0) return;
+    if (!user || hasRowErrors || Object.keys(errors).length > 0) return;
+
+    const isCod = form.terms === 'COD';
+    const address = isCod
+      ? [form.address, form.barangay && `Brgy. ${form.barangay.replace(/^brgy\.?\s*/i, '')}`, form.city]
+          .map((part) => (part || '').trim())
+          .filter(Boolean)
+          .join(', ')
+      : '';
+    const noteParts = [landmarks.trim() && `Landmark: ${landmarks.trim()}`, notes.trim()].filter(Boolean);
 
     const result = placeOrder(user, {
       customerName: form.customerName,
       contactNo: form.contactNo,
-      address: form.address,
-      notes,
+      address,
+      notes: noteParts.join(' · '),
       terms: form.terms,
-      lines: chosen.map((row) => ({ itemId: row.item.id, quantity: row.quantity })),
+      lines: parsed.lines.map((line) => ({ itemId: line.item.id, quantity: line.quantity })),
     });
 
     if (!result.ok) {
@@ -100,20 +91,23 @@ export function NewOrderForm() {
     }
 
     setPlaced(result.value);
-    setQuantities({});
+    setTyped({});
     setForm(EMPTY_FORM);
+    setLandmarks('');
     setNotes('');
     setTouched({});
     setSubmitted(false);
   }
 
   if (!user) return null;
+  const isCod = form.terms === 'COD';
+  const merchantName = merchants.find((m) => m.id === user.merchantId)?.name;
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="New order"
-        description="Pick the products and enter the customer. The cashier will see it right away."
+        title="Shop for customer"
+        description="Enter the customer, type the quantity on each product, then submit. The cashier sees it right away."
       />
 
       {placed ? (
@@ -141,143 +135,24 @@ export function NewOrderForm() {
         </div>
       ) : null}
 
-      <form onSubmit={handleSubmit} noValidate className="grid gap-6 lg:grid-cols-5">
-        <Card
-          className="lg:col-span-3"
-          flush
-          title="Products"
-          subtitle="Available = on hand minus what is already reserved for open orders"
-        >
-          {showError('lines') ? (
-            <p role="alert" className="mx-5 mb-3 rounded-lg bg-rose-50 p-2 text-xs text-rose-700">
-              {showError('lines')}
-            </p>
-          ) : null}
-          <ul className="divide-y divide-slate-100">
-            {rows.map(({ item, raw, available, expired, error }) => {
-              const disabled = available <= 0 || expired;
-              const max = available;
-              return (
-                <li key={item.id} className="flex items-center justify-between gap-4 px-5 py-4">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-slate-900">{item.name}</p>
-                    <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-slate-500">
-                      <span className="font-mono">{item.sku}</span>
-                      <span className="inline-flex items-center gap-1">
-                        <span
-                          className="h-2 w-2 rounded-full"
-                          style={{ background: CATEGORY_COLORS[item.category] }}
-                        />
-                        {item.category}
-                      </span>
-                      <span className="font-medium text-slate-700">{formatCurrency(item.unitPrice)}</span>
-                    </p>
-                    <p
-                      className={`mt-0.5 text-xs ${
-                        expired || available <= 0 ? 'text-rose-600' : 'text-slate-500'
-                      }`}
-                    >
-                      {expired
-                        ? 'Expired: cannot be ordered'
-                        : available <= 0
-                          ? 'Out of stock'
-                          : `${formatNumber(available)} available`}
-                    </p>
-                    {error ? (
-                      <p role="alert" className="mt-0.5 text-xs text-rose-600">
-                        {error}
-                      </p>
-                    ) : null}
-                  </div>
-
-                  <div className="flex shrink-0 items-center gap-1.5">
-                    <button
-                      type="button"
-                      disabled={disabled}
-                      onClick={() => step(item.id, -1, max)}
-                      aria-label={`Decrease ${item.name}`}
-                      className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      <Icon name="minus" className="h-4 w-4" />
-                    </button>
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      min={0}
-                      step={1}
-                      disabled={disabled}
-                      value={raw}
-                      onChange={(event) => setQuantity(item.id, event.target.value)}
-                      aria-label={`Quantity of ${item.name}`}
-                      aria-invalid={Boolean(error)}
-                      placeholder="0"
-                      className={`w-16 text-center ${inputClass(Boolean(error))}`}
-                    />
-                    <button
-                      type="button"
-                      disabled={disabled}
-                      onClick={() => step(item.id, 1, max)}
-                      aria-label={`Increase ${item.name}`}
-                      className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      <Icon name="plus" className="h-4 w-4" />
-                    </button>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </Card>
-
-        <Card className="space-y-5 lg:col-span-2" title="Customer & payment">
-          <div className="mt-4 space-y-5">
-            {serverError ? (
-              <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
-                {serverError}
-              </div>
-            ) : null}
-
-            <Field label="Customer name" htmlFor="customerName" error={showError('customerName')}>
-              <input
-                id="customerName"
-                type="text"
-                autoComplete="off"
-                value={form.customerName}
-                onChange={(event) => update('customerName', event.target.value)}
-                onBlur={touch('customerName')}
-                aria-invalid={Boolean(showError('customerName'))}
-                className={inputClass(Boolean(showError('customerName')))}
-                placeholder="e.g. Maria Santos"
-              />
-            </Field>
-
-            <Field
-              label="Contact number (optional)"
-              htmlFor="contactNo"
-              error={showError('contactNo')}
-            >
-              <input
-                id="contactNo"
-                type="tel"
-                autoComplete="off"
-                value={form.contactNo}
-                onChange={(event) => update('contactNo', event.target.value)}
-                onBlur={touch('contactNo')}
-                aria-invalid={Boolean(showError('contactNo'))}
-                className={inputClass(Boolean(showError('contactNo')))}
-                placeholder="09xx xxx xxxx"
-              />
-            </Field>
+      <form onSubmit={handleSubmit} noValidate className="space-y-6">
+        <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
+          <div className="grid gap-x-6 gap-y-4 md:grid-cols-2">
+            <div className="text-sm">
+              <p className="text-xs font-medium text-slate-500">Date</p>
+              <p className="mt-1 font-semibold text-slate-900">{formatDate(today)}</p>
+              {merchantName ? <p className="text-xs text-slate-500">{merchantName}</p> : null}
+            </div>
 
             <fieldset>
-              <legend className="mb-1.5 block text-sm font-medium text-slate-700">Payment terms</legend>
+              <legend className="mb-1.5 block text-sm font-medium text-slate-700">Payment option</legend>
               <div className="grid grid-cols-2 gap-2">
                 {ORDER_TERMS.map((option) => {
                   const active = form.terms === option;
                   return (
                     <label
                       key={option}
-                      className={`cursor-pointer rounded-xl border p-3 text-sm transition-colors ${
+                      className={`cursor-pointer rounded-xl border p-2.5 text-sm transition-colors ${
                         active
                           ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500'
                           : 'border-slate-300 hover:bg-slate-50'
@@ -297,66 +172,152 @@ export function NewOrderForm() {
                   );
                 })}
               </div>
-              <p className="mt-1.5 text-xs text-slate-500">{TERMS_HINT[form.terms]}</p>
             </fieldset>
 
-            {form.terms === 'COD' ? (
-              <Field label="Delivery address" htmlFor="address" error={showError('address')}>
-                <textarea
-                  id="address"
-                  rows={2}
-                  value={form.address}
-                  onChange={(event) => update('address', event.target.value)}
-                  onBlur={touch('address')}
-                  aria-invalid={Boolean(showError('address'))}
-                  className={inputClass(Boolean(showError('address')))}
-                  placeholder="House no., street, barangay, city"
-                />
-              </Field>
-            ) : null}
-
-            <Field label="Note for the cashier (optional)" htmlFor="notes">
+            <Field label="Customer" htmlFor="customerName" error={showError('customerName')}>
               <input
-                id="notes"
+                id="customerName"
                 type="text"
-                value={notes}
-                onChange={(event) => setNotes(event.target.value)}
-                className={inputClass(false)}
-                placeholder="e.g. include a free sample"
+                autoComplete="off"
+                value={form.customerName}
+                onChange={(event) => update('customerName', event.target.value)}
+                onBlur={touch('customerName')}
+                aria-invalid={Boolean(showError('customerName'))}
+                className={inputClass(Boolean(showError('customerName')))}
+                placeholder="Customer name"
               />
             </Field>
 
-            <div className="space-y-1 rounded-xl bg-slate-50 p-4 text-sm">
-              {chosen.length === 0 ? (
-                <p className="text-slate-500">No products selected yet.</p>
-              ) : (
-                chosen.map((row) => (
-                  <p key={row.item.id} className="flex justify-between gap-3 text-slate-700">
-                    <span className="truncate">
-                      {row.quantity}× {row.item.name}
-                    </span>
-                    <span className="shrink-0">{formatCurrency(row.quantity * row.item.unitPrice)}</span>
-                  </p>
-                ))
-              )}
-              <p className="flex justify-between border-t border-slate-200 pt-2 text-base font-semibold text-slate-900">
-                <span>Total to collect</span>
-                <span>{formatCurrency(total)}</span>
-              </p>
-            </div>
+            <Field label="Mobile #" htmlFor="contactNo" error={showError('contactNo')}>
+              <input
+                id="contactNo"
+                type="tel"
+                autoComplete="off"
+                value={form.contactNo}
+                onChange={(event) => update('contactNo', event.target.value)}
+                onBlur={touch('contactNo')}
+                aria-invalid={Boolean(showError('contactNo'))}
+                className={inputClass(Boolean(showError('contactNo')))}
+                placeholder="Mobile No"
+              />
+            </Field>
 
-            <button
-              type="submit"
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-300"
-            >
-              <Icon name="check" className="h-4 w-4" />
-              Place order
-            </button>
-            {submitted && (rowErrors || Object.keys(errors).length > 0) ? (
-              <p className="text-center text-xs text-rose-600">Fix the highlighted fields to continue.</p>
-            ) : null}
+            {isCod ? (
+              <>
+                <div className="md:col-span-2">
+                  <Field label="Address" htmlFor="address" error={showError('address')}>
+                    <textarea
+                      id="address"
+                      rows={2}
+                      value={form.address}
+                      onChange={(event) => update('address', event.target.value)}
+                      onBlur={touch('address')}
+                      aria-invalid={Boolean(showError('address'))}
+                      className={inputClass(Boolean(showError('address')))}
+                      placeholder="House no., street"
+                    />
+                  </Field>
+                </div>
+                <Field label="City / Town" htmlFor="city" error={showError('city')}>
+                  <input
+                    id="city"
+                    type="text"
+                    value={form.city}
+                    onChange={(event) => update('city', event.target.value)}
+                    onBlur={touch('city')}
+                    aria-invalid={Boolean(showError('city'))}
+                    className={inputClass(Boolean(showError('city')))}
+                  />
+                </Field>
+                <Field label="Brgy" htmlFor="barangay">
+                  <input
+                    id="barangay"
+                    type="text"
+                    value={form.barangay}
+                    onChange={(event) => update('barangay', event.target.value)}
+                    className={inputClass(false)}
+                  />
+                </Field>
+                <div className="md:col-span-2">
+                  <Field label="Landmarks" htmlFor="landmarks">
+                    <textarea
+                      id="landmarks"
+                      rows={2}
+                      value={landmarks}
+                      onChange={(event) => setLandmarks(event.target.value)}
+                      className={inputClass(false)}
+                      placeholder="Near the church, blue gate..."
+                    />
+                  </Field>
+                </div>
+              </>
+            ) : (
+              <p className="self-end text-xs text-slate-500 md:col-span-2">
+                Cash on pickup: no delivery address needed. The customer pays when they pick it up.
+              </p>
+            )}
           </div>
-        </Card>
+        </section>
+
+        {showError('lines') ? (
+          <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">
+            {showError('lines')}
+          </p>
+        ) : null}
+
+        <ProductList
+          rows={rows}
+          merchants={merchants}
+          typed={typed}
+          errors={parsed.errors}
+          onChange={(itemId, value) => {
+            setTyped((prev) => ({ ...prev, [itemId]: value }));
+            setServerError(null);
+          }}
+          footer={
+            <div className="space-y-4">
+              <div className="ml-auto max-w-xs space-y-1 text-sm">
+                <p className="flex justify-between text-slate-600">
+                  <span>Total</span>
+                  <span>{formatCurrency(parsed.total)}</span>
+                </p>
+                <p className="flex justify-between border-t border-slate-200 pt-1 text-base font-semibold text-slate-900">
+                  <span>Net total (to collect)</span>
+                  <span>{formatCurrency(parsed.total)}</span>
+                </p>
+              </div>
+              <label className="block text-xs font-medium text-slate-500">
+                Note for the cashier (optional)
+                <input
+                  type="text"
+                  value={notes}
+                  onChange={(event) => setNotes(event.target.value)}
+                  className={`mt-1 ${inputClass(false)}`}
+                  placeholder="e.g. include a free sample"
+                />
+              </label>
+            </div>
+          }
+        />
+
+        {serverError ? (
+          <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+            {serverError}
+          </div>
+        ) : null}
+        {submitted && (hasRowErrors || Object.keys(errors).length > 0) ? (
+          <p className="text-right text-xs text-rose-600">Fix the highlighted fields to continue.</p>
+        ) : null}
+
+        <div className="flex justify-end">
+          <button
+            type="submit"
+            className="inline-flex items-center gap-2 rounded-xl bg-orange-500 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-300"
+          >
+            <Icon name="check" className="h-4 w-4" />
+            Submit order
+          </button>
+        </div>
       </form>
     </div>
   );

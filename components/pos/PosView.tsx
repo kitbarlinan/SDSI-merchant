@@ -1,12 +1,13 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { ProductList, parseQuantities, type ListRow } from '@/components/orders/ProductList';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { Card } from '@/components/ui/Card';
-import { inputClass } from '@/components/ui/Field';
+import { Field, inputClass } from '@/components/ui/Field';
 import { Icon } from '@/components/ui/Icon';
 import { useAuth } from '@/lib/auth';
-import { formatCurrency, formatNumber, roundMoney } from '@/lib/format';
+import { formatCurrency, formatDate, roundMoney } from '@/lib/format';
+import { MOCK_TODAY } from '@/lib/mock-data';
 import { availableOf, reservedByItem } from '@/lib/orders';
 import { useAppData } from '@/lib/store';
 import { PAYMENT_METHODS, type Order, type PaymentMethod } from '@/lib/types';
@@ -25,47 +26,36 @@ interface Receipt {
 function quickAmounts(total: number): number[] {
   if (total <= 0) return [];
   const options = new Set<number>([total]);
-  for (const step of [100, 500, 1000]) {
-    options.add(Math.ceil(total / step) * step);
-  }
+  for (const step of [100, 500, 1000]) options.add(Math.ceil(total / step) * step);
   return [...options].sort((a, b) => a - b).slice(0, 4);
 }
 
 export function PosView() {
   const { user } = useAuth();
   const { items, orders, merchants, checkoutWalkIn } = useAppData();
-  const today = useToday();
+  const today = useToday() || MOCK_TODAY;
 
-  const [merchantId, setMerchantId] = useState('all');
-  const [query, setQuery] = useState('');
-  const [cart, setCart] = useState<Record<string, number>>({});
-  const [method, setMethod] = useState<PaymentMethod>('Cash');
+  const [typed, setTyped] = useState<Record<string, string>>({});
   const [customerName, setCustomerName] = useState(DEFAULT_NAME);
+  const [method, setMethod] = useState<PaymentMethod>('Cash');
   const [tendered, setTendered] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
 
   const reserved = useMemo(() => reservedByItem(orders), [orders]);
-
-  const products = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return items.filter((item) => {
-      if (merchantId !== 'all' && item.merchantId !== merchantId) return false;
-      if (!needle) return true;
-      return item.name.toLowerCase().includes(needle) || item.sku.toLowerCase().includes(needle);
-    });
-  }, [items, merchantId, query]);
-
-  const cartLines = useMemo(
+  const rows: ListRow[] = useMemo(
     () =>
-      items
-        .filter((item) => (cart[item.id] ?? 0) > 0)
-        .map((item) => ({ item, quantity: cart[item.id] })),
-    [items, cart],
+      items.map((item) => ({
+        item,
+        available: availableOf(item, reserved),
+        expired: item.expiryDate < today,
+      })),
+    [items, reserved, today],
   );
-  const total = roundMoney(
-    cartLines.reduce((sum, line) => sum + line.quantity * line.item.unitPrice, 0),
-  );
+
+  const parsed = parseQuantities(rows, typed);
+  const total = parsed.total;
+  const hasRowErrors = Object.keys(parsed.errors).length > 0;
 
   const tenderedAmount = tendered.trim() === '' ? null : Number(tendered);
   const change =
@@ -73,30 +63,12 @@ export function PosView() {
       ? roundMoney(tenderedAmount - total)
       : null;
   const shortBy = change !== null && change < 0 ? Math.abs(change) : 0;
-
-  const merchantOf = (id: string) => merchants.find((merchant) => merchant.id === id);
-
-  function add(itemId: string) {
-    setReceipt(null);
-    setError(null);
-    setCart((prev) => ({ ...prev, [itemId]: (prev[itemId] ?? 0) + 1 }));
-  }
-
-  function remove(itemId: string, all = false) {
-    setError(null);
-    setCart((prev) => {
-      const next = { ...prev };
-      const left = (next[itemId] ?? 0) - (all ? next[itemId] ?? 0 : 1);
-      if (left <= 0) delete next[itemId];
-      else next[itemId] = left;
-      return next;
-    });
-  }
+  const canSubmit = parsed.lines.length > 0 && !hasRowErrors && shortBy === 0;
 
   function complete() {
-    if (!user || cartLines.length === 0 || shortBy > 0) return;
+    if (!user || !canSubmit) return;
     const result = checkoutWalkIn(user, {
-      lines: cartLines.map((line) => ({ itemId: line.item.id, quantity: line.quantity })),
+      lines: parsed.lines.map((line) => ({ itemId: line.item.id, quantity: line.quantity })),
       paymentMethod: method,
       customerName,
     });
@@ -105,7 +77,7 @@ export function PosView() {
       return;
     }
     setReceipt({ orders: result.value, total, method, change });
-    setCart({});
+    setTyped({});
     setTendered('');
     setCustomerName(DEFAULT_NAME);
     setError(null);
@@ -117,7 +89,7 @@ export function PosView() {
     <div className="space-y-6">
       <PageHeader
         title="Walk-in POS"
-        description="Counter sales. Add products to the list, take payment, done. The customer name is optional."
+        description="Counter sales. Type the quantity on each product, take payment, done. The customer name is optional."
       />
 
       {receipt ? (
@@ -143,258 +115,125 @@ export function PosView() {
             onClick={() => setReceipt(null)}
             className="text-xs font-medium text-emerald-700 hover:underline"
           >
-            New sale
+            Dismiss
           </button>
         </div>
       ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-5">
-        {/* Products */}
-        <div className="space-y-4 lg:col-span-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by merchant">
-              {[{ id: 'all', name: 'All merchants', color: '#64748b' }, ...merchants].map((merchant) => {
-                const active = merchantId === merchant.id;
-                return (
-                  <button
-                    key={merchant.id}
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => setMerchantId(merchant.id)}
-                    className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                      active
-                        ? 'border-emerald-600 bg-emerald-600 text-white'
-                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    <span
-                      className="h-2 w-2 rounded-full"
-                      style={{ background: active ? '#fff' : merchant.color }}
-                    />
-                    {merchant.name}
-                  </button>
-                );
-              })}
-            </div>
-            <label className="relative block">
-              <span className="sr-only">Search products</span>
-              <Icon
-                name="search"
-                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
-              />
-              <input
-                type="search"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search product or SKU"
-                className="w-full rounded-xl border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200 sm:w-56"
-              />
-            </label>
+      <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
+        <div className="grid gap-x-6 gap-y-4 md:grid-cols-3">
+          <div className="text-sm">
+            <p className="text-xs font-medium text-slate-500">Date</p>
+            <p className="mt-1 font-semibold text-slate-900">{formatDate(today)}</p>
           </div>
-
-          <ul className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
-            {products.map((item) => {
-              const merchant = merchantOf(item.merchantId);
-              const inCart = cart[item.id] ?? 0;
-              const left = availableOf(item, reserved) - inCart;
-              const expired = Boolean(today) && item.expiryDate < today;
-              const disabled = left <= 0 || expired;
-              return (
-                <li key={item.id} className="flex items-center gap-3 px-4 py-3">
-                  <span
-                    className="h-8 w-1 shrink-0 rounded-full"
-                    style={{ background: merchant?.color }}
-                    aria-hidden
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-slate-900">{item.name}</p>
-                    <p className="truncate text-xs text-slate-500">
-                      <span className="font-mono">{item.sku}</span> · {merchant?.name}
-                    </p>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <p className="text-sm font-semibold text-slate-900">{formatCurrency(item.unitPrice)}</p>
-                    <p
-                      className={`text-xs ${
-                        expired || left <= 0 ? 'font-medium text-rose-600' : 'text-slate-500'
-                      }`}
-                    >
-                      {expired ? 'Expired' : left <= 0 ? 'Out of stock' : `${formatNumber(left)} left`}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => add(item.id)}
-                    aria-label={`Add ${item.name}`}
-                    className="relative flex h-9 shrink-0 items-center gap-1 rounded-xl bg-emerald-600 px-3 text-sm font-semibold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    <Icon name="plus" className="h-4 w-4" />
-                    Add
-                    {inCart > 0 ? (
-                      <span className="ml-1 rounded-full bg-white/25 px-1.5 text-xs">{inCart}</span>
-                    ) : null}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-          {products.length === 0 ? (
-            <p className="rounded-2xl border border-dashed border-slate-300 bg-white py-10 text-center text-sm text-slate-500">
-              No products match your search.
-            </p>
-          ) : null}
+          <Field label="Customer (optional)" htmlFor="walkInName">
+            <input
+              id="walkInName"
+              type="text"
+              value={customerName}
+              onChange={(event) => setCustomerName(event.target.value)}
+              onFocus={(event) => event.target.select()}
+              className={inputClass(false)}
+            />
+          </Field>
+          <Field label="Payment option" htmlFor="walkInPayment">
+            <select
+              id="walkInPayment"
+              value={method}
+              onChange={(event) => setMethod(event.target.value as PaymentMethod)}
+              className={inputClass(false)}
+            >
+              {PAYMENT_METHODS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </Field>
         </div>
+      </section>
 
-        {/* Cart */}
-        <div className="lg:col-span-2">
-          <div className="lg:sticky lg:top-6">
-            <Card title="Current sale">
-              <div className="mt-3 space-y-4">
-                <label className="block text-xs font-medium text-slate-500" htmlFor="walkInName">
-                  Customer name (optional)
-                  <input
-                    id="walkInName"
-                    type="text"
-                    value={customerName}
-                    onChange={(event) => setCustomerName(event.target.value)}
-                    onFocus={(event) => event.target.select()}
-                    className={`mt-1 ${inputClass(false)}`}
-                  />
+      <ProductList
+        rows={rows}
+        merchants={merchants}
+        typed={typed}
+        errors={parsed.errors}
+        showMerchant
+        onChange={(itemId, value) => {
+          setReceipt(null);
+          setError(null);
+          setTyped((prev) => ({ ...prev, [itemId]: value }));
+        }}
+        footer={
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            {method === 'Cash' && total > 0 ? (
+              <div className="max-w-xs flex-1 space-y-2">
+                <label className="block text-sm font-medium text-slate-700" htmlFor="tendered">
+                  Cash received
                 </label>
-                {cartLines.length === 0 ? (
-                  <p className="rounded-xl bg-slate-50 py-8 text-center text-sm text-slate-500">
-                    Tap a product to add it.
-                  </p>
-                ) : (
-                  <ul className="divide-y divide-slate-100">
-                    {cartLines.map(({ item, quantity }) => (
-                      <li key={item.id} className="flex items-center justify-between gap-3 py-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-slate-900">{item.name}</p>
-                          <p className="text-xs text-slate-500">
-                            {formatCurrency(item.unitPrice)} · {merchantOf(item.merchantId)?.name}
-                          </p>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => remove(item.id)}
-                            aria-label={`Remove one ${item.name}`}
-                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
-                          >
-                            <Icon name="minus" className="h-4 w-4" />
-                          </button>
-                          <span className="w-6 text-center text-sm font-semibold">{quantity}</span>
-                          <button
-                            type="button"
-                            onClick={() => add(item.id)}
-                            disabled={availableOf(item, reserved) - quantity <= 0}
-                            aria-label={`Add one ${item.name}`}
-                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                          >
-                            <Icon name="plus" className="h-4 w-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => remove(item.id, true)}
-                            aria-label={`Remove ${item.name} from the sale`}
-                            className="ml-1 rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
-                          >
-                            <Icon name="x" className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-
-                <div className="flex items-baseline justify-between border-t border-slate-200 pt-4">
-                  <span className="text-sm text-slate-600">Total</span>
-                  <span className="text-2xl font-semibold tracking-tight text-slate-900">
-                    {formatCurrency(total)}
-                  </span>
+                <input
+                  id="tendered"
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  value={tendered}
+                  onChange={(event) => setTendered(event.target.value)}
+                  placeholder={formatCurrency(total)}
+                  className={inputClass(shortBy > 0)}
+                />
+                <div className="flex flex-wrap gap-1.5">
+                  {quickAmounts(total).map((amount) => (
+                    <button
+                      key={amount}
+                      type="button"
+                      onClick={() => setTendered(String(amount))}
+                      className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-50"
+                    >
+                      {amount === total ? 'Exact' : formatCurrency(amount)}
+                    </button>
+                  ))}
                 </div>
-
-                <div className="grid grid-cols-5 gap-1.5">
-                  {PAYMENT_METHODS.map((option) => {
-                    const active = method === option;
-                    return (
-                      <button
-                        key={option}
-                        type="button"
-                        aria-pressed={active}
-                        onClick={() => setMethod(option)}
-                        className={`rounded-lg border px-1 py-2 text-[11px] font-medium leading-tight transition-colors ${
-                          active
-                            ? 'border-emerald-600 bg-emerald-600 text-white'
-                            : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
-                        }`}
-                      >
-                        {option}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {method === 'Cash' && total > 0 ? (
-                  <div className="space-y-2">
-                    <label className="block text-sm font-medium text-slate-700" htmlFor="tendered">
-                      Cash received
-                    </label>
-                    <input
-                      id="tendered"
-                      type="number"
-                      inputMode="decimal"
-                      min={0}
-                      value={tendered}
-                      onChange={(event) => setTendered(event.target.value)}
-                      placeholder={formatCurrency(total)}
-                      className={inputClass(shortBy > 0)}
-                    />
-                    <div className="flex flex-wrap gap-1.5">
-                      {quickAmounts(total).map((amount) => (
-                        <button
-                          key={amount}
-                          type="button"
-                          onClick={() => setTendered(String(amount))}
-                          className="rounded-full border border-slate-300 px-3 py-1 text-xs text-slate-700 hover:bg-slate-50"
-                        >
-                          {amount === total ? 'Exact' : formatCurrency(amount)}
-                        </button>
-                      ))}
-                    </div>
-                    {shortBy > 0 ? (
-                      <p role="alert" className="text-xs text-rose-600">
-                        Short by {formatCurrency(shortBy)}.
-                      </p>
-                    ) : change !== null && change > 0 ? (
-                      <p className="text-sm font-medium text-emerald-700">
-                        Change: {formatCurrency(change)}
-                      </p>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                {error ? (
-                  <p role="alert" className="rounded-lg bg-rose-50 p-2 text-xs text-rose-700">
-                    {error}
+                {shortBy > 0 ? (
+                  <p role="alert" className="text-xs text-rose-600">
+                    Short by {formatCurrency(shortBy)}.
                   </p>
+                ) : change !== null && change > 0 ? (
+                  <p className="text-sm font-medium text-emerald-700">Change: {formatCurrency(change)}</p>
                 ) : null}
-
-                <button
-                  type="button"
-                  onClick={complete}
-                  disabled={cartLines.length === 0 || shortBy > 0}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Icon name="check" className="h-4 w-4" />
-                  Complete sale
-                </button>
               </div>
-            </Card>
+            ) : (
+              <span />
+            )}
+            <div className="w-full max-w-xs space-y-1 text-sm sm:ml-auto">
+              <p className="flex justify-between text-slate-600">
+                <span>Total</span>
+                <span>{formatCurrency(total)}</span>
+              </p>
+              <p className="flex justify-between border-t border-slate-200 pt-1 text-xl font-semibold text-slate-900">
+                <span>Net total</span>
+                <span>{formatCurrency(total)}</span>
+              </p>
+            </div>
           </div>
-        </div>
+        }
+      />
+
+      {error ? (
+        <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">
+          {error}
+        </p>
+      ) : null}
+
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={complete}
+          disabled={!canSubmit}
+          className="inline-flex items-center gap-2 rounded-xl bg-orange-500 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-300 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Icon name="check" className="h-4 w-4" />
+          Complete sale
+        </button>
       </div>
     </div>
   );
