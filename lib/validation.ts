@@ -1,10 +1,11 @@
-import { PAYMENT_METHODS, type InventoryItem } from './types';
+import { PAYMENT_METHODS, SALES_CHANNELS, type InventoryItem } from './types';
 
 export type SaleField =
   | 'itemId'
   | 'quantity'
   | 'unitPrice'
   | 'paymentMethod'
+  | 'channel'
   | 'customerName'
   | 'date';
 
@@ -16,6 +17,7 @@ export interface RawSaleForm {
   quantity: string;
   unitPrice: string;
   paymentMethod: string;
+  channel: string;
   customerName: string;
   date: string;
 }
@@ -28,7 +30,9 @@ export function validateSaleForm(
   const errors: SaleErrors = {};
 
   if (!form.itemId || !item) {
-    errors.itemId = 'Select an item.';
+    errors.itemId = 'Select a product.';
+  } else if (today && item.expiryDate < today) {
+    errors.itemId = 'This product is past its expiry date and cannot be sold.';
   }
 
   const quantity = Number(form.quantity);
@@ -49,6 +53,10 @@ export function validateSaleForm(
 
   if (!(PAYMENT_METHODS as readonly string[]).includes(form.paymentMethod)) {
     errors.paymentMethod = 'Select a payment method.';
+  }
+
+  if (!(SALES_CHANNELS as readonly string[]).includes(form.channel)) {
+    errors.channel = 'Select a sales channel.';
   }
 
   if (form.customerName.trim().length < 2) {

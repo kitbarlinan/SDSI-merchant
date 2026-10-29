@@ -11,14 +11,35 @@ export const formatNumber = (value: number): string => numberFormatter.format(va
 
 export const formatPercent = (value: number): string => `${value.toFixed(1)}%`;
 
+/** Short peso label for chart axes: ₱1.2k, ₱3.4M. */
+export function formatCompactPeso(value: number): string {
+  if (value >= 1_000_000) return `₱${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 10_000) return `₱${Math.round(value / 1000)}k`;
+  if (value >= 1000) return `₱${(value / 1000).toFixed(1)}k`;
+  return `₱${Math.round(value)}`;
+}
+
 /** Avoids a floating point drift like 0.1 + 0.2. */
 export const roundMoney = (value: number): number => Math.round(value * 100) / 100;
 
+function utcDate(iso: string): Date {
+  const [year, month, day] = iso.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
 /** Formats a YYYY-MM-DD string without any timezone shifting. */
 export function formatDate(iso: string): string {
-  const [year, month, day] = iso.split('-').map(Number);
-  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString('en-PH', {
+  return utcDate(iso).toLocaleDateString('en-PH', {
     year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+/** "Oct 29" */
+export function formatShortDate(iso: string): string {
+  return utcDate(iso).toLocaleDateString('en-PH', {
     month: 'short',
     day: 'numeric',
     timeZone: 'UTC',

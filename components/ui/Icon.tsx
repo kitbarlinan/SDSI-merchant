@@ -1,16 +1,30 @@
 import type { ReactNode } from 'react';
 
 export type IconName =
+  | 'dashboard'
   | 'sales'
   | 'inventory'
   | 'reports'
+  | 'leaf'
   | 'alert'
   | 'check'
   | 'plus'
   | 'reset'
-  | 'search';
+  | 'search'
+  | 'download'
+  | 'arrowUp'
+  | 'arrowDown'
+  | 'clock';
 
 const PATHS: Record<IconName, ReactNode> = {
+  dashboard: (
+    <>
+      <rect x="3" y="3" width="7" height="9" rx="1.5" />
+      <rect x="14" y="3" width="7" height="5" rx="1.5" />
+      <rect x="14" y="12" width="7" height="9" rx="1.5" />
+      <rect x="3" y="16" width="7" height="5" rx="1.5" />
+    </>
+  ),
   sales: (
     <>
       <path d="M6 6h15l-1.5 9h-12z" />
@@ -33,6 +47,12 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="M8 16v-5" />
       <path d="M12 16V8" />
       <path d="M16 16v-3" />
+    </>
+  ),
+  leaf: (
+    <>
+      <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.5 19 2c1 2 2 4.5 2 8 0 5.5-4.8 10-10 10z" />
+      <path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12" />
     </>
   ),
   alert: (
@@ -59,6 +79,31 @@ const PATHS: Record<IconName, ReactNode> = {
     <>
       <circle cx="11" cy="11" r="7" />
       <path d="m20 20-4-4" />
+    </>
+  ),
+  download: (
+    <>
+      <path d="M12 4v11" />
+      <path d="m7 11 5 5 5-5" />
+      <path d="M5 20h14" />
+    </>
+  ),
+  arrowUp: (
+    <>
+      <path d="M12 19V5" />
+      <path d="m6 11 6-6 6 6" />
+    </>
+  ),
+  arrowDown: (
+    <>
+      <path d="M12 5v14" />
+      <path d="m18 13-6 6-6-6" />
+    </>
+  ),
+  clock: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
     </>
   ),
 };

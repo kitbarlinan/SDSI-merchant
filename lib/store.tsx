@@ -30,7 +30,8 @@ interface MerchantContextValue {
   resetDemo: () => void;
 }
 
-const STORAGE_KEY = 'merchant-app:v1';
+// Bumped from v1 because the data shape changed (category, expiry, channel).
+const STORAGE_KEY = 'sdsi-wellness:v2';
 
 const createInitialState = (): State => ({
   items: MOCK_INVENTORY.map((item) => ({ ...item })),
@@ -72,7 +73,7 @@ export function MerchantProvider({ children }: { children: ReactNode }) {
   const addSale = useCallback(
     (input: SaleInput): AddSaleResult => {
       const item = state.items.find((candidate) => candidate.id === input.itemId);
-      if (!item) return { ok: false, error: 'That item no longer exists.' };
+      if (!item) return { ok: false, error: 'That product no longer exists.' };
       if (input.quantity > item.stock) {
         return { ok: false, error: `Only ${item.stock} of "${item.name}" left in stock.` };
       }
@@ -87,11 +88,13 @@ export function MerchantProvider({ children }: { children: ReactNode }) {
         itemId: item.id,
         itemName: item.name,
         sku: item.sku,
+        category: item.category,
         quantity: input.quantity,
         unitPrice: input.unitPrice,
         unitCost: item.unitCost,
         total: roundMoney(input.quantity * input.unitPrice),
         paymentMethod: input.paymentMethod,
+        channel: input.channel,
         customerName: input.customerName.trim(),
       };
 

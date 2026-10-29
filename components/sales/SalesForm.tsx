@@ -1,11 +1,19 @@
 'use client';
 
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { Card } from '@/components/ui/Card';
 import { Field, inputClass } from '@/components/ui/Field';
 import { Icon } from '@/components/ui/Icon';
 import { formatCurrency, roundMoney, todayISO } from '@/lib/format';
 import { useMerchant } from '@/lib/store';
-import { PAYMENT_METHODS, type PaymentMethod, type Sale } from '@/lib/types';
+import {
+  CATEGORIES,
+  PAYMENT_METHODS,
+  SALES_CHANNELS,
+  type PaymentMethod,
+  type Sale,
+  type SalesChannel,
+} from '@/lib/types';
 import { validateSaleForm, type RawSaleForm, type SaleField } from '@/lib/validation';
 
 const EMPTY_FORM: RawSaleForm = {
@@ -13,6 +21,7 @@ const EMPTY_FORM: RawSaleForm = {
   quantity: '',
   unitPrice: '',
   paymentMethod: '',
+  channel: '',
   customerName: '',
   date: '',
 };
@@ -42,14 +51,16 @@ export function SalesForm() {
 
   const item = items.find((candidate) => candidate.id === form.itemId);
   const errors = useMemo(() => validateSaleForm(form, item, today), [form, item, today]);
-  const hasErrors = Object.keys(errors).length > 0;
+  const errorCount = Object.keys(errors).length;
 
   const quantity = Number(form.quantity);
   const price = Number(form.unitPrice);
   const quantityValid = Number.isInteger(quantity) && quantity > 0;
-  const total = quantityValid && Number.isFinite(price) && price > 0 ? roundMoney(quantity * price) : 0;
+  const total =
+    quantityValid && Number.isFinite(price) && price > 0 ? roundMoney(quantity * price) : 0;
   const stockAfter = item && quantityValid ? item.stock - quantity : null;
-  const sellingBelowCost = Boolean(item) && Number.isFinite(price) && price > 0 && price < (item?.unitCost ?? 0);
+  const sellingBelowCost =
+    Boolean(item) && Number.isFinite(price) && price > 0 && price < (item?.unitCost ?? 0);
 
   const visibleError = (field: SaleField) =>
     touched[field] || submitted ? errors[field] : undefined;
@@ -76,13 +87,14 @@ export function SalesForm() {
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitted(true);
-    if (hasErrors || !item) return;
+    if (errorCount > 0 || !item) return;
 
     const result = addSale({
       itemId: item.id,
       quantity,
       unitPrice: price,
       paymentMethod: form.paymentMethod as PaymentMethod,
+      channel: form.channel as SalesChannel,
       customerName: form.customerName,
       date: form.date,
     });
@@ -103,22 +115,19 @@ export function SalesForm() {
     : undefined;
 
   return (
-    <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-200 px-6 py-4">
-        <h2 className="text-base font-semibold">New sale</h2>
-      </div>
-
+    <Card title="New sale" subtitle="Stock is deducted as soon as you record it.">
       {confirmation ? (
         <div
           role="status"
-          className="mx-6 mt-6 flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"
+          className="mb-5 flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"
         >
           <Icon name="check" className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
           <div className="flex-1">
             <p className="font-medium">Sale {confirmation.id} recorded</p>
             <p className="mt-0.5 text-emerald-800">
               {confirmation.quantity} × {confirmation.itemName} for{' '}
-              {formatCurrency(confirmation.total)} ({confirmation.paymentMethod}).
+              {formatCurrency(confirmation.total)} via {confirmation.channel} (
+              {confirmation.paymentMethod}).
               {confirmedItem ? ` Stock left: ${confirmedItem.stock}.` : ''}
             </p>
           </div>
@@ -132,14 +141,17 @@ export function SalesForm() {
         </div>
       ) : null}
 
-      <form onSubmit={handleSubmit} noValidate className="space-y-5 p-6">
+      <form onSubmit={handleSubmit} noValidate className="space-y-5">
         {serverError ? (
-          <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+          <div
+            role="alert"
+            className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800"
+          >
             {serverError}
           </div>
         ) : null}
 
-        <Field label="Item name" htmlFor="itemId" error={visibleError('itemId')}>
+        <Field label="Product" htmlFor="itemId" error={visibleError('itemId')}>
           <select
             id="itemId"
             value={form.itemId}
@@ -148,12 +160,20 @@ export function SalesForm() {
             aria-invalid={Boolean(visibleError('itemId'))}
             className={inputClass(Boolean(visibleError('itemId')))}
           >
-            <option value="">Select an item…</option>
-            {items.map((candidate) => (
-              <option key={candidate.id} value={candidate.id} disabled={candidate.stock <= 0}>
-                {candidate.name} — {candidate.sku} ({candidate.stock} in stock)
-              </option>
-            ))}
+            <option value="">Select a product…</option>
+            {CATEGORIES.map((category) => {
+              const group = items.filter((candidate) => candidate.category === category);
+              if (group.length === 0) return null;
+              return (
+                <optgroup key={category} label={category}>
+                  {group.map((candidate) => (
+                    <option key={candidate.id} value={candidate.id} disabled={candidate.stock <= 0}>
+                      {candidate.name} ({candidate.stock <= 0 ? 'out of stock' : `${candidate.stock} in stock`})
+                    </option>
+                  ))}
+                </optgroup>
+              );
+            })}
           </select>
         </Field>
 
@@ -216,7 +236,7 @@ export function SalesForm() {
             <span className="mb-1.5 block text-sm font-medium text-slate-700">Total</span>
             <output
               aria-live="polite"
-              className="flex h-[38px] items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-900"
+              className="flex h-[42px] items-center rounded-xl border border-emerald-100 bg-emerald-50 px-3 text-sm font-semibold text-emerald-900"
             >
               {formatCurrency(total)}
             </output>
@@ -242,6 +262,40 @@ export function SalesForm() {
             </select>
           </Field>
 
+          <Field label="Sales channel" htmlFor="channel" error={visibleError('channel')}>
+            <select
+              id="channel"
+              value={form.channel}
+              onChange={(event) => update('channel', event.target.value)}
+              onBlur={touch('channel')}
+              aria-invalid={Boolean(visibleError('channel'))}
+              className={inputClass(Boolean(visibleError('channel')))}
+            >
+              <option value="">Select…</option>
+              {SALES_CHANNELS.map((channel) => (
+                <option key={channel} value={channel}>
+                  {channel}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+
+        <div className="grid gap-5 sm:grid-cols-2">
+          <Field label="Customer name" htmlFor="customerName" error={visibleError('customerName')}>
+            <input
+              id="customerName"
+              type="text"
+              autoComplete="off"
+              value={form.customerName}
+              onChange={(event) => update('customerName', event.target.value)}
+              onBlur={touch('customerName')}
+              aria-invalid={Boolean(visibleError('customerName'))}
+              className={inputClass(Boolean(visibleError('customerName')))}
+              placeholder="e.g. Maria Santos or Walk-in"
+            />
+          </Field>
+
           <Field label="Date" htmlFor="date" error={visibleError('date')}>
             <input
               id="date"
@@ -256,35 +310,21 @@ export function SalesForm() {
           </Field>
         </div>
 
-        <Field label="Customer name" htmlFor="customerName" error={visibleError('customerName')}>
-          <input
-            id="customerName"
-            type="text"
-            autoComplete="off"
-            value={form.customerName}
-            onChange={(event) => update('customerName', event.target.value)}
-            onBlur={touch('customerName')}
-            aria-invalid={Boolean(visibleError('customerName'))}
-            className={inputClass(Boolean(visibleError('customerName')))}
-            placeholder="e.g. Maria Santos or Walk-in"
-          />
-        </Field>
-
-        <div className="flex items-center justify-between gap-4 border-t border-slate-200 pt-5">
+        <div className="flex items-center justify-between gap-4 border-t border-slate-100 pt-5">
           <p className="text-sm text-slate-500">
-            {submitted && hasErrors
-              ? `Fix ${Object.keys(errors).length} field${Object.keys(errors).length > 1 ? 's' : ''} to continue.`
+            {submitted && errorCount > 0
+              ? `Fix ${errorCount} field${errorCount > 1 ? 's' : ''} to continue.`
               : 'All fields are required.'}
           </p>
           <button
             type="submit"
-            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-300"
           >
             <Icon name="plus" className="h-4 w-4" />
             Record sale
           </button>
         </div>
       </form>
-    </section>
+    </Card>
   );
 }
