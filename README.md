@@ -56,3 +56,10 @@ Open http://localhost:3000 and pick an account (demo sign-in, no password).
 
 - **One costing row per SKU.** Solo (SKU-001) and twin pack (SKU-002) are separate SKUs with their own code, SRP and pickup price. "Qty (pcs)" is only the number of pieces inside the SKU and drives the +5 HKD SF per piece. A line on an order is priced as quantity × the SKU's live pickup price.
 - **Accounting.** Customer price basis = SRP × (1 + mark-up) (990 → 1,485). SDSI top-up (estimate) = the difference (495). Net payable to the merchant = basis − top-up = the SRP (990).
+
+## Reversal of delivered orders and weekly remittances
+
+- **Reversal.** No grace period. The cashier (or admin) sends **Request reversal** with a required note. Nothing changes until the inventory clerk or admin approves it in **For Approval**. Approving puts the order back to Packed (COP) or Shipped (COD), returns the stock for pickup and counter sales, and removes the sale from Accounting. A counter (walk-in) sale is voided. The POID never changes. Rejecting needs a reason. You cannot approve your own request.
+- **Remittances (weekly, Monday to Sunday).** The admin closes a finished week. That creates one remittance per merchant and **locks** its orders, so they can no longer be reversed. The admin then releases the payout with a release date, a reference and the **actual SF PH to HK that SDSI advanced** as a deduction (a note is required). Payout = net payable − SF advance.
+- **Merchant wallet** (admin and merchant see it on Remittances): balance = net payable of delivered orders not yet released. It is not sales. Also shows closed-awaiting-release, total paid out and total SF advance deducted.
+- **Cashier and clerk** do not see peso amounts (line prices, Net SRP, remittance). They only deal in HKD.

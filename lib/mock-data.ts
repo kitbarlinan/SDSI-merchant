@@ -2,6 +2,7 @@ import { roundMoney } from './format';
 import { buildDemoCosting, DEFAULT_COSTING_SETTINGS, orderCharges, type CostingState } from './costing';
 import { formatPoid } from './engine';
 import { addDays, weekdayOf } from './period';
+import { buildWeekRemittances, closableWeeks, weekEndOf } from './remittance';
 import type {
   InventoryItem,
   Merchant,
@@ -9,6 +10,8 @@ import type {
   OrderLine,
   OrderStatus,
   PaymentMethod,
+  Remittance,
+  ReversalRequest,
   StockReceipt,
   User,
 } from './types';
@@ -555,3 +558,78 @@ function generateReceipts(): StockReceipt[] {
 }
 
 export const MOCK_RECEIPTS: StockReceipt[] = generateReceipts();
+
+/**
+ * DEMO remittances: every finished week is closed. All are released except the latest finished week,
+ * which is still waiting for release. The SF deduction is a demo figure (PHP 45 per delivered COD
+ * order). In real use the admin types the actual SF advanced from PH to HK.
+ */
+function generateRemittances(): Remittance[] {
+  const weeks = closableWeeks(MOCK_ORDERS, [], MOCK_TODAY);
+  const all: Remittance[] = [];
+  weeks.forEach((weekStart, index) => {
+    const created = buildWeekRemittances(MOCK_ORDERS, weekStart, all.length + 1, ADMIN_ID, `${addDays(weekEndOf(weekStart), 1)}T09:00`);
+    const latest = index === weeks.length - 1;
+    for (const remittance of created) {
+      if (latest) {
+        all.push(remittance);
+        continue;
+      }
+      const cod = remittance.orderIds.filter((id) => {
+        const order = MOCK_ORDERS.find((candidate) => candidate.id === id)!;
+        return order.terms === 'COD' && order.source === 'merchant';
+      }).length;
+      const deduction = Math.min(remittance.netPayable, cod * 45);
+      all.push({
+        ...remittance,
+        deductionPhp: deduction,
+        deductionNote: deduction > 0 ? `Actual SF PH to HK advanced, ${cod} COD order${cod === 1 ? '' : 's'} (demo)` : '',
+        payoutPhp: roundMoney(remittance.netPayable - deduction),
+        status: 'released',
+        releasedBy: ADMIN_ID,
+        releasedDate: addDays(weekEndOf(weekStart), 2),
+        reference: `BANK-${remittance.id.slice(4)}`,
+      });
+    }
+  });
+  // Newest first, merchants in order.
+  return all.reverse();
+}
+
+export const MOCK_REMITTANCES: Remittance[] = generateRemittances();
+
+/** DEMO reversal requests: one waiting, one rejected, on recent deliveries that are not locked yet. */
+function generateReversals(): ReversalRequest[] {
+  const locked = new Set(MOCK_REMITTANCES.flatMap((remittance) => remittance.orderIds));
+  const open = MOCK_ORDERS.filter((order) => order.status === 'delivered' && order.source === 'merchant' && !locked.has(order.id))
+    .sort((a, b) => (b.deliveredAt ?? '').localeCompare(a.deliveredAt ?? ''));
+  const out: ReversalRequest[] = [];
+  if (open[0]) {
+    out.push({
+      id: 'REV-000002',
+      orderId: open[0].id,
+      merchantId: open[0].merchantId,
+      requestedBy: CASHIER_ID,
+      requestedAt: `${open[0].deliveredAt!.slice(0, 10)}T${open[0].deliveredAt!.slice(11, 13)}:59`,
+      note: 'Clicked delivered by mistake, the customer has not paid yet.',
+      status: 'pending',
+    });
+  }
+  if (open[1]) {
+    out.push({
+      id: 'REV-000001',
+      orderId: open[1].id,
+      merchantId: open[1].merchantId,
+      requestedBy: CASHIER_ID,
+      requestedAt: `${open[1].deliveredAt!.slice(0, 10)}T${open[1].deliveredAt!.slice(11, 13)}:58`,
+      note: 'Wrong payment method.',
+      status: 'rejected',
+      decidedBy: CLERK_ID,
+      decidedAt: `${open[1].deliveredAt!.slice(0, 10)}T${open[1].deliveredAt!.slice(11, 13)}:59`,
+      decisionNote: 'Payment method can be seen in the ledger. No need to undo.',
+    });
+  }
+  return out;
+}
+
+export const MOCK_REVERSALS: ReversalRequest[] = generateReversals();

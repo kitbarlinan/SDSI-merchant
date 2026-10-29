@@ -15,6 +15,8 @@ import type { Actor, AppState, PlaceOrderInput } from './engine';
 import { nowISO } from './format';
 import {
   MOCK_COSTING,
+  MOCK_REMITTANCES,
+  MOCK_REVERSALS,
   MOCK_INVENTORY,
   MOCK_MERCHANTS,
   MOCK_ORDERS,
@@ -25,6 +27,8 @@ import {
 import type { CostingRow, CostingSettings, CostingState } from './costing';
 import type {
   InventoryItem,
+  Remittance,
+  ReversalRequest,
   Merchant,
   Order,
   PaymentMethod,
@@ -40,6 +44,8 @@ interface AppDataValue {
   items: InventoryItem[];
   orders: Order[];
   receipts: StockReceipt[];
+  reversals: ReversalRequest[];
+  remittances: Remittance[];
   /** Costing table, settings and change log. Show it only to the admin. */
   costing: CostingState;
   hydrated: boolean;
@@ -78,6 +84,15 @@ interface AppDataValue {
   ) => ActionResult<number>;
   setCostingSettings: (actor: Actor, patch: Partial<CostingSettings>) => ActionResult<CostingSettings>;
   removeCostingRow: (actor: Actor, rowId: string) => ActionResult<CostingRow>;
+  requestReversal: (actor: Actor, orderId: string, note: string) => ActionResult<ReversalRequest>;
+  approveReversal: (actor: Actor, requestId: string) => ActionResult<ReversalRequest>;
+  rejectReversal: (actor: Actor, requestId: string, reason: string) => ActionResult<ReversalRequest>;
+  closeWeek: (actor: Actor, weekStart: string) => ActionResult<Remittance[]>;
+  releaseRemittance: (
+    actor: Actor,
+    remittanceId: string,
+    input: { releasedDate: string; deductionPhp: number; deductionNote: string; reference: string },
+  ) => ActionResult<Remittance>;
   approveCostingRow: (actor: Actor, rowId: string) => ActionResult<CostingRow>;
   revokeApproval: (actor: Actor, rowId: string) => ActionResult<CostingRow>;
   goLiveCostingRow: (actor: Actor, rowId: string) => ActionResult<CostingRow>;
@@ -87,12 +102,14 @@ interface AppDataValue {
 }
 
 // Bumped whenever the saved data shape changes.
-const STORAGE_KEY = 'sdsi-wellness:v8';
+const STORAGE_KEY = 'sdsi-wellness:v9';
 
 const createInitialState = (): AppState => ({
   items: MOCK_INVENTORY.map((item) => ({ ...item })),
   orders: MOCK_ORDERS.map((order) => ({ ...order, lines: order.lines.map((line) => ({ ...line })) })),
   receipts: MOCK_RECEIPTS.map((receipt) => ({ ...receipt, lines: receipt.lines.map((line) => ({ ...line })) })),
+  reversals: MOCK_REVERSALS.map((request) => ({ ...request })),
+  remittances: MOCK_REMITTANCES.map((remittance) => ({ ...remittance, orderIds: [...remittance.orderIds] })),
   costing: {
     settings: { ...MOCK_COSTING.settings },
     rows: MOCK_COSTING.rows.map((row) => ({ ...row })),
@@ -108,6 +125,8 @@ const isSavedState = (value: unknown): value is AppState => {
     Array.isArray(candidate.items) &&
     Array.isArray(candidate.orders) &&
     Array.isArray(candidate.receipts) &&
+    Array.isArray(candidate.reversals) &&
+    Array.isArray(candidate.remittances) &&
     !!candidate.costing &&
     Array.isArray(candidate.costing.rows) &&
     typeof candidate.poSeq === 'number'
@@ -168,6 +187,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       items: state.items,
       orders: state.orders,
       receipts: state.receipts,
+      reversals: state.reversals,
+      remittances: state.remittances,
       costing: state.costing,
       hydrated,
       placeOrder: (actor, input) => run((s) => engine.placeMerchantOrder(s, actor, input, nowISO())),
@@ -194,6 +215,13 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       setCostingSettings: (actor, patch) =>
         run((s) => engine.setCostingSettings(s, actor, patch, nowISO())),
       removeCostingRow: (actor, rowId) => run((s) => engine.removeCostingRow(s, actor, rowId, nowISO())),
+      requestReversal: (actor, orderId, note) => run((s) => engine.requestReversal(s, actor, orderId, note, nowISO())),
+      approveReversal: (actor, requestId) => run((s) => engine.approveReversal(s, actor, requestId, nowISO())),
+      rejectReversal: (actor, requestId, reason) =>
+        run((s) => engine.rejectReversal(s, actor, requestId, reason, nowISO())),
+      closeWeek: (actor, weekStart) => run((s) => engine.closeWeek(s, actor, weekStart, nowISO())),
+      releaseRemittance: (actor, remittanceId, input) =>
+        run((s) => engine.releaseRemittance(s, actor, remittanceId, input, nowISO())),
       approveCostingRow: (actor, rowId) => run((s) => engine.approveCostingRow(s, actor, rowId, nowISO())),
       revokeApproval: (actor, rowId) => run((s) => engine.revokeApproval(s, actor, rowId, nowISO())),
       goLiveCostingRow: (actor, rowId) => run((s) => engine.goLiveCostingRow(s, actor, rowId, nowISO())),

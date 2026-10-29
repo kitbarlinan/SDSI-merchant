@@ -29,7 +29,7 @@ const RTS_REASONS = [
   'Other',
 ];
 
-type Panel = 'ship' | 'deliver' | 'rts' | 'cancel' | null;
+type Panel = 'ship' | 'deliver' | 'rts' | 'cancel' | 'reverse' | null;
 
 const buttonBase = 'rounded-xl px-3 py-2 text-sm font-semibold text-white';
 const ghostButton =
@@ -45,7 +45,8 @@ export function OrderCard({
   showMerchant: boolean;
 }) {
   const { user } = useAuth();
-  const { users, markPacked, shipOrder, markDelivered, markRts, cancelOrder } = useAppData();
+  const { users, reversals, remittances, markPacked, shipOrder, markDelivered, markRts, cancelOrder, requestReversal } =
+    useAppData();
 
   const [panel, setPanel] = useState<Panel>(null);
   const [waybill, setWaybill] = useState('');
@@ -53,11 +54,18 @@ export function OrderCard({
   const [reason, setReason] = useState(CANCEL_REASONS[0]);
   const [otherReason, setOtherReason] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [reverseNote, setReverseNote] = useState('');
 
   if (!user) return null;
 
   const canHandle = isStaff(user.role);
   const total = orderTotal(order);
+  // The cashier and the clerk only deal in HKD. The peso Net SRP (what is remitted) is for the admin and the merchant.
+  const showPeso = user.role === 'admin' || user.role === 'merchant';
+  const requests = order.status === 'delivered' ? reversals.filter((request) => request.orderId === order.id) : [];
+  const pendingRequest = requests.find((request) => request.status === 'pending');
+  const lastRejected = requests.find((request) => request.status === 'rejected');
+  const remitted = order.status === 'delivered' && remittances.some((remittance) => remittance.orderIds.includes(order.id));
   const nameOf = (id?: string) => users.find((candidate) => candidate.id === id)?.name;
 
   const finish = <T,>(result: ActionResult<T>) => {
@@ -124,7 +132,7 @@ export function OrderCard({
                   </p>
                   <p className="font-mono text-xs text-slate-500">{line.sku}</p>
                 </div>
-                <p className="shrink-0 text-slate-700">{formatCurrency(line.total)}</p>
+                {showPeso ? <p className="shrink-0 text-slate-700">{formatCurrency(line.total)}</p> : null}
               </li>
             ))}
           </ul>
@@ -149,7 +157,7 @@ export function OrderCard({
             </span>
             <span className="text-lg font-semibold text-slate-900">{orderAmountLabel(order)}</span>
           </div>
-          {order.amountHkd != null ? (
+          {order.amountHkd != null && showPeso ? (
             <p className="flex justify-between text-xs">
               <span className="text-slate-500">Net SRP, remit to merchant</span>
               <span className="font-medium text-slate-700">{formatCurrency(total)}</span>
@@ -183,6 +191,68 @@ export function OrderCard({
               Paid via {order.paymentMethod} · {formatDateTime(order.deliveredAt)}
               {nameOf(order.handledBy) ? ` · ${nameOf(order.handledBy)}` : ''}
             </p>
+          ) : null}
+
+          {canHandle && order.status === 'delivered' ? (
+            <div className="space-y-2">
+              {pendingRequest ? (
+                <p className="rounded-xl bg-amber-50 p-2.5 text-xs text-amber-900">
+                  <span className="font-semibold">Reversal waiting for approval</span> ({pendingRequest.id}). Your note:
+                  “{pendingRequest.note}”
+                </p>
+              ) : remitted ? (
+                <p className="text-xs text-slate-500">
+                  Locked: this order is in a closed remittance week and can no longer be reversed.
+                </p>
+              ) : panel === 'reverse' ? (
+                <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                  <label className="block text-xs font-medium text-amber-900">
+                    Why is this delivered order being undone? (required)
+                    <textarea
+                      autoFocus
+                      rows={3}
+                      value={reverseNote}
+                      onChange={(event) => setReverseNote(event.target.value)}
+                      placeholder="e.g. Clicked delivered by mistake, the customer has not paid yet"
+                      className={`mt-1 ${inputClass(false)}`}
+                    />
+                  </label>
+                  <p className="text-xs text-amber-800">
+                    Nothing changes yet. The inventory clerk or admin must approve it first.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={reverseNote.trim().length < 5}
+                      onClick={() => {
+                        const result = requestReversal(user, order.id, reverseNote);
+                        finish(result);
+                        if (result.ok) setReverseNote('');
+                      }}
+                      className={`flex-1 bg-amber-600 hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50 ${buttonBase}`}
+                    >
+                      Send for approval
+                    </button>
+                    <button type="button" onClick={() => setPanel(null)} className={ghostButton}>
+                      Back
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => open('reverse')}
+                  className="w-full rounded-xl border border-amber-300 px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-50"
+                >
+                  Request reversal
+                </button>
+              )}
+              {lastRejected && !pendingRequest ? (
+                <p className="text-xs text-slate-500">
+                  Last request rejected{lastRejected.decisionNote ? `: ${lastRejected.decisionNote}` : '.'}
+                </p>
+              ) : null}
+            </div>
           ) : null}
 
           {order.status === 'cancelled' ? (

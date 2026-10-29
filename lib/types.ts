@@ -185,3 +185,59 @@ export interface StockReceipt {
   decidedAt?: string;
   rejectReason?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Reversal of a delivered order
+// ---------------------------------------------------------------------------
+
+export type ReversalStatus = 'pending' | 'approved' | 'rejected';
+
+/**
+ * The cashier says a delivered order was marked by mistake. The inventory clerk or admin decides.
+ * The cashier's note is required, and nothing changes until it is approved.
+ */
+export interface ReversalRequest {
+  id: string;
+  orderId: string;
+  merchantId: string;
+  requestedBy: string;
+  /** YYYY-MM-DDTHH:mm */
+  requestedAt: string;
+  /** Why the cashier is undoing it. Required. */
+  note: string;
+  status: ReversalStatus;
+  decidedBy?: string;
+  decidedAt?: string;
+  /** Required when rejected. */
+  decisionNote?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Remittances: the weekly payout to each merchant
+// ---------------------------------------------------------------------------
+
+export type RemittanceStatus = 'pending' | 'released';
+
+export interface Remittance {
+  id: string;
+  merchantId: string;
+  /** Monday of the cutoff week, YYYY-MM-DD. The week runs Monday to Sunday. */
+  weekStart: string;
+  weekEnd: string;
+  /** Delivered orders in the week. Once listed here they are locked: no reversal. */
+  orderIds: string[];
+  /** Net payable (PHP): the Net SRP of those orders. */
+  netPayable: number;
+  /** Actual SF from PH to HK that SDSI advanced, deducted from the payout (PHP). */
+  deductionPhp: number;
+  deductionNote: string;
+  /** What is actually paid out: net payable minus the deduction. */
+  payoutPhp: number;
+  status: RemittanceStatus;
+  closedBy: string;
+  closedAt: string;
+  releasedBy?: string;
+  /** YYYY-MM-DD, the day the money was released to the merchant. */
+  releasedDate?: string;
+  reference?: string;
+}

@@ -42,6 +42,7 @@ const NAV: NavItem[] = [
     roles: ['admin', 'cashier', 'clerk', 'merchant'],
     badge: 'inventory',
   },
+  { href: '/remittances', label: 'Remittances', icon: 'wallet', roles: ['admin', 'merchant'] },
   { href: '/approvals', label: 'For Approval', icon: 'check', roles: ['admin', 'clerk'], badge: 'approvals' },
   { href: '/accounting', label: 'Accounting', icon: 'wallet', roles: ['admin'] },
 ];
@@ -69,7 +70,7 @@ function Logo({ small = false }: { small?: boolean }) {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { user, ready, logout } = useAuth();
-  const { items, orders, receipts, merchants, resetDemo } = useAppData();
+  const { items, orders, receipts, reversals, merchants, resetDemo } = useAppData();
 
   const visibleNav = useMemo(
     () => (user ? NAV.filter((entry) => entry.roles.includes(user.role)) : []),
@@ -92,9 +93,12 @@ export function AppShell({ children }: { children: ReactNode }) {
     return {
       orders: mine(orders).filter(isOpen).length,
       inventory: mine(items).filter((item) => getStockStatus(item) !== 'ok').length,
-      approvals: canApprove(user.role) ? receipts.filter((receipt) => receipt.status === 'pending').length : 0,
+      approvals: canApprove(user.role)
+        ? receipts.filter((receipt) => receipt.status === 'pending').length +
+          reversals.filter((request) => request.status === 'pending').length
+        : 0,
     };
-  }, [user, orders, items, receipts]);
+  }, [user, orders, items, receipts, reversals]);
 
   if (!ready) {
     return (

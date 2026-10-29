@@ -21,6 +21,7 @@ import {
   type CostingState,
 } from './costing';
 import { availableOf, reservedByItem } from './orders';
+import { buildWeekRemittances, remittedOrderIds, weekEndOf, weekStartOf } from './remittance';
 import {
   PAYMENT_METHODS,
   type InventoryItem,
@@ -29,6 +30,8 @@ import {
   type OrderTerms,
   type PaymentMethod,
   type ReceiptLine,
+  type Remittance,
+  type ReversalRequest,
   type Role,
   type StockReceipt,
 } from './types';
@@ -37,6 +40,10 @@ export interface AppState {
   items: InventoryItem[];
   orders: Order[];
   receipts: StockReceipt[];
+  /** Cashier requests to undo a delivered order. */
+  reversals: ReversalRequest[];
+  /** Weekly payouts to merchants. */
+  remittances: Remittance[];
   /** Pickup-price costing. Admin only. */
   costing: CostingState;
   /** Last PO number handed out. Only ever goes up, so a POID is never reused. */
@@ -849,3 +856,181 @@ export const costingLine = (state: AppState, row: CostingRow) => {
   const item = state.items.find((candidate) => candidate.id === row.itemId);
   return item ? computeCosting(item.unitPrice, row.qty, row.pickupPriceHkd, state.costing.settings) : null;
 };
+
+// ---------------------------------------------------------------------------
+// Reversal of a delivered order. No grace period: the cashier gives a note, the inventory clerk
+// or admin approves. Orders in a closed remittance week are locked.
+// ---------------------------------------------------------------------------
+
+const reversalId = (state: AppState) => `REV-${String(state.reversals.length + 1).padStart(6, '0')}`;
+
+export function requestReversal(
+  state: AppState,
+  actor: Actor,
+  orderId: string,
+  note: string,
+  now: string,
+): Outcome<ReversalRequest> {
+  if (!isStaff(actor)) return fail('Only the cashier or admin can request a reversal.');
+  if (note.trim().length < 5) return fail('Write a note: why is this delivered order being undone?');
+  const order = state.orders.find((candidate) => candidate.id === orderId);
+  if (!order) return fail('Order not found.');
+  if (order.status !== 'delivered') return fail('Only delivered orders can be reversed.');
+  if (remittedOrderIds(state.remittances).has(order.id)) {
+    return fail('This order is already in a closed remittance week and is locked. Ask the admin for an adjustment.');
+  }
+  if (state.reversals.some((request) => request.orderId === orderId && request.status === 'pending')) {
+    return fail('A reversal request for this order is already waiting for approval.');
+  }
+  const request: ReversalRequest = {
+    id: reversalId(state),
+    orderId,
+    merchantId: order.merchantId,
+    requestedBy: actor.id,
+    requestedAt: now,
+    note: note.trim(),
+    status: 'pending',
+  };
+  return { ok: true, state: { ...state, reversals: [request, ...state.reversals] }, value: request };
+}
+
+export function approveReversal(
+  state: AppState,
+  actor: Actor,
+  requestId: string,
+  now: string,
+): Outcome<ReversalRequest> {
+  if (!canApprove(actor)) return fail('Only the inventory clerk or admin can approve a reversal.');
+  const request = state.reversals.find((candidate) => candidate.id === requestId);
+  if (!request) return fail('Request not found.');
+  if (request.status !== 'pending') return fail('This request was already decided.');
+  if (request.requestedBy === actor.id) return fail('You cannot approve your own request.');
+  const order = state.orders.find((candidate) => candidate.id === request.orderId);
+  if (!order || order.status !== 'delivered') return fail('This order is no longer delivered.');
+  if (remittedOrderIds(state.remittances).has(order.id)) {
+    return fail('This order is already in a closed remittance week and is locked.');
+  }
+
+  // Back to the status before delivery. Walk-in sales have no earlier status, so they are voided.
+  let change: Partial<Order>;
+  let items = state.items;
+  const clear = { deliveredAt: undefined, paymentMethod: undefined, topUpRate: undefined };
+  if (order.source === 'walk-in') {
+    change = { ...clear, status: 'cancelled', cancelledAt: now, cancelReason: `Sale voided (${request.id})` };
+  } else if (order.terms === 'COD') {
+    change = { ...clear, status: 'shipped' };
+  } else {
+    change = { ...clear, status: 'packed' };
+  }
+  if (order.terms !== 'COD') {
+    // Counter and pickup sales took the goods off the shelf at delivery. Put them back.
+    const back = new Map(order.lines.map((line) => [line.itemId, line.quantity] as const));
+    items = state.items.map((item) => (back.has(item.id) ? { ...item, stock: item.stock + back.get(item.id)! } : item));
+  }
+  const next: ReversalRequest = { ...request, status: 'approved', decidedBy: actor.id, decidedAt: now };
+  return {
+    ok: true,
+    state: {
+      ...state,
+      items,
+      orders: state.orders.map((candidate) => (candidate.id === order.id ? { ...candidate, ...change } : candidate)),
+      reversals: state.reversals.map((candidate) => (candidate.id === requestId ? next : candidate)),
+    },
+    value: next,
+  };
+}
+
+export function rejectReversal(
+  state: AppState,
+  actor: Actor,
+  requestId: string,
+  reason: string,
+  now: string,
+): Outcome<ReversalRequest> {
+  if (!canApprove(actor)) return fail('Only the inventory clerk or admin can reject a reversal.');
+  if (reason.trim().length < 3) return fail('Write why the request is rejected.');
+  const request = state.reversals.find((candidate) => candidate.id === requestId);
+  if (!request) return fail('Request not found.');
+  if (request.status !== 'pending') return fail('This request was already decided.');
+  const next: ReversalRequest = {
+    ...request,
+    status: 'rejected',
+    decidedBy: actor.id,
+    decidedAt: now,
+    decisionNote: reason.trim(),
+  };
+  return {
+    ok: true,
+    state: { ...state, reversals: state.reversals.map((candidate) => (candidate.id === requestId ? next : candidate)) },
+    value: next,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Remittances: weekly cutoff (Monday to Sunday), then release with the SF advance deducted.
+// ---------------------------------------------------------------------------
+
+/** Closes a finished week for every merchant that had deliveries. Locks those orders. */
+export function closeWeek(
+  state: AppState,
+  actor: Actor,
+  weekStart: string,
+  now: string,
+): Outcome<Remittance[]> {
+  if (actor.role !== 'admin') return fail('Only the admin can close a week.');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart) || weekStartOf(weekStart) !== weekStart) {
+    return fail('A week starts on a Monday.');
+  }
+  if (weekEndOf(weekStart) >= dateOf(now)) return fail('This week is not over yet.');
+  if (state.remittances.some((remittance) => remittance.weekStart === weekStart)) {
+    return fail('This week is already closed.');
+  }
+  const created = buildWeekRemittances(
+    state.orders,
+    weekStart,
+    state.remittances.length + 1,
+    actor.id,
+    now,
+  );
+  if (created.length === 0) return fail('No delivered orders in this week.');
+  return { ok: true, state: { ...state, remittances: [...created.reverse(), ...state.remittances] }, value: created };
+}
+
+/** Admin releases the payout: sets the SF advance to deduct, the release date and a reference. */
+export function releaseRemittance(
+  state: AppState,
+  actor: Actor,
+  remittanceId: string,
+  input: { releasedDate: string; deductionPhp: number; deductionNote: string; reference: string },
+  now: string,
+): Outcome<Remittance> {
+  if (actor.role !== 'admin') return fail('Only the admin can release a payout.');
+  const remittance = state.remittances.find((candidate) => candidate.id === remittanceId);
+  if (!remittance) return fail('Remittance not found.');
+  if (remittance.status !== 'pending') return fail('This payout was already released.');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.releasedDate)) return fail('Enter the release date.');
+  if (input.releasedDate > dateOf(now)) return fail('The release date cannot be in the future.');
+  if (input.releasedDate <= remittance.weekEnd) return fail('The payout is released after the week ends.');
+  if (!Number.isFinite(input.deductionPhp) || input.deductionPhp < 0) return fail('The deduction cannot be negative.');
+  if (input.deductionPhp > remittance.netPayable) return fail('The deduction is more than the net payable.');
+  if (input.deductionPhp > 0 && input.deductionNote.trim().length < 3) {
+    return fail('Write what the deduction is (the actual SF PH to HK advanced).');
+  }
+  if (input.reference.trim().length < 2) return fail('Enter a payment reference.');
+  const deduction = roundMoney(input.deductionPhp);
+  const next: Remittance = {
+    ...remittance,
+    deductionPhp: deduction,
+    deductionNote: input.deductionNote.trim(),
+    payoutPhp: roundMoney(remittance.netPayable - deduction),
+    status: 'released',
+    releasedBy: actor.id,
+    releasedDate: input.releasedDate,
+    reference: input.reference.trim(),
+  };
+  return {
+    ok: true,
+    state: { ...state, remittances: state.remittances.map((candidate) => (candidate.id === remittanceId ? next : candidate)) },
+    value: next,
+  };
+}
