@@ -162,6 +162,8 @@ export const costingRowFor = (
 
 /** SF, CF and net COD (HKD) of an order, from the LIVE costing only. */
 export interface OrderCharges {
+  /** Sum of the live pickup prices. */
+  pickupHkd: number;
   sfHkd: number;
   cfHkd: number;
   netCodHkd: number;
@@ -190,7 +192,15 @@ export function orderCharges(
   pickupTotal = roundMoney(pickupTotal);
   const sfHkd = costing.settings.shippingFeeHkd;
   const cfHkd = collectionFee(pickupTotal, costing.settings).fee;
-  return { sfHkd, cfHkd, netCodHkd: roundMoney(pickupTotal + sfHkd + cfHkd) };
+  return { pickupHkd: pickupTotal, sfHkd, cfHkd, netCodHkd: roundMoney(pickupTotal + sfHkd + cfHkd) };
+}
+
+/** The live packages of a product: the quantities that can be ordered, with their pickup price (HKD). */
+export function livePackages(costing: CostingState, itemId: string): { qty: number; pickupHkd: number }[] {
+  return costing.rows
+    .filter((row) => row.itemId === itemId && row.live)
+    .map((row) => ({ qty: row.qty, pickupHkd: row.live!.pickupPriceHkd }))
+    .sort((a, b) => a.qty - b.qty);
 }
 
 /** Freezes the current working price and settings into what orders will use. */
@@ -273,7 +283,7 @@ export function validateSettings(patch: Partial<CostingSettings>): string | null
 export function buildDemoCosting(items: InventoryItem[], settings = DEFAULT_COSTING_SETTINGS): CostingRow[] {
   const rows: CostingRow[] = [];
   for (const item of items) {
-    for (const qty of [1, 2, 3]) {
+    for (const qty of [1, 2, 3, 4, 5]) {
       rows.push({
         id: `cst-${item.id.replace('itm-', '')}-${qty}`,
         itemId: item.id,

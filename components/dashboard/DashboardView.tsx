@@ -14,13 +14,14 @@ import { DateFilter } from '@/components/ui/DateFilter';
 import { MerchantFilter } from '@/components/ui/MerchantFilter';
 import { StatCard } from '@/components/ui/StatCard';
 import { useAuth } from '@/lib/auth';
-import { formatCurrency, formatDateTime, formatNumber, formatPercent } from '@/lib/format';
+import { formatCurrency, formatDateTime, formatHkd, formatNumber, formatPercent } from '@/lib/format';
 import { getStockStatus } from '@/lib/inventory';
 import {
   availableOf,
   flattenDelivered,
   isOpen,
-  orderTotal,
+  orderAmountLabel,
+  toCollectHkd,
   reservedByItem,
   sortNewestFirst,
 } from '@/lib/orders';
@@ -75,7 +76,7 @@ function RecentOrders({
                   <TermsBadge terms={order.terms} />
                   <OrderStatusBadge status={order.status} />
                   <span className="w-20 text-right font-semibold text-slate-900">
-                    {formatCurrency(orderTotal(order))}
+                    {orderAmountLabel(order)}
                   </span>
                 </div>
               </li>
@@ -326,7 +327,7 @@ function MerchantDashboard({
 
   const open = orders.filter(isOpen);
   const stockAlerts = items.filter((item) => getStockStatus(item) !== 'ok').length;
-  const toCollect = open.reduce((sum, order) => sum + orderTotal(order), 0);
+  const toCollect = toCollectHkd(open);
 
   return (
     <>
@@ -350,7 +351,7 @@ function MerchantDashboard({
           icon="orders"
           label="Open orders"
           value={formatNumber(open.length)}
-          hint={`${formatCurrency(toCollect)} still to be collected`}
+          hint={`${formatHkd(toCollect)} still to be collected`}
         />
         <StatCard
           icon="alert"

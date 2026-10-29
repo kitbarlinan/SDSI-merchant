@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type ReactNode } from 'react';
 import { Icon } from '@/components/ui/Icon';
-import { formatCurrency, formatNumber, roundMoney } from '@/lib/format';
+import { formatHkd, formatNumber, roundMoney } from '@/lib/format';
 import type { InventoryItem, Merchant } from '@/lib/types';
 
 export interface ListRow {
@@ -10,11 +10,14 @@ export interface ListRow {
   /** How many can still be ordered. */
   available: number;
   expired: boolean;
+  /** Live packages: the quantities that can be ordered and their price (HKD). */
+  packages: { qty: number; pickupHkd: number }[];
 }
 
 export interface ParsedQuantities {
   lines: { item: InventoryItem; quantity: number }[];
-  total: number;
+  /** Sum of the live pickup prices, HKD. */
+  totalHkd: number;
   /** Error text per item id. */
   errors: Record<string, string>;
 }
@@ -23,17 +26,24 @@ export interface ParsedQuantities {
 export function parseQuantities(rows: ListRow[], typed: Record<string, string>): ParsedQuantities {
   const lines: ParsedQuantities['lines'] = [];
   const errors: Record<string, string> = {};
-  for (const { item, available, expired } of rows) {
+  let totalHkd = 0;
+  for (const { item, available, expired, packages } of rows) {
     const raw = (typed[item.id] ?? '').trim();
     if (raw === '') continue;
     const quantity = Number(raw);
     if (!Number.isInteger(quantity) || quantity < 0) errors[item.id] = 'Whole number only.';
     else if (quantity > 0 && expired) errors[item.id] = 'Expired.';
     else if (quantity > available) errors[item.id] = `Only ${formatNumber(available)} available.`;
-    else if (quantity > 0) lines.push({ item, quantity });
+    else if (quantity > 0) {
+      const pack = packages.find((candidate) => candidate.qty === quantity);
+      if (!pack) errors[item.id] = `No price for ${quantity}. Packages: ${packages.map((p) => p.qty).join(', ')}.`;
+      else {
+        lines.push({ item, quantity });
+        totalHkd += pack.pickupHkd;
+      }
+    }
   }
-  const total = roundMoney(lines.reduce((sum, line) => sum + line.quantity * line.item.unitPrice, 0));
-  return { lines, total, errors };
+  return { lines, totalHkd: roundMoney(totalHkd), errors };
 }
 
 const COLUMNS = 'md:grid md:grid-cols-[2.5rem_8.5rem_1fr_6rem_5.5rem_6.5rem_7rem] md:items-center md:gap-3';
@@ -121,7 +131,7 @@ export function ProductList({
         <span>#</span>
         <span>Item code</span>
         <span>Item</span>
-        <span className="text-right">Price</span>
+        <span className="text-right">Price (HKD)</span>
         <span className="text-right">Available</span>
         <span className="text-center">Qty</span>
         <span className="text-right">Amount</span>
@@ -131,13 +141,16 @@ export function ProductList({
         {visible.length === 0 ? (
           <li className="px-4 py-10 text-center text-sm text-slate-500">No products match your search.</li>
         ) : (
-          visible.map(({ item, available, expired, number }) => {
+          visible.map(({ item, available, expired, number, packages }) => {
             const raw = typed[item.id] ?? '';
             const quantity = Number(raw);
             const error = errors[item.id];
             const disabled = available <= 0 || expired;
             const merchant = merchants.find((m) => m.id === item.merchantId);
-            const amount = Number.isInteger(quantity) && quantity > 0 && !error ? quantity * item.unitPrice : 0;
+            const amount =
+              Number.isInteger(quantity) && quantity > 0 && !error
+                ? (packages.find((pack) => pack.qty === quantity)?.pickupHkd ?? 0)
+                : 0;
             return (
               <li key={item.id} className={`px-4 py-3 ${COLUMNS} ${disabled ? 'bg-slate-50/60' : ''}`}>
                 <span className="hidden text-sm text-slate-500 md:block">{number}</span>
@@ -149,7 +162,7 @@ export function ProductList({
                   </p>
                   <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-slate-500 md:hidden">
                     <span className="font-mono">{item.sku}</span>
-                    <span>{formatCurrency(item.unitPrice)}</span>
+                    <span>{packages.map((pack) => `×${pack.qty} ${formatHkd(pack.pickupHkd)}`).join(' · ')}</span>
                   </p>
                   {showMerchant && merchant ? (
                     <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-500">
@@ -164,7 +177,13 @@ export function ProductList({
                   ) : null}
                 </div>
 
-                <span className="hidden text-right text-sm md:block">{formatCurrency(item.unitPrice)}</span>
+                <span className="hidden text-right text-xs leading-5 text-slate-700 md:block">
+                  {packages.map((pack) => (
+                    <span key={pack.qty} className="block">
+                      ×{pack.qty} <span className="font-medium">{formatHkd(pack.pickupHkd)}</span>
+                    </span>
+                  ))}
+                </span>
                 <span
                   className={`mt-1 block text-xs md:mt-0 md:text-right md:text-sm ${
                     disabled ? 'font-medium text-rose-600' : 'text-slate-600'
@@ -191,12 +210,12 @@ export function ProductList({
                     }`}
                   />
                   <span className="text-sm font-semibold text-slate-900 md:hidden">
-                    {amount > 0 ? formatCurrency(amount) : ''}
+                    {amount > 0 ? formatHkd(amount) : ''}
                   </span>
                 </div>
 
                 <span className="hidden text-right text-sm font-semibold text-slate-900 md:block">
-                  {amount > 0 ? formatCurrency(amount) : ''}
+                  {amount > 0 ? formatHkd(amount) : ''}
                 </span>
               </li>
             );

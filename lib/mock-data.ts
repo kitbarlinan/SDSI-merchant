@@ -397,15 +397,21 @@ function generateOrders(): Order[] {
           order.packedAt = stamp(date, hour + 1, minute);
           order.handledBy = CASHIER_ID;
         }
-        if (terms === 'COD' && !walkIn) {
+        {
           const charges = orderCharges(
             lines.map((line) => ({ itemId: line.itemId, quantity: line.quantity })),
             MOCK_COSTING,
           );
           if (charges) {
-            order.sfHkd = charges.sfHkd;
-            order.collectionFeeHkd = charges.cfHkd;
-            order.netCodHkd = charges.netCodHkd;
+            order.pickupHkd = charges.pickupHkd;
+            if (terms === 'COD' && !walkIn) {
+              order.sfHkd = charges.sfHkd;
+              order.collectionFeeHkd = charges.cfHkd;
+              order.netCodHkd = charges.netCodHkd;
+              order.amountHkd = charges.netCodHkd;
+            } else {
+              order.amountHkd = charges.pickupHkd;
+            }
           }
         }
         if (terms === 'COD' && !walkIn && (status === 'shipped' || status === 'rts' || status === 'delivered')) {

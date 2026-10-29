@@ -10,6 +10,7 @@ import {
   computeCosting,
   costingRowFor,
   orderCharges,
+  livePackages,
   isSellable,
   snapshotLive,
   validateSkuCode,
@@ -97,6 +98,10 @@ function buildLines(
     const item = state.items.find((candidate) => candidate.id === itemId);
     if (!item || (merchantId && item.merchantId !== merchantId)) return fail('Product not found.');
     if (!isSellable(item, state.costing)) return fail(`"${item.name}" is not on sale.`);
+    if (!costingRowFor(state.costing.rows, item.id, quantity)?.live) {
+      const offered = livePackages(state.costing, item.id).map((pack) => pack.qty).join(', ');
+      return fail(`No live price for "${item.name}" x${quantity}. Live packages: ${offered}.`);
+    }
     if (!Number.isInteger(quantity) || quantity < 1) {
       return fail('Quantities must be whole numbers of at least 1.');
     }
@@ -159,16 +164,19 @@ export function placeMerchantOrder(
     lines: built.lines,
     status: 'pending',
   };
+  const charges = orderCharges(
+    built.lines.map((line) => ({ itemId: line.itemId, quantity: line.quantity })),
+    state.costing,
+  );
+  if (!charges) return fail('This order has no live price.');
+  order.pickupHkd = charges.pickupHkd;
   if (input.terms === 'COD') {
-    const charges = orderCharges(
-      built.lines.map((line) => ({ itemId: line.itemId, quantity: line.quantity })),
-      state.costing,
-    );
-    if (charges) {
-      order.sfHkd = charges.sfHkd;
-      order.collectionFeeHkd = charges.cfHkd;
-      order.netCodHkd = charges.netCodHkd;
-    }
+    order.sfHkd = charges.sfHkd;
+    order.collectionFeeHkd = charges.cfHkd;
+    order.netCodHkd = charges.netCodHkd;
+    order.amountHkd = charges.netCodHkd;
+  } else {
+    order.amountHkd = charges.pickupHkd;
   }
   return {
     ok: true,
@@ -208,7 +216,12 @@ export function checkoutWalkIn(
 
   const { ids, poSeq } = nextPoids(state, byMerchant.size);
   const customerName = input.customerName?.trim() || WALK_IN_DEFAULT_NAME;
-  const created: Order[] = [...byMerchant.entries()].map(([merchantId, lines], index) => ({
+  const created: Order[] = [...byMerchant.entries()].map(([merchantId, lines], index) => {
+    const charges = orderCharges(
+      lines.map((line) => ({ itemId: line.itemId, quantity: line.quantity })),
+      state.costing,
+    )!;
+    return {
     id: ids[index],
     merchantId,
     source: 'walk-in',
@@ -226,7 +239,10 @@ export function checkoutWalkIn(
     handledBy: actor.id,
     paymentMethod: input.paymentMethod,
     topUpRate: state.costing.settings.markupPct,
-  }));
+    pickupHkd: charges.pickupHkd,
+    amountHkd: charges.pickupHkd,
+    };
+  });
 
   const sold = new Map<string, number>();
   for (const line of built.lines) sold.set(line.itemId, line.quantity);

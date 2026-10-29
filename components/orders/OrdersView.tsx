@@ -7,8 +7,8 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { Icon } from '@/components/ui/Icon';
 import { StatCard } from '@/components/ui/StatCard';
 import { useAuth } from '@/lib/auth';
-import { formatCurrency, formatNumber } from '@/lib/format';
-import { isOpen, orderTotal, sortNewestFirst, sortOldestFirst } from '@/lib/orders';
+import { formatHkd, formatNumber } from '@/lib/format';
+import { isOpen, sortNewestFirst, sortOldestFirst, toCollectHkd } from '@/lib/orders';
 import { useAppData } from '@/lib/store';
 
 type Tab = 'open' | 'pending' | 'packed' | 'shipped' | 'delivered' | 'rts' | 'cancelled' | 'all';
@@ -51,7 +51,7 @@ export function OrdersView() {
       pending: open.filter((order) => order.status === 'pending').length,
       packed: open.filter((order) => order.status === 'packed').length,
       shipped: open.filter((order) => order.status === 'shipped').length,
-      toCollect: open.reduce((sum, order) => sum + orderTotal(order), 0),
+      toCollect: toCollectHkd(open),
     };
   }, [scoped]);
 
@@ -136,8 +136,8 @@ export function OrdersView() {
         <StatCard
           icon="wallet"
           label="Cash to collect"
-          value={formatCurrency(stats.toCollect)}
-          hint="Total of open orders"
+          value={formatHkd(stats.toCollect)}
+          hint="Open orders, in HKD"
         />
       </div>
 

@@ -8,7 +8,7 @@ import { inputClass } from '@/components/ui/Field';
 import { Icon } from '@/components/ui/Icon';
 import { useAuth } from '@/lib/auth';
 import { formatCurrency, formatDateTime, formatHkd, formatNumber } from '@/lib/format';
-import { TERMS_LABEL, orderTotal } from '@/lib/orders';
+import { TERMS_LABEL, orderAmountLabel, orderTotal } from '@/lib/orders';
 import { isStaff } from '@/lib/roles';
 import { useAppData, type ActionResult } from '@/lib/store';
 import { PAYMENT_METHODS, type Merchant, type Order, type PaymentMethod } from '@/lib/types';
@@ -147,8 +147,14 @@ export function OrderCard({
             <span className="text-xs text-slate-500">
               {order.status === 'delivered' ? 'Collected' : 'To collect'} · {TERMS_LABEL[order.terms]}
             </span>
-            <span className="text-lg font-semibold text-slate-900">{formatCurrency(total)}</span>
+            <span className="text-lg font-semibold text-slate-900">{orderAmountLabel(order)}</span>
           </div>
+          {order.amountHkd != null ? (
+            <p className="flex justify-between text-xs">
+              <span className="text-slate-500">Net SRP, remit to merchant</span>
+              <span className="font-medium text-slate-700">{formatCurrency(total)}</span>
+            </p>
+          ) : null}
           {isCod ? (
             order.collectionFeeHkd != null && order.sfHkd != null ? (
               <div className="space-y-0.5 text-xs">
@@ -266,7 +272,7 @@ export function OrderCard({
               {panel === 'deliver' ? (
                 <div className="space-y-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
                   <p className="text-sm font-medium text-emerald-900">
-                    Collect {formatCurrency(total)} from the customer
+                    Collect {orderAmountLabel(order)} from the customer
                   </p>
                   <label className="block text-xs font-medium text-emerald-900">
                     Paid via

@@ -1,4 +1,4 @@
-import { roundMoney } from './format';
+import { formatCurrency, formatHkd, roundMoney } from './format';
 import type {
   InventoryItem,
   Order,
@@ -118,3 +118,11 @@ export const sortNewestFirst = (orders: Order[]): Order[] =>
 
 /** Oldest first, so the longest-waiting order is packed first. */
 export const sortOldestFirst = (orders: Order[]): Order[] => sortNewestFirst(orders).reverse();
+
+/** Total HKD still to collect on open orders (orders without a live price are left out). */
+export const toCollectHkd = (orders: Order[]): number =>
+  roundMoney(orders.reduce((sum, order) => sum + (order.amountHkd ?? 0), 0));
+
+/** What the customer pays, as text: HKD from the live costing, or the peso Net SRP for older orders without a price. */
+export const orderAmountLabel = (order: Order): string =>
+  order.amountHkd != null ? formatHkd(order.amountHkd) : formatCurrency(orderTotal(order));

@@ -123,6 +123,11 @@ export interface Order {
   sfHkd?: number;
   /** COD net price (pickup + SF + CF) in HKD, from the live costing. */
   netCodHkd?: number;
+  /** Sum of the live pickup prices of the lines, HKD. */
+  pickupHkd?: number;
+  /** What the customer pays, HKD: COD = net COD price; pickup and counter sales = pickup total. */
+  amountHkd?: number;
+
 }
 
 /** One delivered order line, flattened for reporting. Dated by the day payment was collected. */

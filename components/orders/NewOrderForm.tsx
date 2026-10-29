@@ -7,8 +7,8 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { Field, inputClass } from '@/components/ui/Field';
 import { Icon } from '@/components/ui/Icon';
 import { useAuth } from '@/lib/auth';
-import { isSellable, orderCharges } from '@/lib/costing';
-import { formatCurrency, formatDate, formatHkd } from '@/lib/format';
+import { isSellable, livePackages, orderCharges } from '@/lib/costing';
+import { formatDate, formatHkd } from '@/lib/format';
 import { MOCK_TODAY } from '@/lib/mock-data';
 import { TERMS_LABEL, availableOf, reservedByItem } from '@/lib/orders';
 import { useAppData } from '@/lib/store';
@@ -48,6 +48,7 @@ export function NewOrderForm() {
           item,
           available: availableOf(item, reserved),
           expired: item.expiryDate < today,
+          packages: livePackages(costing, item.id),
         })),
     [items, reserved, user, today, costing],
   );
@@ -286,12 +287,8 @@ export function NewOrderForm() {
             <div className="space-y-4">
               <div className="ml-auto max-w-xs space-y-1 text-sm">
                 <p className="flex justify-between text-slate-600">
-                  <span>Total</span>
-                  <span>{formatCurrency(parsed.total)}</span>
-                </p>
-                <p className="flex justify-between border-t border-slate-200 pt-1 text-base font-semibold text-slate-900">
-                  <span>Net total (to collect)</span>
-                  <span>{formatCurrency(parsed.total)}</span>
+                  <span>Total (pickup price, HKD)</span>
+                  <span>{formatHkd(parsed.totalHkd)}</span>
                 </p>
                 {form.terms === 'COD' && parsed.lines.length > 0 ? (
                   <p className="flex justify-between text-xs text-slate-600">
@@ -305,6 +302,12 @@ export function NewOrderForm() {
                     <span>{charges === null ? 'Not live yet' : formatHkd(charges.cfHkd)}</span>
                   </p>
                 ) : null}
+                <p className="flex justify-between border-t border-slate-200 pt-1 text-base font-semibold text-slate-900">
+                  <span>Net total (to collect, HKD)</span>
+                  <span>
+                    {formatHkd(form.terms === 'COD' ? (charges?.netCodHkd ?? parsed.totalHkd) : parsed.totalHkd)}
+                  </span>
+                </p>
               </div>
               <label className="block text-xs font-medium text-slate-500">
                 Note for the cashier (optional)

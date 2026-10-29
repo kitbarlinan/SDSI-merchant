@@ -6,8 +6,8 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { Field, inputClass } from '@/components/ui/Field';
 import { Icon } from '@/components/ui/Icon';
 import { useAuth } from '@/lib/auth';
-import { isSellable } from '@/lib/costing';
-import { formatCurrency, formatDate, roundMoney } from '@/lib/format';
+import { isSellable, livePackages } from '@/lib/costing';
+import { formatDate, formatHkd, roundMoney } from '@/lib/format';
 import { MOCK_TODAY } from '@/lib/mock-data';
 import { availableOf, reservedByItem } from '@/lib/orders';
 import { useAppData } from '@/lib/store';
@@ -27,8 +27,8 @@ interface Receipt {
 function quickAmounts(total: number): number[] {
   if (total <= 0) return [];
   const options = new Set<number>([total]);
-  for (const step of [100, 500, 1000]) options.add(Math.ceil(total / step) * step);
-  return [...options].sort((a, b) => a - b).slice(0, 4);
+  for (const step of [10, 50, 100, 500, 1000]) options.add(Math.ceil(total / step) * step);
+  return [...options].sort((a, b) => a - b).slice(0, 5);
 }
 
 export function PosView() {
@@ -50,12 +50,13 @@ export function PosView() {
         item,
         available: availableOf(item, reserved),
         expired: item.expiryDate < today,
+        packages: livePackages(costing, item.id),
       })),
     [items, reserved, today, costing],
   );
 
   const parsed = parseQuantities(rows, typed);
-  const total = parsed.total;
+  const total = parsed.totalHkd;
   const hasRowErrors = Object.keys(parsed.errors).length > 0;
 
   const tenderedAmount = tendered.trim() === '' ? null : Number(tendered);
@@ -101,9 +102,9 @@ export function PosView() {
           <Icon name="check" className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
           <div className="flex-1">
             <p className="font-medium">
-              Sale complete · {formatCurrency(receipt.total)} via {receipt.method}
+              Sale complete · {formatHkd(receipt.total)} via {receipt.method}
               {receipt.change !== null && receipt.change > 0
-                ? ` · change ${formatCurrency(receipt.change)}`
+                ? ` · change ${formatHkd(receipt.change)}`
                 : ''}
             </p>
             <p className="mt-0.5 text-emerald-800">
@@ -179,7 +180,7 @@ export function PosView() {
                   min={0}
                   value={tendered}
                   onChange={(event) => setTendered(event.target.value)}
-                  placeholder={formatCurrency(total)}
+                  placeholder={formatHkd(total)}
                   className={inputClass(shortBy > 0)}
                 />
                 <div className="flex flex-wrap gap-1.5">
@@ -190,16 +191,16 @@ export function PosView() {
                       onClick={() => setTendered(String(amount))}
                       className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-50"
                     >
-                      {amount === total ? 'Exact' : formatCurrency(amount)}
+                      {amount === total ? 'Exact' : formatHkd(amount)}
                     </button>
                   ))}
                 </div>
                 {shortBy > 0 ? (
                   <p role="alert" className="text-xs text-rose-600">
-                    Short by {formatCurrency(shortBy)}.
+                    Short by {formatHkd(shortBy)}.
                   </p>
                 ) : change !== null && change > 0 ? (
-                  <p className="text-sm font-medium text-emerald-700">Change: {formatCurrency(change)}</p>
+                  <p className="text-sm font-medium text-emerald-700">Change: {formatHkd(change)}</p>
                 ) : null}
               </div>
             ) : (
@@ -207,12 +208,12 @@ export function PosView() {
             )}
             <div className="w-full max-w-xs space-y-1 text-sm sm:ml-auto">
               <p className="flex justify-between text-slate-600">
-                <span>Total</span>
-                <span>{formatCurrency(total)}</span>
+                <span>Total (HKD)</span>
+                <span>{formatHkd(total)}</span>
               </p>
               <p className="flex justify-between border-t border-slate-200 pt-1 text-xl font-semibold text-slate-900">
-                <span>Net total</span>
-                <span>{formatCurrency(total)}</span>
+                <span>Net total (HKD)</span>
+                <span>{formatHkd(total)}</span>
               </p>
             </div>
           </div>

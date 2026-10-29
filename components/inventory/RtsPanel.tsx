@@ -6,9 +6,9 @@ import { Card } from '@/components/ui/Card';
 import { inputClass } from '@/components/ui/Field';
 import { Icon } from '@/components/ui/Icon';
 import { useAuth } from '@/lib/auth';
-import { formatCurrency, formatDate, formatDateTime, formatNumber } from '@/lib/format';
+import { formatDate, formatDateTime, formatNumber } from '@/lib/format';
 import { MOCK_TODAY } from '@/lib/mock-data';
-import { orderTotal } from '@/lib/orders';
+import { orderAmountLabel } from '@/lib/orders';
 import { useAppData } from '@/lib/store';
 import type { Order } from '@/lib/types';
 import { useToday } from '@/lib/use-today';
@@ -55,7 +55,7 @@ function RtsRow({ order }: { order: Order }) {
                 {merchant.name} ·{' '}
               </>
             ) : null}
-            {order.customerName} · {formatCurrency(orderTotal(order))}
+            {order.customerName} · {orderAmountLabel(order)}
           </p>
         </div>
         <p className="text-right text-xs text-rose-700">
