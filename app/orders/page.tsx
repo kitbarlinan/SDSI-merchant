@@ -3,7 +3,7 @@ import { OrdersView } from '@/components/orders/OrdersView';
 
 export default function OrdersPage() {
   return (
-    <RoleGate allow={['admin', 'cashier', 'merchant']}>
+    <RoleGate allow={['admin', 'cashier', 'clerk', 'merchant']}>
       <OrdersView />
     </RoleGate>
   );

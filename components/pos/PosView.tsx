@@ -12,6 +12,8 @@ import { useAppData } from '@/lib/store';
 import { PAYMENT_METHODS, type Order, type PaymentMethod } from '@/lib/types';
 import { useToday } from '@/lib/use-today';
 
+const DEFAULT_NAME = 'Walk-in client';
+
 interface Receipt {
   orders: Order[];
   total: number;
@@ -38,6 +40,7 @@ export function PosView() {
   const [query, setQuery] = useState('');
   const [cart, setCart] = useState<Record<string, number>>({});
   const [method, setMethod] = useState<PaymentMethod>('Cash');
+  const [customerName, setCustomerName] = useState(DEFAULT_NAME);
   const [tendered, setTendered] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
@@ -95,6 +98,7 @@ export function PosView() {
     const result = checkoutWalkIn(user, {
       lines: cartLines.map((line) => ({ itemId: line.item.id, quantity: line.quantity })),
       paymentMethod: method,
+      customerName,
     });
     if (!result.ok) {
       setError(result.error);
@@ -103,6 +107,7 @@ export function PosView() {
     setReceipt({ orders: result.value, total, method, change });
     setCart({});
     setTendered('');
+    setCustomerName(DEFAULT_NAME);
     setError(null);
   }
 
@@ -112,7 +117,7 @@ export function PosView() {
     <div className="space-y-6">
       <PageHeader
         title="Walk-in POS"
-        description="Counter sales. No customer details needed: tap products, take payment, done."
+        description="Counter sales. Add products to the list, take payment, done. The customer name is optional."
       />
 
       {receipt ? (
@@ -187,7 +192,7 @@ export function PosView() {
             </label>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <ul className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
             {products.map((item) => {
               const merchant = merchantOf(item.merchantId);
               const inCart = cart[item.id] ?? 0;
@@ -195,40 +200,45 @@ export function PosView() {
               const expired = Boolean(today) && item.expiryDate < today;
               const disabled = left <= 0 || expired;
               return (
-                <button
-                  key={item.id}
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => add(item.id)}
-                  className="group relative flex flex-col items-start rounded-2xl border border-slate-200/80 bg-white p-4 text-left shadow-sm transition hover:border-emerald-400 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-emerald-300 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-slate-200/80 disabled:hover:shadow-sm"
-                >
-                  <span className="flex items-center gap-1.5 text-xs text-slate-500">
-                    <span className="h-2 w-2 rounded-full" style={{ background: merchant?.color }} />
-                    {merchant?.name}
-                  </span>
-                  <span className="mt-1 text-sm font-medium text-slate-900">{item.name}</span>
-                  <span className="mt-0.5 font-mono text-xs text-slate-500">{item.sku}</span>
-                  <span className="mt-3 flex w-full items-end justify-between">
-                    <span className="text-lg font-semibold text-slate-900">
-                      {formatCurrency(item.unitPrice)}
-                    </span>
-                    <span
+                <li key={item.id} className="flex items-center gap-3 px-4 py-3">
+                  <span
+                    className="h-8 w-1 shrink-0 rounded-full"
+                    style={{ background: merchant?.color }}
+                    aria-hidden
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-slate-900">{item.name}</p>
+                    <p className="truncate text-xs text-slate-500">
+                      <span className="font-mono">{item.sku}</span> · {merchant?.name}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="text-sm font-semibold text-slate-900">{formatCurrency(item.unitPrice)}</p>
+                    <p
                       className={`text-xs ${
                         expired || left <= 0 ? 'font-medium text-rose-600' : 'text-slate-500'
                       }`}
                     >
                       {expired ? 'Expired' : left <= 0 ? 'Out of stock' : `${formatNumber(left)} left`}
-                    </span>
-                  </span>
-                  {inCart > 0 ? (
-                    <span className="absolute right-3 top-3 flex h-6 min-w-6 items-center justify-center rounded-full bg-emerald-600 px-1.5 text-xs font-bold text-white">
-                      {inCart}
-                    </span>
-                  ) : null}
-                </button>
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => add(item.id)}
+                    aria-label={`Add ${item.name}`}
+                    className="relative flex h-9 shrink-0 items-center gap-1 rounded-xl bg-emerald-600 px-3 text-sm font-semibold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Icon name="plus" className="h-4 w-4" />
+                    Add
+                    {inCart > 0 ? (
+                      <span className="ml-1 rounded-full bg-white/25 px-1.5 text-xs">{inCart}</span>
+                    ) : null}
+                  </button>
+                </li>
               );
             })}
-          </div>
+          </ul>
           {products.length === 0 ? (
             <p className="rounded-2xl border border-dashed border-slate-300 bg-white py-10 text-center text-sm text-slate-500">
               No products match your search.
@@ -239,8 +249,19 @@ export function PosView() {
         {/* Cart */}
         <div className="lg:col-span-2">
           <div className="lg:sticky lg:top-6">
-            <Card title="Current sale" subtitle="Walk-in customer">
+            <Card title="Current sale">
               <div className="mt-3 space-y-4">
+                <label className="block text-xs font-medium text-slate-500" htmlFor="walkInName">
+                  Customer name (optional)
+                  <input
+                    id="walkInName"
+                    type="text"
+                    value={customerName}
+                    onChange={(event) => setCustomerName(event.target.value)}
+                    onFocus={(event) => event.target.select()}
+                    className={`mt-1 ${inputClass(false)}`}
+                  />
+                </label>
                 {cartLines.length === 0 ? (
                   <p className="rounded-xl bg-slate-50 py-8 text-center text-sm text-slate-500">
                     Tap a product to add it.

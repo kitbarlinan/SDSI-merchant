@@ -10,12 +10,12 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { OrderStatusBadge, TermsBadge } from '@/components/orders/OrderBadges';
 import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
-import { PeriodTabs } from '@/components/ui/PeriodTabs';
+import { DateFilter } from '@/components/ui/DateFilter';
+import { MerchantFilter } from '@/components/ui/MerchantFilter';
 import { StatCard } from '@/components/ui/StatCard';
 import { useAuth } from '@/lib/auth';
 import { formatCurrency, formatDateTime, formatNumber, formatPercent } from '@/lib/format';
 import { getStockStatus } from '@/lib/inventory';
-import { MOCK_TODAY } from '@/lib/mock-data';
 import {
   availableOf,
   flattenDelivered,
@@ -24,10 +24,10 @@ import {
   reservedByItem,
   sortNewestFirst,
 } from '@/lib/orders';
-import { currentRange, previousRange, type PeriodKey } from '@/lib/period';
+import { previousOf, trendWindow, type DayRange } from '@/lib/period';
 import { buildTrend, filterByRange, groupSales, pctChange, summarize } from '@/lib/reports';
 import { useAppData } from '@/lib/store';
-import { useToday } from '@/lib/use-today';
+import { useDayRange } from '@/lib/use-day-range';
 import type { InventoryItem, Merchant, Order, SaleLine } from '@/lib/types';
 
 function RecentOrders({
@@ -158,25 +158,35 @@ function InventoryByMerchant({
 }
 
 function AdminDashboard({
-  period,
-  asOf,
+  range,
+  merchantFilter,
+  today,
 }: {
-  period: PeriodKey;
-  asOf: string;
+  range: DayRange;
+  merchantFilter: string;
+  today: string;
 }) {
-  const { merchants, items, orders } = useAppData();
+  const { merchants: allMerchants, items: allItems, orders: allOrders } = useAppData();
+  const merchants = useMemo(
+    () => (merchantFilter === 'all' ? allMerchants : allMerchants.filter((m) => m.id === merchantFilter)),
+    [allMerchants, merchantFilter],
+  );
+  const items = useMemo(
+    () => (merchantFilter === 'all' ? allItems : allItems.filter((i) => i.merchantId === merchantFilter)),
+    [allItems, merchantFilter],
+  );
+  const orders = useMemo(
+    () => (merchantFilter === 'all' ? allOrders : allOrders.filter((o) => o.merchantId === merchantFilter)),
+    [allOrders, merchantFilter],
+  );
   const sales = useMemo(() => flattenDelivered(orders), [orders]);
   const reserved = useMemo(() => reservedByItem(orders), [orders]);
 
-  const range = currentRange(period, asOf);
-  const prevRange = previousRange(period, asOf);
-  const current = useMemo(() => filterByRange(sales, range), [sales, range.start, range.end]); // eslint-disable-line react-hooks/exhaustive-deps
+  const current = useMemo(() => filterByRange(sales, range), [sales, range]);
   const summary = summarize(current);
-  const prev = prevRange ? summarize(filterByRange(sales, prevRange)) : null;
-  const trend = useMemo(
-    () => buildTrend(current, range.start ?? current.reduce((m, l) => (l.date < m ? l.date : m), asOf), range.end),
-    [current, range.start, range.end, asOf],
-  );
+  const prev = summarize(filterByRange(sales, previousOf(range)));
+  const window = trendWindow(range);
+  const trend = useMemo(() => buildTrend(sales, window.start, window.end), [sales, window.start, window.end]);
 
   const byMerchant = useMemo(() => groupSales(current, (line) => line.merchantId), [current]);
   const openOrders = orders.filter(isOpen);
@@ -191,20 +201,20 @@ function AdminDashboard({
           label="Total merchant sales"
           value={formatCurrency(summary.revenue)}
           hint="Cash collected on delivered orders"
-          delta={prev ? pctChange(summary.revenue, prev.revenue) : undefined}
+          delta={pctChange(summary.revenue, prev.revenue)}
         />
         <StatCard
           icon="truck"
-          label="Orders delivered"
+          label="Transactions"
           value={formatNumber(summary.orders)}
-          hint={`${formatNumber(summary.units)} units`}
-          delta={prev ? pctChange(summary.orders, prev.orders) : undefined}
+          hint={`${formatNumber(summary.units)} units delivered`}
+          delta={pctChange(summary.orders, prev.orders)}
         />
         <StatCard
           icon="orders"
           label="Open orders"
           value={formatNumber(openOrders.length)}
-          hint={`${formatNumber(openOrders.filter((o) => o.status === 'pending').length)} still to pack`}
+          hint={`${formatNumber(openOrders.filter((o) => o.status === 'pending').length)} to pack · ${formatNumber(openOrders.filter((o) => o.status === 'shipped').length)} on the road`}
         />
         <StatCard
           icon="alert"
@@ -216,7 +226,7 @@ function AdminDashboard({
 
       <div>
         <h2 className="mb-3 text-sm font-semibold text-slate-900">Total sales per merchant</h2>
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className={`grid gap-4 ${merchants.length > 1 ? 'md:grid-cols-3' : 'md:max-w-md'}`}>
           {merchants.map((merchant) => {
             const row = byMerchant.find((r) => r.key === merchant.id);
             const own = items.filter((item) => item.merchantId === merchant.id);
@@ -233,8 +243,8 @@ function AdminDashboard({
                   {formatCurrency(row?.revenue ?? 0)}
                 </p>
                 <p className="text-xs text-slate-500">
-                  {formatNumber(row?.orders ?? 0)} delivered orders · {formatPercent(row?.share ?? 0)} of
-                  all sales
+                  {formatNumber(row?.orders ?? 0)} transactions · {formatPercent(row?.share ?? 0)} of all
+                  sales
                 </p>
                 <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-100 pt-3 text-xs">
                   <div>
@@ -255,10 +265,14 @@ function AdminDashboard({
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-2" title="Sales trend" subtitle="All merchants combined">
+        <Card
+          className="lg:col-span-2"
+          title="Sales trend"
+          subtitle={window.padded ? 'Last 14 days, for context' : 'Selected dates'}
+        >
           <TrendChart data={trend} primary="revenue" />
         </Card>
-        <Card title="Sales by merchant">
+        <Card title="Sales by merchant" subtitle="Selected dates">
           <BarList
             items={merchants
               .map((merchant) => {
@@ -266,13 +280,14 @@ function AdminDashboard({
                 return {
                   key: merchant.id,
                   label: merchant.name,
-                  sublabel: `${formatNumber(row?.orders ?? 0)} orders`,
+                  sublabel: `${formatNumber(row?.orders ?? 0)} transactions`,
                   value: row?.revenue ?? 0,
                   display: formatCurrency(row?.revenue ?? 0),
                   color: merchant.color,
                 };
               })
               .sort((a, b) => b.value - a.value)}
+            emptyText="No sales on these dates."
           />
         </Card>
       </div>
@@ -280,29 +295,33 @@ function AdminDashboard({
       <InventoryByMerchant merchants={merchants} items={items} reserved={reserved} />
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <AlertsPanel items={items} sales={sales} today={asOf} merchants={merchants} />
-        <RecentOrders orders={orders} merchants={merchants} showMerchant />
+        <AlertsPanel items={items} sales={sales} today={today} merchants={allMerchants} />
+        <RecentOrders orders={orders} merchants={allMerchants} showMerchant />
       </div>
     </>
   );
 }
 
-function MerchantDashboard({ period, asOf, merchantId }: { period: PeriodKey; asOf: string; merchantId: string }) {
+function MerchantDashboard({
+  range,
+  today,
+  merchantId,
+}: {
+  range: DayRange;
+  today: string;
+  merchantId: string;
+}) {
   const { merchants, items: allItems, orders: allOrders } = useAppData();
   const items = useMemo(() => allItems.filter((i) => i.merchantId === merchantId), [allItems, merchantId]);
   const orders = useMemo(() => allOrders.filter((o) => o.merchantId === merchantId), [allOrders, merchantId]);
   const sales: SaleLine[] = useMemo(() => flattenDelivered(orders), [orders]);
   const reserved = useMemo(() => reservedByItem(orders), [orders]);
 
-  const range = currentRange(period, asOf);
-  const prevRange = previousRange(period, asOf);
-  const current = useMemo(() => filterByRange(sales, range), [sales, range.start, range.end]); // eslint-disable-line react-hooks/exhaustive-deps
+  const current = useMemo(() => filterByRange(sales, range), [sales, range]);
   const summary = summarize(current);
-  const prev = prevRange ? summarize(filterByRange(sales, prevRange)) : null;
-  const trend = useMemo(
-    () => buildTrend(current, range.start ?? current.reduce((m, l) => (l.date < m ? l.date : m), asOf), range.end),
-    [current, range.start, range.end, asOf],
-  );
+  const prev = summarize(filterByRange(sales, previousOf(range)));
+  const window = trendWindow(range);
+  const trend = useMemo(() => buildTrend(sales, window.start, window.end), [sales, window.start, window.end]);
   const byItem = useMemo(() => groupSales(current, (line) => line.itemName).slice(0, 5), [current]);
 
   const open = orders.filter(isOpen);
@@ -318,14 +337,14 @@ function MerchantDashboard({ period, asOf, merchantId }: { period: PeriodKey; as
           label="My total sales"
           value={formatCurrency(summary.revenue)}
           hint="Collected on delivered orders"
-          delta={prev ? pctChange(summary.revenue, prev.revenue) : undefined}
+          delta={pctChange(summary.revenue, prev.revenue)}
         />
         <StatCard
           icon="truck"
           label="Orders delivered"
           value={formatNumber(summary.orders)}
           hint={`${formatNumber(summary.units)} units`}
-          delta={prev ? pctChange(summary.orders, prev.orders) : undefined}
+          delta={pctChange(summary.orders, prev.orders)}
         />
         <StatCard
           icon="orders"
@@ -342,10 +361,14 @@ function MerchantDashboard({ period, asOf, merchantId }: { period: PeriodKey; as
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-2" title="Sales trend" subtitle="Your delivered orders">
+        <Card
+          className="lg:col-span-2"
+          title="Sales trend"
+          subtitle={window.padded ? 'Last 14 days, for context' : 'Selected dates'}
+        >
           <TrendChart data={trend} primary="revenue" />
         </Card>
-        <Card title="Top products">
+        <Card title="Top products" subtitle="Selected dates">
           <BarList
             items={byItem.map((row) => ({
               key: row.key,
@@ -405,7 +428,7 @@ function MerchantDashboard({ period, asOf, merchantId }: { period: PeriodKey; as
       </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <AlertsPanel items={items} sales={sales} today={asOf} />
+        <AlertsPanel items={items} sales={sales} today={today} />
         <RecentOrders orders={orders} merchants={merchants} showMerchant={false} />
       </div>
     </>
@@ -414,9 +437,9 @@ function MerchantDashboard({ period, asOf, merchantId }: { period: PeriodKey; as
 
 export function DashboardView() {
   const { user } = useAuth();
-  const today = useToday();
-  const [period, setPeriod] = useState<PeriodKey>('30d');
-  const asOf = today || MOCK_TODAY;
+  const { merchants } = useAppData();
+  const { today, range, setRange } = useDayRange();
+  const [merchantFilter, setMerchantFilter] = useState('all');
 
   if (!user) return null;
   const isAdmin = user.role === 'admin';
@@ -427,15 +450,20 @@ export function DashboardView() {
         title={isAdmin ? 'Admin dashboard' : 'My dashboard'}
         description={
           isAdmin
-            ? 'Sales and running inventory for every merchant.'
-            : 'Your sales and running inventory at SDSI.'
+            ? 'Sales and running inventory for every merchant. Showing transactions for the dates you pick.'
+            : 'Your sales and running inventory at SDSI. Showing transactions for the dates you pick.'
         }
-        actions={<PeriodTabs value={period} onChange={setPeriod} />}
       />
+      <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
+        {isAdmin ? (
+          <MerchantFilter merchants={merchants} value={merchantFilter} onChange={setMerchantFilter} />
+        ) : null}
+        <DateFilter value={range} today={today} onChange={setRange} />
+      </div>
       {isAdmin ? (
-        <AdminDashboard period={period} asOf={asOf} />
+        <AdminDashboard range={range} merchantFilter={merchantFilter} today={today} />
       ) : user.merchantId ? (
-        <MerchantDashboard period={period} asOf={asOf} merchantId={user.merchantId} />
+        <MerchantDashboard range={range} today={today} merchantId={user.merchantId} />
       ) : null}
     </div>
   );

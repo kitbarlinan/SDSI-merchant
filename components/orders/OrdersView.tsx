@@ -11,11 +11,15 @@ import { formatCurrency, formatNumber } from '@/lib/format';
 import { isOpen, orderTotal, sortNewestFirst, sortOldestFirst } from '@/lib/orders';
 import { useAppData } from '@/lib/store';
 
-type Tab = 'open' | 'delivered' | 'cancelled' | 'all';
+type Tab = 'open' | 'pending' | 'packed' | 'shipped' | 'delivered' | 'rts' | 'cancelled' | 'all';
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'open', label: 'Open' },
+  { key: 'pending', label: 'To pack' },
+  { key: 'packed', label: 'Packed' },
+  { key: 'shipped', label: 'Shipped' },
   { key: 'delivered', label: 'Delivered' },
+  { key: 'rts', label: 'RTS' },
   { key: 'cancelled', label: 'Not delivered' },
   { key: 'all', label: 'All' },
 ];
@@ -46,14 +50,19 @@ export function OrdersView() {
     return {
       pending: open.filter((order) => order.status === 'pending').length,
       packed: open.filter((order) => order.status === 'packed').length,
+      shipped: open.filter((order) => order.status === 'shipped').length,
       toCollect: open.reduce((sum, order) => sum + orderTotal(order), 0),
     };
   }, [scoped]);
 
   const counts = useMemo(
-    () => ({
+    (): Record<Tab, number> => ({
       open: scoped.filter(isOpen).length,
+      pending: scoped.filter((order) => order.status === 'pending').length,
+      packed: scoped.filter((order) => order.status === 'packed').length,
+      shipped: scoped.filter((order) => order.status === 'shipped').length,
       delivered: scoped.filter((order) => order.status === 'delivered').length,
+      rts: scoped.filter((order) => order.status === 'rts').length,
       cancelled: scoped.filter((order) => order.status === 'cancelled').length,
       all: scoped.length,
     }),
@@ -64,12 +73,12 @@ export function OrdersView() {
     const needle = query.trim().toLowerCase();
     const matching = scoped.filter((order) => {
       if (tab === 'open' && !isOpen(order)) return false;
-      if (tab === 'delivered' && order.status !== 'delivered') return false;
-      if (tab === 'cancelled' && order.status !== 'cancelled') return false;
+      if (tab !== 'open' && tab !== 'all' && order.status !== tab) return false;
       if (!needle) return true;
       return (
         order.id.toLowerCase().includes(needle) ||
-        (order.customerName ?? 'walk-in').toLowerCase().includes(needle) ||
+        (order.waybill ?? '').toLowerCase().includes(needle) ||
+        (order.customerName ?? 'walk-in client').toLowerCase().includes(needle) ||
         order.lines.some(
           (line) =>
             line.name.toLowerCase().includes(needle) || line.sku.toLowerCase().includes(needle),
@@ -88,8 +97,8 @@ export function OrdersView() {
         title={isMerchant ? 'My Orders' : 'Orders'}
         description={
           isMerchant
-            ? 'Track the orders you placed. The cashier packs them and marks them delivered.'
-            : 'Pack incoming orders and mark them delivered once payment is collected.'
+            ? 'Track the orders you placed. COD orders get a waybill once they ship.'
+            : 'Pack incoming orders. Ship COD with a waybill, then mark delivered once payment is collected.'
         }
         actions={
           isMerchant ? (
@@ -104,7 +113,7 @@ export function OrdersView() {
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           variant="primary"
           icon="orders"
@@ -114,9 +123,15 @@ export function OrdersView() {
         />
         <StatCard
           icon="box"
-          label="Packed, awaiting handover"
+          label="Packed"
           value={formatNumber(stats.packed)}
-          hint="Ready to deliver or pick up"
+          hint="Waiting to ship or be picked up"
+        />
+        <StatCard
+          icon="truck"
+          label="Shipped"
+          value={formatNumber(stats.shipped)}
+          hint="On the road, payment not collected yet"
         />
         <StatCard
           icon="wallet"
@@ -187,7 +202,7 @@ export function OrdersView() {
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search order, customer, product"
+              placeholder="Search POID, waybill, customer"
               className="w-full rounded-xl border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200 sm:w-64"
             />
           </label>
@@ -197,7 +212,7 @@ export function OrdersView() {
       {visible.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center">
           <p className="text-sm font-medium text-slate-900">
-            {tab === 'open' ? 'No open orders. Nice work!' : 'No orders match your filters.'}
+            {tab === 'open' ? 'No open orders. Nice work!' : 'No orders here.'}
           </p>
           <p className="mt-1 text-sm text-slate-500">
             {tab === 'open' && isMerchant ? 'Place a new order and it will show up here.' : 'Try a different tab or search.'}
@@ -205,7 +220,7 @@ export function OrdersView() {
         </div>
       ) : (
         <>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="space-y-3">
             {visible.slice(0, limit).map((order) => (
               <OrderCard
                 key={order.id}

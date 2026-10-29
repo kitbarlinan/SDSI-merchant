@@ -3,7 +3,7 @@ import { InventoryView } from '@/components/inventory/InventoryView';
 
 export default function InventoryPage() {
   return (
-    <RoleGate allow={['admin', 'cashier', 'merchant']}>
+    <RoleGate allow={['admin', 'cashier', 'clerk', 'merchant']}>
       <InventoryView />
     </RoleGate>
   );

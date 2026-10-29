@@ -9,7 +9,7 @@ import { useAuth } from '@/lib/auth';
 import { BRAND } from '@/lib/brand';
 import { getStockStatus } from '@/lib/inventory';
 import { isOpen } from '@/lib/orders';
-import { ROLE_LABEL } from '@/lib/roles';
+import { ROLE_LABEL, canApprove } from '@/lib/roles';
 import { useAppData } from '@/lib/store';
 import type { Role } from '@/lib/types';
 
@@ -31,7 +31,7 @@ const NAV: NavItem[] = [
     label: 'Orders',
     merchantLabel: 'My Orders',
     icon: 'orders',
-    roles: ['admin', 'cashier', 'merchant'],
+    roles: ['admin', 'cashier', 'clerk', 'merchant'],
     badge: 'orders',
   },
   { href: '/pos', label: 'Walk-in POS', icon: 'pos', roles: ['admin', 'cashier'] },
@@ -39,7 +39,7 @@ const NAV: NavItem[] = [
     href: '/inventory',
     label: 'Inventory',
     icon: 'inventory',
-    roles: ['admin', 'cashier', 'merchant'],
+    roles: ['admin', 'cashier', 'clerk', 'merchant'],
     badge: 'inventory',
   },
   { href: '/accounting', label: 'Accounting', icon: 'wallet', roles: ['admin'] },
@@ -68,7 +68,7 @@ function Logo({ small = false }: { small?: boolean }) {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { user, ready, logout } = useAuth();
-  const { items, orders, merchants, resetDemo } = useAppData();
+  const { items, orders, receipts, merchants, resetDemo } = useAppData();
 
   const visibleNav = useMemo(
     () => (user ? NAV.filter((entry) => entry.roles.includes(user.role)) : []),
@@ -88,11 +88,15 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (!user) return { orders: 0, inventory: 0 };
     const mine = <T extends { merchantId: string }>(rows: T[]) =>
       user.role === 'merchant' ? rows.filter((row) => row.merchantId === user.merchantId) : rows;
+    // Approvers see how many receipts wait for them; everyone else sees low-stock products.
+    const approver = canApprove(user.role);
     return {
       orders: mine(orders).filter(isOpen).length,
-      inventory: mine(items).filter((item) => getStockStatus(item) !== 'ok').length,
+      inventory: approver
+        ? receipts.filter((receipt) => receipt.status === 'pending').length
+        : mine(items).filter((item) => getStockStatus(item) !== 'ok').length,
     };
-  }, [user, orders, items]);
+  }, [user, orders, items, receipts]);
 
   if (!ready) {
     return (

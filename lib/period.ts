@@ -52,3 +52,26 @@ export function eachDay(start: string, end: string): string[] {
   for (let day = start; day <= end; day = addDays(day, 1)) days.push(day);
   return days;
 }
+
+/** A concrete day-by-day window (both ends included). */
+export interface DayRange {
+  start: string;
+  end: string;
+}
+
+/** The equally long window right before the given one. */
+export function previousOf(range: DayRange): DayRange {
+  const length = diffDays(range.start, range.end) + 1;
+  return { start: addDays(range.start, -length), end: addDays(range.start, -1) };
+}
+
+/**
+ * The window a trend chart should draw. One or two days make a poor chart, so short ranges
+ * are padded back to 14 days ending on the same last day.
+ */
+export function trendWindow(range: DayRange): DayRange & { padded: boolean } {
+  const length = diffDays(range.start, range.end) + 1;
+  return length < 7
+    ? { start: addDays(range.end, -13), end: range.end, padded: true }
+    : { ...range, padded: false };
+}

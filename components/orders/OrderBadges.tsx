@@ -5,13 +5,15 @@ import type { OrderStatus, OrderTerms } from '@/lib/types';
 const STATUS_TONE: Record<OrderStatus, BadgeTone> = {
   pending: 'amber',
   packed: 'sky',
+  shipped: 'violet',
   delivered: 'green',
-  cancelled: 'red',
+  rts: 'red',
+  cancelled: 'slate',
 };
 
 const TERMS_TONE: Record<OrderTerms, BadgeTone> = {
   COP: 'slate',
-  COD: 'violet',
+  COD: 'slate',
 };
 
 export function OrderStatusBadge({ status }: { status: OrderStatus }) {

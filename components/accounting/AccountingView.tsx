@@ -8,18 +8,18 @@ import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import { inputClass } from '@/components/ui/Field';
 import { Icon } from '@/components/ui/Icon';
-import { PeriodTabs } from '@/components/ui/PeriodTabs';
+import { DateFilter } from '@/components/ui/DateFilter';
+import { MerchantFilter } from '@/components/ui/MerchantFilter';
 import { StatCard } from '@/components/ui/StatCard';
 import { useAuth } from '@/lib/auth';
 import { formatCurrency, formatDate, formatNumber, formatPercent } from '@/lib/format';
-import { MOCK_TODAY } from '@/lib/mock-data';
 import { flattenDelivered, orderTopUp, orderTotal } from '@/lib/orders';
-import { currentRange, previousRange, type PeriodKey } from '@/lib/period';
+import { previousOf, trendWindow } from '@/lib/period';
 import { buildTrend, filterByRange, groupSales, pctChange, summarize } from '@/lib/reports';
 import { useAppData } from '@/lib/store';
 import { PAYMENT_COLORS, TERMS_COLORS } from '@/lib/theme';
 import type { OrderTerms, PaymentMethod } from '@/lib/types';
-import { useToday } from '@/lib/use-today';
+import { useDayRange } from '@/lib/use-day-range';
 
 const LEDGER_PAGE = 25;
 
@@ -30,33 +30,31 @@ function csvCell(value: string | number): string {
 
 export function AccountingView() {
   const { user } = useAuth();
-  const { orders, merchants, topUpPercent, setTopUpPercent } = useAppData();
-  const today = useToday();
-  const asOf = today || MOCK_TODAY;
+  const { orders: allOrders, merchants: allMerchants, topUpPercent, setTopUpPercent } = useAppData();
+  const { today, range, setRange } = useDayRange();
 
-  const [period, setPeriod] = useState<PeriodKey>('30d');
+  const [merchantFilter, setMerchantFilter] = useState('all');
   const [rateInput, setRateInput] = useState('');
   const [rateError, setRateError] = useState<string | null>(null);
   const [rateSaved, setRateSaved] = useState(false);
   const [limit, setLimit] = useState(LEDGER_PAGE);
 
-  const sales = useMemo(() => flattenDelivered(orders), [orders]);
-  const range = currentRange(period, asOf);
-  const prevRange = previousRange(period, asOf);
-
-  const current = useMemo(() => filterByRange(sales, range), [sales, range.start, range.end]); // eslint-disable-line react-hooks/exhaustive-deps
-  const summary = summarize(current);
-  const prev = prevRange ? summarize(filterByRange(sales, prevRange)) : null;
-
-  const trend = useMemo(
-    () =>
-      buildTrend(
-        current,
-        range.start ?? current.reduce((min, line) => (line.date < min ? line.date : min), asOf),
-        range.end,
-      ),
-    [current, range.start, range.end, asOf],
+  const merchants = useMemo(
+    () => (merchantFilter === 'all' ? allMerchants : allMerchants.filter((m) => m.id === merchantFilter)),
+    [allMerchants, merchantFilter],
   );
+  const orders = useMemo(
+    () => (merchantFilter === 'all' ? allOrders : allOrders.filter((o) => o.merchantId === merchantFilter)),
+    [allOrders, merchantFilter],
+  );
+  const sales = useMemo(() => flattenDelivered(orders), [orders]);
+
+  const current = useMemo(() => filterByRange(sales, range), [sales, range]);
+  const summary = summarize(current);
+  const prev = summarize(filterByRange(sales, previousOf(range)));
+
+  const window = trendWindow(range);
+  const trend = useMemo(() => buildTrend(sales, window.start, window.end), [sales, window.start, window.end]);
 
   const byMerchant = useMemo(() => groupSales(current, (line) => line.merchantId), [current]);
   const byPayment = useMemo(() => groupSales(current, (line) => line.paymentMethod), [current]);
@@ -68,15 +66,15 @@ export function AccountingView() {
         .filter((order) => {
           if (order.status !== 'delivered' || !order.deliveredAt) return false;
           const day = order.deliveredAt.slice(0, 10);
-          return (range.start === null || day >= range.start) && day <= range.end;
+          return day >= range.start && day <= range.end;
         })
         .sort((a, b) => (b.deliveredAt ?? '').localeCompare(a.deliveredAt ?? '')),
-    [orders, range.start, range.end],
+    [orders, range],
   );
 
   if (!user) return null;
   const actor = user;
-  const merchantName = (id: string) => merchants.find((m) => m.id === id)?.name ?? id;
+  const merchantName = (id: string) => allMerchants.find((m) => m.id === id)?.name ?? id;
 
   function saveRate() {
     const result = setTopUpPercent(actor, Number(rateInput));
@@ -125,7 +123,7 @@ export function AccountingView() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `sdsi-fulfillment-ledger-${period}.csv`;
+    link.download = `sdsi-fulfillment-ledger-${range.start}_to_${range.end}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   }
@@ -135,8 +133,26 @@ export function AccountingView() {
       <PageHeader
         title="Accounting"
         description="SDSI's real revenue as the fulfillment party. Merchant sales are shown as pass-through, not SDSI sales."
-        actions={<PeriodTabs value={period} onChange={(next) => { setPeriod(next); setLimit(LEDGER_PAGE); }} />}
       />
+
+      <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
+        <MerchantFilter
+          merchants={allMerchants}
+          value={merchantFilter}
+          onChange={(next) => {
+            setMerchantFilter(next);
+            setLimit(LEDGER_PAGE);
+          }}
+        />
+        <DateFilter
+          value={range}
+          today={today}
+          onChange={(next) => {
+            setRange(next);
+            setLimit(LEDGER_PAGE);
+          }}
+        />
+      </div>
 
       <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4 text-sm text-violet-900">
         <p className="font-medium">How the numbers work</p>
@@ -154,21 +170,21 @@ export function AccountingView() {
           label="SDSI revenue (top-up)"
           value={formatCurrency(summary.topUp)}
           hint={`${formatPercent(topUpPercent)} placeholder rate`}
-          delta={prev ? pctChange(summary.topUp, prev.topUp) : undefined}
+          delta={pctChange(summary.topUp, prev.topUp)}
         />
         <StatCard
           icon="truck"
           label="Orders fulfilled"
           value={formatNumber(summary.orders)}
           hint={`${formatNumber(summary.units)} units delivered`}
-          delta={prev ? pctChange(summary.orders, prev.orders) : undefined}
+          delta={pctChange(summary.orders, prev.orders)}
         />
         <StatCard
           icon="orders"
           label="Merchant sales handled"
           value={formatCurrency(summary.revenue)}
           hint="Pass-through, not SDSI revenue"
-          delta={prev ? pctChange(summary.revenue, prev.revenue) : undefined}
+          delta={pctChange(summary.revenue, prev.revenue)}
         />
         <StatCard
           icon="leaf"
@@ -179,7 +195,7 @@ export function AccountingView() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-2" title="SDSI top-up over time" subtitle="Revenue earned by SDSI per day">
+        <Card className="lg:col-span-2" title="SDSI top-up over time" subtitle={window.padded ? 'Last 14 days, for context' : 'Revenue earned by SDSI per day'}>
           <TrendChart data={trend} primary="topUp" />
         </Card>
 
@@ -312,7 +328,7 @@ export function AccountingView() {
       <Card
         flush
         title="Fulfillment ledger"
-        subtitle={`${formatNumber(ledger.length)} delivered orders in this period`}
+        subtitle={`${formatNumber(ledger.length)} delivered orders on the selected dates`}
         action={
           <button
             type="button"
@@ -343,7 +359,7 @@ export function AccountingView() {
               {ledger.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-5 py-10 text-center text-slate-500">
-                    No delivered orders in this period.
+                    No delivered orders on these dates.
                   </td>
                 </tr>
               ) : (

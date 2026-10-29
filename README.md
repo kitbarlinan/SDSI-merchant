@@ -14,15 +14,20 @@ Open http://localhost:3000 and pick an account (demo sign-in, no password).
 | Role | Account | What they do |
 | --- | --- | --- |
 | Admin | Kit | Sees everything: sales and running inventory per merchant, accounting, top-up setting |
-| Cashier | Ana Cruz | Sees incoming orders, packs them, marks delivered (after collecting payment) or not delivered. Runs the walk-in POS |
+| Cashier | Ana Cruz | Packs orders, ships COD with a waybill, collects payment and marks delivered, marks RTS. Runs the walk-in POS. Receives stock and returned parcels |
+| Inventory Clerk | Rey Santos | Approves (or rejects) received stock and returns. Can view orders and inventory |
 | Merchant | Liza (Green Leaf), Bea (Pure Glow), Carlo (Everyday Health) | Places COP / COD orders, sees own sales and running inventory |
 
 ## How it works
 
-- **Order flow:** Merchant places order (pending) -> Cashier packs (packed) -> Cashier marks delivered once payment is collected, or not delivered with a reason.
-- **Stock:** Reserved when an order is placed. On hand drops only at delivery. Available = on hand - reserved.
-- **Walk-in POS:** No customer name. Cart, payment method, cash tendered and change. A cart with several merchants' products is split into one order per merchant.
-- **Accounting:** Merchant sales are pass-through, not SDSI sales. SDSI revenue = top-up % on delivered orders. Net payable to merchant = sales - top-up. The **5% top-up is a placeholder** until the real rate is agreed; each order keeps the rate it was delivered with.
+- **PO ID:** every order gets a unique POID (POID-000123) that is generated once and never reused.
+- **COP:** pending -> packed -> delivered (payment collected at pickup).
+- **COD:** pending -> packed -> shipped (cashier enters the waybill, the merchant sees it) -> delivered once the cash is collected, or **RTS** if the parcel comes back.
+- **Stock:** reserved when an order is placed (pending/packed). On hand drops when the goods leave: shipped (COD), handed over (COP) or sold at the counter. Shipped goods show as "in transit".
+- **Receiving:** only the cashier records received stock, with the date received. Stock is added only after the admin or inventory clerk approves. RTS parcels are received back the same way (Inventory -> RTS).
+- **Walk-in POS:** list of products, optional customer name (default "Walk-in client"), payment method, cash tendered and change. Items from several merchants are split into one order per merchant.
+- **Dashboard and Accounting:** filter by merchant and by date range. Default is today.
+- **Accounting:** merchant sales are pass-through, not SDSI sales. SDSI revenue = top-up % on delivered orders. Net payable to merchant = sales - top-up. The **5% top-up is a placeholder** until the real rate is agreed; each order keeps the rate it was delivered with.
 
 ## Notes
 

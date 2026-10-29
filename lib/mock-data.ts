@@ -1,5 +1,6 @@
 import { DEFAULT_TOP_UP_PERCENT } from './brand';
 import { roundMoney } from './format';
+import { formatPoid } from './engine';
 import { addDays, weekdayOf } from './period';
 import type {
   InventoryItem,
@@ -8,6 +9,7 @@ import type {
   OrderLine,
   OrderStatus,
   PaymentMethod,
+  StockReceipt,
   User,
 } from './types';
 
@@ -27,12 +29,15 @@ export const MOCK_MERCHANTS: Merchant[] = [
 export const MOCK_USERS: User[] = [
   { id: 'usr-admin', name: 'Kit', role: 'admin' },
   { id: 'usr-cashier', name: 'Ana Cruz', role: 'cashier' },
+  { id: 'usr-clerk', name: 'Rey Santos', role: 'clerk' },
   { id: 'usr-m1', name: 'Liza Fernandez', role: 'merchant', merchantId: 'mrc-1' },
   { id: 'usr-m2', name: 'Bea Ramirez', role: 'merchant', merchantId: 'mrc-2' },
   { id: 'usr-m3', name: 'Carlo Navarro', role: 'merchant', merchantId: 'mrc-3' },
 ];
 
 const CASHIER_ID = 'usr-cashier';
+const ADMIN_ID = 'usr-admin';
+const CLERK_ID = 'usr-clerk';
 
 /**
  * Each merchant's stock held in SDSI's warehouse (on hand).
@@ -241,6 +246,12 @@ const CANCEL_REASONS = [
   'Wrong or incomplete address',
   'Customer could not pay on delivery',
 ];
+const RTS_REASONS = [
+  'Customer refused the order',
+  'Customer unreachable',
+  'Wrong or incomplete address',
+  'Customer could not pay on delivery',
+];
 
 const WALK_IN_PAYMENTS: readonly (readonly [PaymentMethod, number])[] = [
   ['Cash', 50],
@@ -269,7 +280,8 @@ function generateOrders(): Order[] {
   const rand = mulberry32(20261029);
   const orders: Order[] = [];
   const reserved = new Map<string, number>();
-  let counter = 1000;
+  let counter = 0;
+  let waybillCounter = 100000000;
 
   for (let offset = HISTORY_DAYS - 1; offset >= 0; offset -= 1) {
     const date = addDays(MOCK_TODAY, -offset);
@@ -327,6 +339,14 @@ function generateOrders(): Order[] {
           status = roll < 0.45 ? 'pending' : roll < 0.7 ? 'packed' : roll < 0.95 ? 'delivered' : 'cancelled';
         }
 
+        // COD goes out with a courier before it is paid: some recent ones are still on the road,
+        // and older refused ones come back as RTS.
+        if (terms === 'COD' && !walkIn) {
+          if (status === 'delivered' && offset === 0 && rand() < 0.5) status = 'shipped';
+          else if (status === 'delivered' && offset === 1 && rand() < 0.15) status = 'shipped';
+          else if (status === 'cancelled' && offset >= 1 && rand() < 0.7) status = 'rts';
+        }
+
         // Open orders must fit in the stock that is actually on the shelf.
         if (status === 'pending' || status === 'packed') {
           const fits = lines.every((line) => {
@@ -345,12 +365,16 @@ function generateOrders(): Order[] {
         counter += 1;
         const merchantUser = MOCK_USERS.find((user) => user.merchantId === merchant.id)!;
         const order: Order = {
-          id: `ORD-${counter}`,
+          id: formatPoid(counter),
           merchantId: merchant.id,
           source: walkIn ? 'walk-in' : 'merchant',
           createdBy: walkIn ? CASHIER_ID : merchantUser.id,
           createdAt,
-          customerName: walkIn ? null : CUSTOMERS[Math.floor(rand() * CUSTOMERS.length)],
+          customerName: walkIn
+            ? rand() < 0.15
+              ? CUSTOMERS[Math.floor(rand() * CUSTOMERS.length)]
+              : 'Walk-in client'
+            : CUSTOMERS[Math.floor(rand() * CUSTOMERS.length)],
           contactNo: walkIn ? '' : `09${Math.floor(100000000 + rand() * 899999999)}`,
           address: !walkIn && terms === 'COD' ? ADDRESSES[Math.floor(rand() * ADDRESSES.length)] : '',
           notes: '',
@@ -363,13 +387,22 @@ function generateOrders(): Order[] {
           order.packedAt = stamp(date, hour + 1, minute);
           order.handledBy = CASHIER_ID;
         }
+        if (terms === 'COD' && !walkIn && (status === 'shipped' || status === 'rts' || status === 'delivered')) {
+          waybillCounter += 1;
+          order.waybill = `WB-${waybillCounter}`;
+          order.shippedAt = stamp(date, hour + 1, Math.min(59, minute + 10));
+        }
+        if (status === 'rts') {
+          order.rtsAt = stamp(addDays(date, 1 + Math.floor(rand() * 2)), 10 + Math.floor(rand() * 6), Math.floor(rand() * 60));
+          order.rtsReason = RTS_REASONS[Math.floor(rand() * RTS_REASONS.length)];
+        }
         if (status === 'delivered') {
           const nextDay = !walkIn && offset >= 1 && terms === 'COD' && rand() < 0.25;
           order.deliveredAt = walkIn
             ? createdAt
             : nextDay
               ? stamp(addDays(date, 1), 9 + Math.floor(rand() * 8), Math.floor(rand() * 60))
-              : stamp(date, hour + 1 + Math.floor(rand() * 4), Math.floor(rand() * 60));
+              : stamp(date, hour + (terms === 'COD' && !walkIn ? 2 : 1) + Math.floor(rand() * 3), Math.floor(rand() * 60));
           order.paymentMethod = pickWeighted(
             rand,
             walkIn ? WALK_IN_PAYMENTS : terms === 'COD' ? COD_PAYMENTS : COP_PAYMENTS,
@@ -385,9 +418,113 @@ function generateOrders(): Order[] {
     }
   }
 
+  // Make sure a few parcels are on the road right now, so the Shipped view has something in it.
+  orders
+    .filter(
+      (order) =>
+        order.status === 'delivered' &&
+        order.source === 'merchant' &&
+        order.terms === 'COD' &&
+        order.createdAt.slice(0, 10) >= addDays(MOCK_TODAY, -1),
+    )
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 3)
+    .forEach((order) => {
+      order.status = 'shipped';
+      delete order.deliveredAt;
+      delete order.paymentMethod;
+      delete order.topUpRate;
+    });
+
   return orders.sort((a, b) =>
     a.createdAt === b.createdAt ? b.id.localeCompare(a.id) : b.createdAt.localeCompare(a.createdAt),
   );
 }
 
 export const MOCK_ORDERS: Order[] = generateOrders();
+
+/** Highest POID handed out so far. New orders continue from here. */
+export const MOCK_PO_SEQ: number = MOCK_ORDERS.length;
+
+/**
+ * Receiving history. Approved receipts are already reflected in the stock levels above.
+ * The newest RTS order is still waiting to be received back, the one before it waits for approval,
+ * and one new stock delivery is waiting for approval, so every step can be tried in the demo.
+ */
+function generateReceipts(): StockReceipt[] {
+  const receipts: StockReceipt[] = [];
+  const add = (receipt: Omit<StockReceipt, 'id'>) =>
+    receipts.push({ ...receipt, id: `RCV-${String(receipts.length + 1).padStart(6, '0')}` });
+  const lineOf = (itemId: string, quantity: number) => {
+    const item = MOCK_INVENTORY.find((candidate) => candidate.id === itemId)!;
+    return { itemId, sku: item.sku, name: item.name, quantity };
+  };
+
+  // Past stock deliveries, oldest first.
+  const history: [string, string, number, number][] = [
+    ['mrc-1', 'itm-001', 60, 62],
+    ['mrc-3', 'itm-006', 80, 58],
+    ['mrc-2', 'itm-008', 40, 50],
+    ['mrc-1', 'itm-003', 60, 41],
+    ['mrc-3', 'itm-005', 50, 33],
+    ['mrc-2', 'itm-009', 30, 20],
+    ['mrc-1', 'itm-002', 40, 12],
+  ];
+  for (const [merchantId, itemId, quantity, daysAgo] of history) {
+    const day = addDays(MOCK_TODAY, -daysAgo);
+    add({
+      kind: 'stock-in',
+      merchantId,
+      receivedDate: day,
+      lines: [lineOf(itemId, quantity)],
+      note: 'Delivered by merchant',
+      receivedBy: CASHIER_ID,
+      createdAt: `${day}T10:15`,
+      status: 'approved',
+      decidedBy: daysAgo % 2 === 0 ? CLERK_ID : ADMIN_ID,
+      decidedAt: `${day}T14:00`,
+    });
+  }
+
+  // RTS orders, oldest first. The newest is not received yet, the one before is pending approval.
+  const rtsOrders = MOCK_ORDERS.filter((order) => order.status === 'rts').sort((a, b) =>
+    (a.rtsAt ?? '').localeCompare(b.rtsAt ?? ''),
+  );
+  rtsOrders.forEach((order, index) => {
+    const fromNewest = rtsOrders.length - 1 - index;
+    if (fromNewest === 0) return;
+    const day = (order.rtsAt ?? '').slice(0, 10) || MOCK_TODAY;
+    const received = day < MOCK_TODAY ? addDays(day, 1) : day;
+    const pending = fromNewest === 1;
+    const receiptId = `RCV-${String(receipts.length + 1).padStart(6, '0')}`;
+    order.returnReceiptId = receiptId;
+    add({
+      kind: 'rts',
+      merchantId: order.merchantId,
+      orderId: order.id,
+      receivedDate: received > MOCK_TODAY ? MOCK_TODAY : received,
+      lines: order.lines.map((line) => lineOf(line.itemId, line.quantity)),
+      note: '',
+      receivedBy: CASHIER_ID,
+      createdAt: `${received > MOCK_TODAY ? MOCK_TODAY : received}T11:30`,
+      status: pending ? 'pending' : 'approved',
+      ...(pending ? {} : { decidedBy: ADMIN_ID, decidedAt: `${received > MOCK_TODAY ? MOCK_TODAY : received}T15:00` }),
+    });
+  });
+
+  // A fresh delivery from Everyday Health PH waiting for approval.
+  add({
+    kind: 'stock-in',
+    merchantId: 'mrc-3',
+    receivedDate: MOCK_TODAY,
+    lines: [lineOf('itm-007', 60)],
+    note: 'Vitamin D3 restock',
+    receivedBy: CASHIER_ID,
+    createdAt: `${MOCK_TODAY}T09:20`,
+    status: 'pending',
+  });
+
+  return receipts.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export const MOCK_RECEIPTS: StockReceipt[] = generateReceipts();

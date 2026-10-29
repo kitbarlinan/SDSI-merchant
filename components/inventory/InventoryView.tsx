@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from 'react';
 import { ExpiryBadge } from '@/components/inventory/ExpiryBadge';
+import { ReceivingPanel } from '@/components/inventory/ReceivingPanel';
+import { RtsPanel } from '@/components/inventory/RtsPanel';
 import { StockBadge } from '@/components/inventory/StockBadge';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card } from '@/components/ui/Card';
@@ -11,91 +13,21 @@ import { useAuth } from '@/lib/auth';
 import { COVER_WARNING_DAYS } from '@/lib/brand';
 import { formatCurrency, formatDate, formatNumber } from '@/lib/format';
 import { coverDays, getExpiry, getStockStatus, recentUnitsByItem } from '@/lib/inventory';
-import { availableOf, flattenDelivered, reservedByItem } from '@/lib/orders';
+import { availableOf, flattenDelivered, inTransitByItem, reservedByItem } from '@/lib/orders';
+import { isSdsiTeam } from '@/lib/roles';
 import { useAppData } from '@/lib/store';
 import { CATEGORY_COLORS } from '@/lib/theme';
-import { CATEGORIES, type Category, type InventoryItem } from '@/lib/types';
+import { CATEGORIES, type Category } from '@/lib/types';
 import { useToday } from '@/lib/use-today';
-
-function ReceiveCell({ item }: { item: InventoryItem }) {
-  const { user } = useAuth();
-  const { receiveStock } = useAppData();
-  const [open, setOpen] = useState(false);
-  const [qty, setQty] = useState('');
-  const [error, setError] = useState<string | null>(null);
-
-  if (!user) return null;
-
-  function submit() {
-    const result = receiveStock(user!, item.id, Number(qty));
-    if (!result.ok) {
-      setError(result.error);
-      return;
-    }
-    setOpen(false);
-    setQty('');
-    setError(null);
-  }
-
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="whitespace-nowrap rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
-      >
-        Receive stock
-      </button>
-    );
-  }
-
-  return (
-    <div className="flex flex-col items-end gap-1">
-      <div className="flex items-center gap-1.5">
-        <input
-          type="number"
-          min={1}
-          step={1}
-          inputMode="numeric"
-          autoFocus
-          value={qty}
-          onChange={(event) => setQty(event.target.value)}
-          onKeyDown={(event) => event.key === 'Enter' && submit()}
-          aria-label={`Units received for ${item.name}`}
-          placeholder="Qty"
-          className="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
-        />
-        <button
-          type="button"
-          onClick={submit}
-          className="rounded-lg bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500"
-        >
-          Add
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setOpen(false);
-            setError(null);
-          }}
-          aria-label="Cancel"
-          className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"
-        >
-          <Icon name="x" className="h-4 w-4" />
-        </button>
-      </div>
-      {error ? <p className="text-xs text-rose-600">{error}</p> : null}
-    </div>
-  );
-}
 
 export function InventoryView() {
   const { user } = useAuth();
-  const { items, orders, merchants } = useAppData();
+  const { items, orders, receipts, merchants } = useAppData();
   const today = useToday();
 
   const isMerchant = user?.role === 'merchant';
-  const isStaff = !isMerchant;
+  const isStaff = isSdsiTeam(user?.role ?? 'merchant');
+  const [tab, setTab] = useState<'stock' | 'receiving' | 'rts'>('stock');
   const showCost = user?.role !== 'cashier';
 
   const [query, setQuery] = useState('');
@@ -110,6 +42,7 @@ export function InventoryView() {
   }, [items, user, merchantId]);
 
   const reserved = useMemo(() => reservedByItem(orders), [orders]);
+  const inTransit = useMemo(() => inTransitByItem(orders), [orders]);
   const recentUnits = useMemo(
     () => (today ? recentUnitsByItem(flattenDelivered(orders), today) : new Map<string, number>()),
     [orders, today],
@@ -143,7 +76,15 @@ export function InventoryView() {
 
   if (!user) return null;
 
-  const colCount = 8 + (isStaff ? 2 : 0) + (showCost ? 1 : 0);
+  const colCount = 9 + (showCost ? 1 : 0);
+
+  const scopedOrders = orders.filter((o) => (isMerchant ? o.merchantId === user.merchantId : merchantId === 'all' || o.merchantId === merchantId));
+  const scopedReceipts = receipts.filter((r) => (isMerchant ? r.merchantId === user.merchantId : merchantId === 'all' || r.merchantId === merchantId));
+  const tabs = [
+    { key: 'stock' as const, label: 'Stock', count: 0 },
+    { key: 'receiving' as const, label: 'Receiving', count: scopedReceipts.filter((r) => r.status === 'pending').length },
+    { key: 'rts' as const, label: 'RTS', count: scopedOrders.filter((o) => o.status === 'rts' && !o.returnReceiptId).length },
+  ];
 
   return (
     <div className="space-y-6">
@@ -152,10 +93,58 @@ export function InventoryView() {
         description={
           isMerchant
             ? 'Your running stock. On hand drops when the cashier marks an order delivered.'
-            : 'Running stock per merchant. Receive new stock here when merchants drop it off.'
+            : 'Running stock per merchant. The cashier receives deliveries and returns; the admin or inventory clerk approves them.'
         }
       />
 
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div role="group" aria-label="Inventory section" className="inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+          {tabs.map((option) => {
+            const active = tab === option.key;
+            return (
+              <button
+                key={option.key}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setTab(option.key)}
+                className={`flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-sm font-medium transition-colors ${
+                  active ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+              >
+                {option.label}
+                {option.count > 0 ? (
+                  <span className={`rounded-full px-1.5 text-xs ${active ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'}`}>
+                    {option.count}
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+        {isStaff ? (
+          <label className="text-xs font-medium text-slate-500">
+            <span className="sr-only">Filter by merchant</span>
+            <select
+              value={merchantId}
+              onChange={(event) => setMerchantId(event.target.value)}
+              className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+            >
+              <option value="all">All merchants</option>
+              {merchants.map((merchant) => (
+                <option key={merchant.id} value={merchant.id}>
+                  {merchant.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+      </div>
+
+      {tab === 'receiving' ? <ReceivingPanel merchantFilter={isMerchant ? 'all' : merchantId} /> : null}
+      {tab === 'rts' ? <RtsPanel merchantFilter={isMerchant ? 'all' : merchantId} /> : null}
+
+      {tab === 'stock' ? (
+      <>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {showCost ? (
           <StatCard
@@ -197,26 +186,9 @@ export function InventoryView() {
       <Card
         flush
         title="Running inventory"
-        subtitle={`On hand = physically in the warehouse. Reserved = promised to open orders. Available = what can still be ordered. Days of cover = how long it lasts at the last 30 days' pace (alert under ${COVER_WARNING_DAYS}).`}
+        subtitle={`On hand = physically in the warehouse. Reserved = promised to pending or packed orders. In transit = shipped, not yet paid. Available = what can still be ordered. Days of cover = how long it lasts at the last 30 days' pace (alert under ${COVER_WARNING_DAYS}).`}
         action={
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            {isStaff ? (
-              <label>
-                <span className="sr-only">Filter by merchant</span>
-                <select
-                  value={merchantId}
-                  onChange={(event) => setMerchantId(event.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
-                >
-                  <option value="all">All merchants</option>
-                  {merchants.map((merchant) => (
-                    <option key={merchant.id} value={merchant.id}>
-                      {merchant.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
             <label className="relative block">
               <span className="sr-only">Search inventory</span>
               <Icon
@@ -266,16 +238,14 @@ export function InventoryView() {
                 <th className="px-4 py-3 text-right">On hand</th>
                 <th className="px-4 py-3 text-right">Reserved</th>
                 <th className="px-4 py-3 text-right">Available</th>
+                <th className="px-4 py-3 text-right" title="Shipped to customers, payment not collected yet">
+                  In transit
+                </th>
                 {showCost ? <th className="px-4 py-3 text-right">Unit cost</th> : null}
                 <th className="px-4 py-3 text-right">Unit price</th>
                 <th className="px-4 py-3">Expiry</th>
                 <th className="px-4 py-3 text-right">Days of cover</th>
                 <th className="px-4 py-3">Status</th>
-                {isStaff ? (
-                  <th className="px-5 py-3 text-right">
-                    <span className="sr-only">Actions</span>
-                  </th>
-                ) : null}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -330,6 +300,9 @@ export function InventoryView() {
                       <td className="px-4 py-4 text-right font-semibold text-emerald-700">
                         {formatNumber(available)}
                       </td>
+                      <td className="px-4 py-4 text-right text-violet-700">
+                        {(inTransit.get(item.id) ?? 0) > 0 ? formatNumber(inTransit.get(item.id) ?? 0) : '—'}
+                      </td>
                       {showCost ? (
                         <td className="px-4 py-4 text-right">{formatCurrency(item.unitCost)}</td>
                       ) : null}
@@ -348,11 +321,6 @@ export function InventoryView() {
                       <td className="px-4 py-4">
                         <StockBadge status={status} />
                       </td>
-                      {isStaff ? (
-                        <td className="px-5 py-4 text-right">
-                          <ReceiveCell item={item} />
-                        </td>
-                      ) : null}
                     </tr>
                   );
                 })
@@ -365,6 +333,8 @@ export function InventoryView() {
           is under 14 days, amber is under {COVER_WARNING_DAYS}.
         </p>
       </Card>
+      </>
+      ) : null}
     </div>
   );
 }

@@ -14,7 +14,7 @@ export type Category = (typeof CATEGORIES)[number];
 // People
 // ---------------------------------------------------------------------------
 
-export type Role = 'admin' | 'cashier' | 'merchant';
+export type Role = 'admin' | 'cashier' | 'clerk' | 'merchant';
 
 export interface User {
   id: string;
@@ -43,7 +43,7 @@ export interface InventoryItem {
   category: Category;
   unitCost: number;
   unitPrice: number;
-  /** Physically on hand. Drops only when an order is delivered. */
+  /** Physically on hand. Drops when goods leave: shipped (COD), handed over (COP) or sold at the counter. */
   stock: number;
   /** At or below this quantity the item is flagged as Low Stock. */
   reorderLevel: number;
@@ -61,7 +61,11 @@ export type StockStatus = 'ok' | 'low' | 'out';
 export const ORDER_TERMS = ['COP', 'COD'] as const;
 export type OrderTerms = (typeof ORDER_TERMS)[number];
 
-export type OrderStatus = 'pending' | 'packed' | 'delivered' | 'cancelled';
+/**
+ * pending -> packed -> (COD only) shipped -> delivered.
+ * rts = returned to sender after shipping. cancelled = closed before it left the warehouse.
+ */
+export type OrderStatus = 'pending' | 'packed' | 'shipped' | 'delivered' | 'rts' | 'cancelled';
 
 export type OrderSource = 'merchant' | 'walk-in';
 
@@ -78,13 +82,14 @@ export interface OrderLine {
 }
 
 export interface Order {
+  /** Unique PO ID (POID-000123). Generated once and never reused. */
   id: string;
   merchantId: string;
   source: OrderSource;
   createdBy: string;
   /** Local date and time, YYYY-MM-DDTHH:mm */
   createdAt: string;
-  /** null for walk-in sales: no customer details are collected. */
+  /** Walk-in sales default to "Walk-in client" and the cashier may change it. */
   customerName: string | null;
   contactNo: string;
   address: string;
@@ -93,7 +98,15 @@ export interface Order {
   lines: OrderLine[];
   status: OrderStatus;
   packedAt?: string;
+  /** COD only: when it was handed to the courier. */
+  shippedAt?: string;
+  /** COD only: tracking number entered by the cashier. Visible to the merchant. */
+  waybill?: string;
   deliveredAt?: string;
+  rtsAt?: string;
+  rtsReason?: string;
+  /** Set once the returned goods were received back (pending or approved receipt). */
+  returnReceiptId?: string;
   /** Staff member who last handled the order. */
   handledBy?: string;
   /** How the payment was actually collected. Set when delivered. */
@@ -124,4 +137,36 @@ export interface SaleLine {
   terms: OrderTerms;
   source: OrderSource;
   customerName: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Stock receiving (cashier receives, admin or inventory clerk approves)
+// ---------------------------------------------------------------------------
+
+export type ReceiptKind = 'stock-in' | 'rts';
+export type ReceiptStatus = 'pending' | 'approved' | 'rejected';
+
+export interface ReceiptLine {
+  itemId: string;
+  sku: string;
+  name: string;
+  quantity: number;
+}
+
+export interface StockReceipt {
+  id: string;
+  kind: ReceiptKind;
+  merchantId: string;
+  /** For kind === 'rts': the order the goods came back from. */
+  orderId?: string;
+  /** Day the goods physically arrived, YYYY-MM-DD. */
+  receivedDate: string;
+  lines: ReceiptLine[];
+  note: string;
+  receivedBy: string;
+  createdAt: string;
+  status: ReceiptStatus;
+  decidedBy?: string;
+  decidedAt?: string;
+  rejectReason?: string;
 }

@@ -11,7 +11,9 @@ import type {
 export const STATUS_LABEL: Record<OrderStatus, string> = {
   pending: 'Pending',
   packed: 'Packed',
+  shipped: 'Shipped',
   delivered: 'Delivered',
+  rts: 'RTS',
   cancelled: 'Not delivered',
 };
 
@@ -20,7 +22,12 @@ export const TERMS_LABEL: Record<OrderTerms, string> = {
   COD: 'Cash on delivery',
 };
 
+/** Still needs action from the cashier. */
 export const isOpen = (order: Order): boolean =>
+  order.status === 'pending' || order.status === 'packed' || order.status === 'shipped';
+
+/** Stock is promised to the order but still physically on the shelf. */
+export const reservesStock = (order: Order): boolean =>
   order.status === 'pending' || order.status === 'packed';
 
 export const orderTotal = (order: Order): number =>
@@ -40,16 +47,28 @@ export function orderTopUp(order: Order): number {
   return roundMoney(order.lines.reduce((sum, line) => sum + lineTopUp(line, rate), 0));
 }
 
-/** Units promised to open (pending / packed) orders. They are still physically on the shelf. */
+/** Units promised to pending / packed orders. They are still physically on the shelf. */
 export function reservedByItem(orders: Order[]): Map<string, number> {
   const reserved = new Map<string, number>();
   for (const order of orders) {
-    if (!isOpen(order)) continue;
+    if (!reservesStock(order)) continue;
     for (const line of order.lines) {
       reserved.set(line.itemId, (reserved.get(line.itemId) ?? 0) + line.quantity);
     }
   }
   return reserved;
+}
+
+/** Units on a courier right now: they left the warehouse but are not delivered yet. */
+export function inTransitByItem(orders: Order[]): Map<string, number> {
+  const transit = new Map<string, number>();
+  for (const order of orders) {
+    if (order.status !== 'shipped') continue;
+    for (const line of order.lines) {
+      transit.set(line.itemId, (transit.get(line.itemId) ?? 0) + line.quantity);
+    }
+  }
+  return transit;
 }
 
 /** What can still be promised to new orders: on hand minus reserved. */

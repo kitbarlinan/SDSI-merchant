@@ -9,7 +9,9 @@ import type { Role, User } from '@/lib/types';
 
 const ROLE_BLURB: Record<Role, string> = {
   admin: 'Sees everything: all merchants, orders, inventory and the accounting.',
-  cashier: 'Packs incoming orders, marks them delivered, runs the walk-in counter.',
+  cashier:
+    'Packs and ships orders, collects payment, runs the walk-in counter, receives stock and returns.',
+  clerk: 'Approves received stock and returns before they go on the shelf.',
   merchant: 'Places orders, tracks own sales and running inventory.',
 };
 
@@ -20,7 +22,7 @@ export function LoginScreen() {
   const merchantName = (user: User) =>
     merchants.find((merchant) => merchant.id === user.merchantId)?.name;
 
-  const groups: Role[] = ['admin', 'cashier', 'merchant'];
+  const groups: Role[] = ['admin', 'cashier', 'clerk', 'merchant'];
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-emerald-950 via-emerald-900 to-teal-900 px-4 py-10">

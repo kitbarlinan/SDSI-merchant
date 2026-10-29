@@ -6,7 +6,7 @@
  * rules must be enforced on the server (row level security / server actions).
  */
 import { roundMoney } from './format';
-import { availableOf, isOpen, reservedByItem } from './orders';
+import { availableOf, reservedByItem } from './orders';
 import {
   PAYMENT_METHODS,
   type InventoryItem,
@@ -14,12 +14,17 @@ import {
   type OrderLine,
   type OrderTerms,
   type PaymentMethod,
+  type ReceiptLine,
   type Role,
+  type StockReceipt,
 } from './types';
 
 export interface AppState {
   items: InventoryItem[];
   orders: Order[];
+  receipts: StockReceipt[];
+  /** Last PO number handed out. Only ever goes up, so a POID is never reused. */
+  poSeq: number;
   /** Current SDSI top-up, percent of merchant sales. Applied to orders delivered from now on. */
   topUpPercent: number;
 }
@@ -34,17 +39,25 @@ export type Outcome<T> = { ok: true; state: AppState; value: T } | { ok: false; 
 
 const fail = (error: string) => ({ ok: false as const, error });
 
+/** Handles orders and the counter. */
 const isStaff = (actor: Actor): boolean => actor.role === 'admin' || actor.role === 'cashier';
+
+/** Approves received stock. */
+const canApprove = (actor: Actor): boolean => actor.role === 'admin' || actor.role === 'clerk';
 
 const dateOf = (dateTime: string): string => dateTime.slice(0, 10);
 
-function nextOrderIds(orders: Order[], count: number): string[] {
-  const last = orders.reduce(
-    (max, order) => Math.max(max, Number(order.id.replace(/\D/g, '')) || 0),
-    1000,
-  );
-  return Array.from({ length: count }, (_, index) => `ORD-${last + index + 1}`);
+export const formatPoid = (sequence: number): string => `POID-${String(sequence).padStart(6, '0')}`;
+
+/** Hands out the next unique POIDs and the counter value to store afterwards. */
+function nextPoids(state: AppState, count: number): { ids: string[]; poSeq: number } {
+  const ids = Array.from({ length: count }, (_, index) => formatPoid(state.poSeq + index + 1));
+  return { ids, poSeq: state.poSeq + count };
 }
+
+const formatReceiptId = (sequence: number): string => `RCV-${String(sequence).padStart(6, '0')}`;
+
+const WALK_IN_DEFAULT_NAME = 'Walk-in client';
 
 function mergeLines(lines: { itemId: string; quantity: number }[]): Map<string, number> {
   const merged = new Map<string, number>();
@@ -115,9 +128,9 @@ export function placeMerchantOrder(
   const built = buildLines(state, input.lines, dateOf(now), actor.merchantId);
   if (!built.ok) return fail(built.error);
 
-  const [id] = nextOrderIds(state.orders, 1);
+  const { ids, poSeq } = nextPoids(state, 1);
   const order: Order = {
-    id,
+    id: ids[0],
     merchantId: actor.merchantId,
     source: 'merchant',
     createdBy: actor.id,
@@ -130,17 +143,26 @@ export function placeMerchantOrder(
     lines: built.lines,
     status: 'pending',
   };
-  return { ok: true, state: { ...state, orders: [order, ...state.orders] }, value: order };
+  return {
+    ok: true,
+    state: { ...state, poSeq, orders: [order, ...state.orders] },
+    value: order,
+  };
 }
 
 /**
- * Counter sale: no customer details. Paid on the spot, so it is delivered immediately.
+ * Counter sale: the customer name is optional. Paid on the spot, so it is delivered immediately.
  * Items from different merchants become separate orders because each sale belongs to one merchant.
  */
 export function checkoutWalkIn(
   state: AppState,
   actor: Actor,
-  input: { lines: { itemId: string; quantity: number }[]; paymentMethod: PaymentMethod },
+  input: {
+    lines: { itemId: string; quantity: number }[];
+    paymentMethod: PaymentMethod;
+    /** Optional. Defaults to "Walk-in client". */
+    customerName?: string;
+  },
   now: string,
 ): Outcome<Order[]> {
   if (!isStaff(actor)) return fail('Only the cashier or admin can run the counter.');
@@ -157,14 +179,15 @@ export function checkoutWalkIn(
     byMerchant.set(merchantId, [...(byMerchant.get(merchantId) ?? []), line]);
   }
 
-  const ids = nextOrderIds(state.orders, byMerchant.size);
+  const { ids, poSeq } = nextPoids(state, byMerchant.size);
+  const customerName = input.customerName?.trim() || WALK_IN_DEFAULT_NAME;
   const created: Order[] = [...byMerchant.entries()].map(([merchantId, lines], index) => ({
     id: ids[index],
     merchantId,
     source: 'walk-in',
     createdBy: actor.id,
     createdAt: now,
-    customerName: null,
+    customerName,
     contactNo: '',
     address: '',
     notes: '',
@@ -185,6 +208,7 @@ export function checkoutWalkIn(
     ok: true,
     state: {
       ...state,
+      poSeq,
       items: state.items.map((item) =>
         sold.has(item.id) ? { ...item, stock: item.stock - sold.get(item.id)! } : item,
       ),
@@ -215,7 +239,60 @@ export function markPacked(
   return { ok: true, state: next, value: next.orders.find((o) => o.id === orderId)! };
 }
 
-/** Payment is in hand: stock leaves the shelf and the sale counts. */
+/** Takes the goods of an order off the shelf. Fails if the shelf does not have enough. */
+function releaseStock(state: AppState, order: Order): { ok: true; items: InventoryItem[] } | { ok: false; error: string } {
+  for (const line of order.lines) {
+    const item = state.items.find((candidate) => candidate.id === line.itemId);
+    if (!item || item.stock < line.quantity) {
+      return fail(`Not enough "${line.name}" on hand. Receive stock first.`);
+    }
+  }
+  const out = new Map(order.lines.map((line) => [line.itemId, line.quantity] as const));
+  return {
+    ok: true,
+    items: state.items.map((item) =>
+      out.has(item.id) ? { ...item, stock: item.stock - out.get(item.id)! } : item,
+    ),
+  };
+}
+
+/**
+ * COD only: the order is handed to the courier. The waybill is the tracking number the merchant
+ * sees. The goods leave the warehouse now, so on-hand stock drops here.
+ */
+export function shipOrder(
+  state: AppState,
+  actor: Actor,
+  orderId: string,
+  waybill: string,
+  now: string,
+): Outcome<Order> {
+  if (!isStaff(actor)) return fail('Only the cashier or admin can ship orders.');
+  const order = state.orders.find((candidate) => candidate.id === orderId);
+  if (!order) return fail('Order not found.');
+  if (order.terms !== 'COD') return fail('Only cash on delivery orders are shipped.');
+  if (order.status !== 'packed') return fail('Pack the order before shipping it.');
+  const code = waybill.trim();
+  if (code.length < 4) return fail('Enter the waybill number.');
+  if (state.orders.some((other) => other.waybill?.toLowerCase() === code.toLowerCase())) {
+    return fail('That waybill number is already used on another order.');
+  }
+  const released = releaseStock(state, order);
+  if (!released.ok) return fail(released.error);
+
+  const next = updateOrder({ ...state, items: released.items }, orderId, {
+    status: 'shipped',
+    shippedAt: now,
+    waybill: code,
+    handledBy: actor.id,
+  });
+  return { ok: true, state: next, value: next.orders.find((o) => o.id === orderId)! };
+}
+
+/**
+ * Payment is in hand and the sale counts. COD orders must have been shipped first.
+ * COP orders are handed over now, so their stock leaves the shelf at this moment.
+ */
 export function markDelivered(
   state: AppState,
   actor: Actor,
@@ -227,36 +304,50 @@ export function markDelivered(
   if (!PAYMENT_METHODS.includes(paymentMethod)) return fail('Choose how the payment was collected.');
   const order = state.orders.find((candidate) => candidate.id === orderId);
   if (!order) return fail('Order not found.');
-  if (order.status !== 'packed') return fail('Pack the order before marking it as delivered.');
 
-  for (const line of order.lines) {
-    const item = state.items.find((candidate) => candidate.id === line.itemId);
-    if (!item || item.stock < line.quantity) {
-      return fail(`Not enough "${line.name}" on hand to deliver. Receive stock first.`);
-    }
+  let base = state;
+  if (order.terms === 'COD') {
+    if (order.status !== 'shipped') return fail('Ship the order with a waybill before marking it delivered.');
+  } else {
+    if (order.status !== 'packed') return fail('Pack the order before marking it as delivered.');
+    const released = releaseStock(state, order);
+    if (!released.ok) return fail(released.error);
+    base = { ...state, items: released.items };
   }
 
-  const sold = new Map(order.lines.map((line) => [line.itemId, line.quantity] as const));
-  const next = updateOrder(
-    {
-      ...state,
-      items: state.items.map((item) =>
-        sold.has(item.id) ? { ...item, stock: item.stock - sold.get(item.id)! } : item,
-      ),
-    },
-    orderId,
-    {
-      status: 'delivered',
-      deliveredAt: now,
-      handledBy: actor.id,
-      paymentMethod,
-      topUpRate: state.topUpPercent,
-    },
-  );
+  const next = updateOrder(base, orderId, {
+    status: 'delivered',
+    deliveredAt: now,
+    handledBy: actor.id,
+    paymentMethod,
+    topUpRate: state.topUpPercent,
+  });
   return { ok: true, state: next, value: next.orders.find((o) => o.id === orderId)! };
 }
 
-/** "Not delivered": the reserved stock is released and no sale is recorded. */
+/** A shipped order came back (customer refused, unreachable...). No sale; goods return via receiving. */
+export function markRts(
+  state: AppState,
+  actor: Actor,
+  orderId: string,
+  reason: string,
+  now: string,
+): Outcome<Order> {
+  if (!isStaff(actor)) return fail('Only the cashier or admin can mark an order as RTS.');
+  if (reason.trim().length < 2) return fail('Select or enter a reason.');
+  const order = state.orders.find((candidate) => candidate.id === orderId);
+  if (!order) return fail('Order not found.');
+  if (order.status !== 'shipped') return fail('Only shipped orders can be returned to sender.');
+  const next = updateOrder(state, orderId, {
+    status: 'rts',
+    rtsAt: now,
+    rtsReason: reason.trim(),
+    handledBy: actor.id,
+  });
+  return { ok: true, state: next, value: next.orders.find((o) => o.id === orderId)! };
+}
+
+/** "Not delivered" before the goods left: the reserved stock is released and no sale is recorded. */
 export function cancelOrder(
   state: AppState,
   actor: Actor,
@@ -268,7 +359,9 @@ export function cancelOrder(
   if (reason.trim().length < 2) return fail('Select or enter a reason.');
   const order = state.orders.find((candidate) => candidate.id === orderId);
   if (!order) return fail('Order not found.');
-  if (!isOpen(order)) return fail('Only open orders can be marked as not delivered.');
+  if (order.status !== 'pending' && order.status !== 'packed') {
+    return fail('Only orders that have not shipped can be closed. Use RTS for shipped orders.');
+  }
   const next = updateOrder(state, orderId, {
     status: 'cancelled',
     cancelledAt: now,
@@ -278,24 +371,163 @@ export function cancelOrder(
   return { ok: true, state: next, value: next.orders.find((o) => o.id === orderId)! };
 }
 
-/** A merchant's stock arrived at the warehouse. */
-export function receiveStock(
+// ---------------------------------------------------------------------------
+// Receiving: the cashier records what arrived, admin or the inventory clerk approves.
+// Stock only changes when a receipt is approved.
+// ---------------------------------------------------------------------------
+
+function validReceivedDate(date: string, now: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return 'Enter the date the goods were received.';
+  if (date > dateOf(now)) return 'The received date cannot be in the future.';
+  return null;
+}
+
+export function createStockInReceipt(
   state: AppState,
   actor: Actor,
-  itemId: string,
-  quantity: number,
-): Outcome<InventoryItem> {
-  if (!isStaff(actor)) return fail('Only the cashier or admin can receive stock.');
-  if (!Number.isInteger(quantity) || quantity < 1) return fail('Enter a whole number of at least 1.');
-  if (!state.items.some((item) => item.id === itemId)) return fail('Product not found.');
-  const items = state.items.map((item) =>
-    item.id === itemId ? { ...item, stock: item.stock + quantity } : item,
-  );
+  input: {
+    merchantId: string;
+    receivedDate: string;
+    note: string;
+    lines: { itemId: string; quantity: number }[];
+  },
+  now: string,
+): Outcome<StockReceipt> {
+  if (actor.role !== 'cashier') return fail('Only the cashier can receive stock.');
+  const dateError = validReceivedDate(input.receivedDate, now);
+  if (dateError) return fail(dateError);
+  if (!state.items.some((item) => item.merchantId === input.merchantId)) {
+    return fail('Choose the merchant the stock belongs to.');
+  }
+  const lines: ReceiptLine[] = [];
+  for (const [itemId, quantity] of mergeLines(input.lines)) {
+    if (quantity === 0) continue;
+    const item = state.items.find((candidate) => candidate.id === itemId);
+    if (!item || item.merchantId !== input.merchantId) return fail('Product not found for this merchant.');
+    if (!Number.isInteger(quantity) || quantity < 1) return fail('Quantities must be whole numbers.');
+    lines.push({ itemId, sku: item.sku, name: item.name, quantity });
+  }
+  if (lines.length === 0) return fail('Enter the quantity received for at least one product.');
+
+  const receipt: StockReceipt = {
+    id: formatReceiptId(state.receipts.length + 1),
+    kind: 'stock-in',
+    merchantId: input.merchantId,
+    receivedDate: input.receivedDate,
+    lines,
+    note: input.note.trim(),
+    receivedBy: actor.id,
+    createdAt: now,
+    status: 'pending',
+  };
+  return { ok: true, state: { ...state, receipts: [receipt, ...state.receipts] }, value: receipt };
+}
+
+/** The courier brought an RTS order back. The cashier logs it; approval puts it back on the shelf. */
+export function createReturnReceipt(
+  state: AppState,
+  actor: Actor,
+  input: { orderId: string; receivedDate: string; note: string },
+  now: string,
+): Outcome<StockReceipt> {
+  if (actor.role !== 'cashier') return fail('Only the cashier can receive returned goods.');
+  const dateError = validReceivedDate(input.receivedDate, now);
+  if (dateError) return fail(dateError);
+  const order = state.orders.find((candidate) => candidate.id === input.orderId);
+  if (!order) return fail('Order not found.');
+  if (order.status !== 'rts') return fail('Only RTS orders can be received back.');
+  if (order.returnReceiptId) return fail('These goods were already received back.');
+
+  const receipt: StockReceipt = {
+    id: formatReceiptId(state.receipts.length + 1),
+    kind: 'rts',
+    merchantId: order.merchantId,
+    orderId: order.id,
+    receivedDate: input.receivedDate,
+    lines: order.lines.map((line) => ({
+      itemId: line.itemId,
+      sku: line.sku,
+      name: line.name,
+      quantity: line.quantity,
+    })),
+    note: input.note.trim(),
+    receivedBy: actor.id,
+    createdAt: now,
+    status: 'pending',
+  };
   return {
     ok: true,
-    state: { ...state, items },
-    value: items.find((item) => item.id === itemId)!,
+    state: updateOrder(
+      { ...state, receipts: [receipt, ...state.receipts] },
+      order.id,
+      { returnReceiptId: receipt.id },
+    ),
+    value: receipt,
   };
+}
+
+function decide(
+  state: AppState,
+  actor: Actor,
+  receiptId: string,
+  status: 'approved' | 'rejected',
+  now: string,
+  rejectReason?: string,
+): Outcome<StockReceipt> {
+  if (!canApprove(actor)) return fail('Only the admin or inventory clerk can approve received stock.');
+  const receipt = state.receipts.find((candidate) => candidate.id === receiptId);
+  if (!receipt) return fail('Receipt not found.');
+  if (receipt.status !== 'pending') return fail('This receipt was already reviewed.');
+
+  const decided: StockReceipt = {
+    ...receipt,
+    status,
+    decidedBy: actor.id,
+    decidedAt: now,
+    ...(status === 'rejected' ? { rejectReason } : {}),
+  };
+
+  let items = state.items;
+  if (status === 'approved') {
+    const add = new Map(receipt.lines.map((line) => [line.itemId, line.quantity] as const));
+    items = state.items.map((item) =>
+      add.has(item.id) ? { ...item, stock: item.stock + add.get(item.id)! } : item,
+    );
+  }
+
+  let next: AppState = {
+    ...state,
+    items,
+    receipts: state.receipts.map((candidate) => (candidate.id === receiptId ? decided : candidate)),
+  };
+  // A rejected return can be received again.
+  if (status === 'rejected' && receipt.kind === 'rts' && receipt.orderId) {
+    next = {
+      ...next,
+      orders: next.orders.map((order) =>
+        order.id === receipt.orderId ? { ...order, returnReceiptId: undefined } : order,
+      ),
+    };
+  }
+  return { ok: true, state: next, value: decided };
+}
+
+export const approveReceipt = (
+  state: AppState,
+  actor: Actor,
+  receiptId: string,
+  now: string,
+): Outcome<StockReceipt> => decide(state, actor, receiptId, 'approved', now);
+
+export function rejectReceipt(
+  state: AppState,
+  actor: Actor,
+  receiptId: string,
+  reason: string,
+  now: string,
+): Outcome<StockReceipt> {
+  if (reason.trim().length < 2) return fail('Enter the reason for rejecting.');
+  return decide(state, actor, receiptId, 'rejected', now, reason.trim());
 }
 
 export function setTopUpPercent(state: AppState, actor: Actor, percent: number): Outcome<number> {

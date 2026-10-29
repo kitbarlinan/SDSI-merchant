@@ -14,8 +14,22 @@ import { DEFAULT_TOP_UP_PERCENT } from './brand';
 import * as engine from './engine';
 import type { Actor, AppState, PlaceOrderInput } from './engine';
 import { nowISO } from './format';
-import { MOCK_INVENTORY, MOCK_MERCHANTS, MOCK_ORDERS, MOCK_USERS } from './mock-data';
-import type { InventoryItem, Merchant, Order, PaymentMethod, User } from './types';
+import {
+  MOCK_INVENTORY,
+  MOCK_MERCHANTS,
+  MOCK_ORDERS,
+  MOCK_PO_SEQ,
+  MOCK_RECEIPTS,
+  MOCK_USERS,
+} from './mock-data';
+import type {
+  InventoryItem,
+  Merchant,
+  Order,
+  PaymentMethod,
+  StockReceipt,
+  User,
+} from './types';
 
 export type ActionResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -24,28 +38,51 @@ interface AppDataValue {
   users: User[];
   items: InventoryItem[];
   orders: Order[];
+  receipts: StockReceipt[];
   /** Current SDSI top-up percent (placeholder until the real rate is agreed). */
   topUpPercent: number;
   hydrated: boolean;
   placeOrder: (actor: Actor, input: PlaceOrderInput) => ActionResult<Order>;
   checkoutWalkIn: (
     actor: Actor,
-    input: { lines: { itemId: string; quantity: number }[]; paymentMethod: PaymentMethod },
+    input: {
+      lines: { itemId: string; quantity: number }[];
+      paymentMethod: PaymentMethod;
+      customerName?: string;
+    },
   ) => ActionResult<Order[]>;
   markPacked: (actor: Actor, orderId: string) => ActionResult<Order>;
+  shipOrder: (actor: Actor, orderId: string, waybill: string) => ActionResult<Order>;
   markDelivered: (actor: Actor, orderId: string, paymentMethod: PaymentMethod) => ActionResult<Order>;
+  markRts: (actor: Actor, orderId: string, reason: string) => ActionResult<Order>;
   cancelOrder: (actor: Actor, orderId: string, reason: string) => ActionResult<Order>;
-  receiveStock: (actor: Actor, itemId: string, quantity: number) => ActionResult<InventoryItem>;
+  receiveStock: (
+    actor: Actor,
+    input: {
+      merchantId: string;
+      receivedDate: string;
+      note: string;
+      lines: { itemId: string; quantity: number }[];
+    },
+  ) => ActionResult<StockReceipt>;
+  receiveReturn: (
+    actor: Actor,
+    input: { orderId: string; receivedDate: string; note: string },
+  ) => ActionResult<StockReceipt>;
+  approveReceipt: (actor: Actor, receiptId: string) => ActionResult<StockReceipt>;
+  rejectReceipt: (actor: Actor, receiptId: string, reason: string) => ActionResult<StockReceipt>;
   setTopUpPercent: (actor: Actor, percent: number) => ActionResult<number>;
   resetDemo: () => void;
 }
 
 // Bumped whenever the saved data shape changes.
-const STORAGE_KEY = 'sdsi-wellness:v3';
+const STORAGE_KEY = 'sdsi-wellness:v4';
 
 const createInitialState = (): AppState => ({
   items: MOCK_INVENTORY.map((item) => ({ ...item })),
   orders: MOCK_ORDERS.map((order) => ({ ...order, lines: order.lines.map((line) => ({ ...line })) })),
+  receipts: MOCK_RECEIPTS.map((receipt) => ({ ...receipt, lines: receipt.lines.map((line) => ({ ...line })) })),
+  poSeq: MOCK_PO_SEQ,
   topUpPercent: DEFAULT_TOP_UP_PERCENT,
 });
 
@@ -55,6 +92,8 @@ const isSavedState = (value: unknown): value is AppState => {
     !!candidate &&
     Array.isArray(candidate.items) &&
     Array.isArray(candidate.orders) &&
+    Array.isArray(candidate.receipts) &&
+    typeof candidate.poSeq === 'number' &&
     typeof candidate.topUpPercent === 'number'
   );
 };
@@ -112,17 +151,28 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       users: MOCK_USERS,
       items: state.items,
       orders: state.orders,
+      receipts: state.receipts,
       topUpPercent: state.topUpPercent,
       hydrated,
       placeOrder: (actor, input) => run((s) => engine.placeMerchantOrder(s, actor, input, nowISO())),
       checkoutWalkIn: (actor, input) => run((s) => engine.checkoutWalkIn(s, actor, input, nowISO())),
       markPacked: (actor, orderId) => run((s) => engine.markPacked(s, actor, orderId, nowISO())),
+      shipOrder: (actor, orderId, waybill) =>
+        run((s) => engine.shipOrder(s, actor, orderId, waybill, nowISO())),
+      markRts: (actor, orderId, reason) =>
+        run((s) => engine.markRts(s, actor, orderId, reason, nowISO())),
       markDelivered: (actor, orderId, paymentMethod) =>
         run((s) => engine.markDelivered(s, actor, orderId, paymentMethod, nowISO())),
       cancelOrder: (actor, orderId, reason) =>
         run((s) => engine.cancelOrder(s, actor, orderId, reason, nowISO())),
-      receiveStock: (actor, itemId, quantity) =>
-        run((s) => engine.receiveStock(s, actor, itemId, quantity)),
+      receiveStock: (actor, input) =>
+        run((s) => engine.createStockInReceipt(s, actor, input, nowISO())),
+      receiveReturn: (actor, input) =>
+        run((s) => engine.createReturnReceipt(s, actor, input, nowISO())),
+      approveReceipt: (actor, receiptId) =>
+        run((s) => engine.approveReceipt(s, actor, receiptId, nowISO())),
+      rejectReceipt: (actor, receiptId, reason) =>
+        run((s) => engine.rejectReceipt(s, actor, receiptId, reason, nowISO())),
       setTopUpPercent: (actor, percent) => run((s) => engine.setTopUpPercent(s, actor, percent)),
       resetDemo: () => commit(createInitialState()),
     }),
