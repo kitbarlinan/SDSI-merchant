@@ -49,6 +49,8 @@ export interface InventoryItem {
   reorderLevel: number;
   /** Product expiry, YYYY-MM-DD. */
   expiryDate: string;
+  /** Switched off by the admin. A disabled SKU cannot be sold and its code is never reused. */
+  disabled?: boolean;
 }
 
 export type StockStatus = 'ok' | 'low' | 'out';
@@ -117,6 +119,10 @@ export interface Order {
   cancelReason?: string;
   /** COD collection fee in HKD, snapshotted from the costing when the order was placed. */
   collectionFeeHkd?: number;
+  /** COD shipping fee (SF) in HKD, snapshotted from the live costing at the same time. */
+  sfHkd?: number;
+  /** COD net price (pickup + SF + CF) in HKD, from the live costing. */
+  netCodHkd?: number;
 }
 
 /** One delivered order line, flattened for reporting. Dated by the day payment was collected. */

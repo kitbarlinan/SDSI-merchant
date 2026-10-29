@@ -44,13 +44,38 @@ export const DEFAULT_COSTING_SETTINGS: CostingSettings = {
   cfMinHkd: 5,
 };
 
+/**
+ * draft    = being worked on, not used anywhere yet
+ * approved = checked and approved, waiting to go live
+ * live     = used by orders
+ */
+export type CostingStatus = 'draft' | 'approved' | 'live';
+
+/** What orders actually use. Frozen when the package goes live, so later edits never change it silently. */
+export interface LiveCosting {
+  pickupPriceHkd: number;
+  sfHkd: number;
+  cfHkd: number;
+  netCodHkd: number;
+  netRemittancePhp: number;
+  /** YYYY-MM-DDTHH:mm */
+  at: string;
+  by: string;
+}
+
 /** A product at a quantity, with the pickup price the admin chose. */
 export interface CostingRow {
   id: string;
   itemId: string;
   qty: number;
-  /** HKD. null until the admin sets it. */
+  /** HKD. The working price. null until the admin sets it. */
   pickupPriceHkd: number | null;
+  status: CostingStatus;
+  /** The version orders use. null until the package first goes live. */
+  live: LiveCosting | null;
+  approvedBy?: string;
+  /** YYYY-MM-DDTHH:mm */
+  approvedAt?: string;
 }
 
 export interface CostingLogEntry {
@@ -135,23 +160,70 @@ export const costingRowFor = (
   qty: number,
 ): CostingRow | undefined => rows.find((row) => row.itemId === itemId && row.qty === qty);
 
+/** SF, CF and net COD (HKD) of an order, from the LIVE costing only. */
+export interface OrderCharges {
+  sfHkd: number;
+  cfHkd: number;
+  netCodHkd: number;
+}
+
 /**
- * Collection fee (HKD) for an order: the sum of the CF of every line, using the package that
- * matches the line's product and quantity. null when any line has no package or no pickup price yet,
- * so a partial number is never shown as if it were complete.
+ * Charges for an order: the sum over its lines, each matched to a LIVE package (same product and
+ * quantity). null when any line has no live package, so a partial number is never shown as complete.
  */
-export function orderCollectionFee(
+export function orderCharges(
   lines: { itemId: string; quantity: number }[],
   costing: CostingState,
-): number | null {
+): OrderCharges | null {
   if (lines.length === 0) return null;
-  let total = 0;
+  let sf = 0;
+  let cf = 0;
+  let net = 0;
   for (const line of lines) {
-    const row = costingRowFor(costing.rows, line.itemId, line.quantity);
-    if (!row || row.pickupPriceHkd === null) return null;
-    total += collectionFee(row.pickupPriceHkd, costing.settings).fee;
+    const live = costingRowFor(costing.rows, line.itemId, line.quantity)?.live;
+    if (!live) return null;
+    sf += live.sfHkd;
+    cf += live.cfHkd;
+    net += live.netCodHkd;
   }
-  return roundMoney(total);
+  return { sfHkd: roundMoney(sf), cfHkd: roundMoney(cf), netCodHkd: roundMoney(net) };
+}
+
+/** Freezes the current working price and settings into what orders will use. */
+export function snapshotLive(
+  unitSrpPhp: number,
+  row: CostingRow,
+  settings: CostingSettings,
+  by: string,
+  at: string,
+): LiveCosting | null {
+  if (row.pickupPriceHkd === null) return null;
+  const result = computeCosting(unitSrpPhp, row.qty, row.pickupPriceHkd, settings);
+  return {
+    pickupPriceHkd: row.pickupPriceHkd,
+    sfHkd: result.sfHkd!,
+    cfHkd: result.cfHkd!,
+    netCodHkd: result.netCodHkd!,
+    netRemittancePhp: result.netRemittancePhp,
+    at,
+    by,
+  };
+}
+
+/** A SKU can be sold only when it is not disabled and at least one of its packages is live. */
+export const isSellable = (item: Pick<InventoryItem, 'id' | 'disabled'>, costing: CostingState): boolean =>
+  !item.disabled && costing.rows.some((row) => row.itemId === item.id && row.live !== null);
+
+/** SKU codes are unique, case-insensitive, and never reused, even after the SKU is disabled. */
+export function validateSkuCode(code: string, existing: { sku: string }[]): string | null {
+  const sku = code.trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{1,29}$/.test(sku)) {
+    return 'SKU code: 2 to 30 letters, numbers, dots, dashes or underscores.';
+  }
+  if (existing.some((item) => item.sku.toLowerCase() === sku.toLowerCase())) {
+    return `SKU code ${sku.toUpperCase()} already exists. Change the SKU code.`;
+  }
+  return null;
 }
 
 /** Pickup price must be a positive amount with at most 2 decimals. */
@@ -203,8 +275,14 @@ export function buildDemoCosting(items: InventoryItem[], settings = DEFAULT_COST
         itemId: item.id,
         qty,
         pickupPriceHkd: computeCosting(item.unitPrice, qty, null, settings).suggestedPickupHkd,
+        status: 'live',
+        live: null,
       });
     }
   }
-  return rows;
+  // Demo rows start live so the app works out of the box.
+  return rows.map((row) => {
+    const item = items.find((candidate) => candidate.id === row.itemId)!;
+    return { ...row, live: snapshotLive(item.unitPrice, row, settings, 'usr-admin', '2026-10-01T09:00') };
+  });
 }

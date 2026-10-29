@@ -1,6 +1,6 @@
 import { DEFAULT_TOP_UP_PERCENT } from './brand';
 import { roundMoney } from './format';
-import { buildDemoCosting, DEFAULT_COSTING_SETTINGS, orderCollectionFee, type CostingState } from './costing';
+import { buildDemoCosting, DEFAULT_COSTING_SETTINGS, orderCharges, type CostingState } from './costing';
 import { formatPoid } from './engine';
 import { addDays, weekdayOf } from './period';
 import type {
@@ -399,11 +399,15 @@ function generateOrders(): Order[] {
           order.handledBy = CASHIER_ID;
         }
         if (terms === 'COD' && !walkIn) {
-          const cf = orderCollectionFee(
+          const charges = orderCharges(
             lines.map((line) => ({ itemId: line.itemId, quantity: line.quantity })),
             MOCK_COSTING,
           );
-          if (cf !== null) order.collectionFeeHkd = cf;
+          if (charges) {
+            order.sfHkd = charges.sfHkd;
+            order.collectionFeeHkd = charges.cfHkd;
+            order.netCodHkd = charges.netCodHkd;
+          }
         }
         if (terms === 'COD' && !walkIn && (status === 'shipped' || status === 'rts' || status === 'delivered')) {
           waybillCounter += 1;

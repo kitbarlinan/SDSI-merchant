@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { Field, inputClass } from '@/components/ui/Field';
 import { Icon } from '@/components/ui/Icon';
 import { useAuth } from '@/lib/auth';
+import { isSellable } from '@/lib/costing';
 import { formatCurrency, formatDate, roundMoney } from '@/lib/format';
 import { MOCK_TODAY } from '@/lib/mock-data';
 import { availableOf, reservedByItem } from '@/lib/orders';
@@ -32,7 +33,7 @@ function quickAmounts(total: number): number[] {
 
 export function PosView() {
   const { user } = useAuth();
-  const { items, orders, merchants, checkoutWalkIn } = useAppData();
+  const { items, orders, merchants, costing, checkoutWalkIn } = useAppData();
   const today = useToday() || MOCK_TODAY;
 
   const [typed, setTyped] = useState<Record<string, string>>({});
@@ -45,12 +46,12 @@ export function PosView() {
   const reserved = useMemo(() => reservedByItem(orders), [orders]);
   const rows: ListRow[] = useMemo(
     () =>
-      items.map((item) => ({
+      items.filter((item) => isSellable(item, costing)).map((item) => ({
         item,
         available: availableOf(item, reserved),
         expired: item.expiryDate < today,
       })),
-    [items, reserved, today],
+    [items, reserved, today, costing],
   );
 
   const parsed = parseQuantities(rows, typed);

@@ -83,11 +83,16 @@ interface AppDataValue {
   setCostingSettings: (actor: Actor, patch: Partial<CostingSettings>) => ActionResult<CostingSettings>;
   addCostingRow: (actor: Actor, input: { itemId: string; qty: number }) => ActionResult<CostingRow>;
   removeCostingRow: (actor: Actor, rowId: string) => ActionResult<CostingRow>;
+  approveCostingRow: (actor: Actor, rowId: string) => ActionResult<CostingRow>;
+  revokeApproval: (actor: Actor, rowId: string) => ActionResult<CostingRow>;
+  goLiveCostingRow: (actor: Actor, rowId: string) => ActionResult<CostingRow>;
+  setSkuDisabled: (actor: Actor, itemId: string, disabled: boolean) => ActionResult<InventoryItem>;
+  addSku: (actor: Actor, input: engine.NewSkuInput) => ActionResult<InventoryItem>;
   resetDemo: () => void;
 }
 
 // Bumped whenever the saved data shape changes.
-const STORAGE_KEY = 'sdsi-wellness:v5';
+const STORAGE_KEY = 'sdsi-wellness:v6';
 
 const createInitialState = (): AppState => ({
   items: MOCK_INVENTORY.map((item) => ({ ...item })),
@@ -199,6 +204,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         run((s) => engine.setCostingSettings(s, actor, patch, nowISO())),
       addCostingRow: (actor, input) => run((s) => engine.addCostingRow(s, actor, input, nowISO())),
       removeCostingRow: (actor, rowId) => run((s) => engine.removeCostingRow(s, actor, rowId, nowISO())),
+      approveCostingRow: (actor, rowId) => run((s) => engine.approveCostingRow(s, actor, rowId, nowISO())),
+      revokeApproval: (actor, rowId) => run((s) => engine.revokeApproval(s, actor, rowId, nowISO())),
+      goLiveCostingRow: (actor, rowId) => run((s) => engine.goLiveCostingRow(s, actor, rowId, nowISO())),
+      setSkuDisabled: (actor, itemId, disabled) =>
+        run((s) => engine.setSkuDisabled(s, actor, itemId, disabled, nowISO())),
+      addSku: (actor, input) => run((s) => engine.addSku(s, actor, input, nowISO())),
       resetDemo: () => commit(createInitialState()),
     }),
     [state, hydrated, run, commit],

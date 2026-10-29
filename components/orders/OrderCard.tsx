@@ -150,14 +150,26 @@ export function OrderCard({
             <span className="text-lg font-semibold text-slate-900">{formatCurrency(total)}</span>
           </div>
           {isCod ? (
-            <div className="flex items-baseline justify-between text-xs">
-              <span className="text-slate-500">CF (collection fee, HKD)</span>
-              {order.collectionFeeHkd != null ? (
-                <span className="font-semibold text-slate-800">{formatHkd(order.collectionFeeHkd)}</span>
-              ) : (
-                <span className="text-amber-700">CF not set</span>
-              )}
-            </div>
+            order.collectionFeeHkd != null && order.sfHkd != null ? (
+              <div className="space-y-0.5 text-xs">
+                <p className="flex justify-between">
+                  <span className="text-slate-500">SF (shipping fee, HKD)</span>
+                  <span className="font-semibold text-slate-800">{formatHkd(order.sfHkd)}</span>
+                </p>
+                <p className="flex justify-between">
+                  <span className="text-slate-500">CF (collection fee, HKD)</span>
+                  <span className="font-semibold text-slate-800">{formatHkd(order.collectionFeeHkd)}</span>
+                </p>
+                {order.netCodHkd != null ? (
+                  <p className="flex justify-between border-t border-slate-100 pt-0.5">
+                    <span className="text-slate-500">Net COD price (HKD)</span>
+                    <span className="font-semibold text-slate-900">{formatHkd(order.netCodHkd)}</span>
+                  </p>
+                ) : null}
+              </div>
+            ) : (
+              <p className="text-xs text-amber-700">SF / CF not set (no live costing for these items)</p>
+            )
           ) : null}
 
           {order.status === 'delivered' && order.deliveredAt ? (

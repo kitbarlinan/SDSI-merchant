@@ -7,7 +7,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { Field, inputClass } from '@/components/ui/Field';
 import { Icon } from '@/components/ui/Icon';
 import { useAuth } from '@/lib/auth';
-import { orderCollectionFee } from '@/lib/costing';
+import { isSellable, orderCharges } from '@/lib/costing';
 import { formatCurrency, formatDate, formatHkd } from '@/lib/format';
 import { MOCK_TODAY } from '@/lib/mock-data';
 import { TERMS_LABEL, availableOf, reservedByItem } from '@/lib/orders';
@@ -43,20 +43,20 @@ export function NewOrderForm() {
   const rows: ListRow[] = useMemo(
     () =>
       items
-        .filter((item) => item.merchantId === user?.merchantId)
+        .filter((item) => item.merchantId === user?.merchantId && isSellable(item, costing))
         .map((item) => ({
           item,
           available: availableOf(item, reserved),
           expired: item.expiryDate < today,
         })),
-    [items, reserved, user, today],
+    [items, reserved, user, today, costing],
   );
 
   const parsed = parseQuantities(rows, typed);
   const errors = validateOrderForm(form, parsed.lines.length);
-  const cf =
+  const charges =
     parsed.lines.length > 0
-      ? orderCollectionFee(
+      ? orderCharges(
           parsed.lines.map((line) => ({ itemId: line.item.id, quantity: line.quantity })),
           costing,
         )
@@ -295,10 +295,14 @@ export function NewOrderForm() {
                 </p>
                 {form.terms === 'COD' && parsed.lines.length > 0 ? (
                   <p className="flex justify-between text-xs text-slate-600">
+                    <span>SF (shipping fee, HKD)</span>
+                    <span>{charges === null ? 'Not live yet' : formatHkd(charges.sfHkd)}</span>
+                  </p>
+                ) : null}
+                {form.terms === 'COD' && parsed.lines.length > 0 ? (
+                  <p className="flex justify-between text-xs text-slate-600">
                     <span>CF (collection fee, HKD)</span>
-                    <span>
-                      {cf === null ? 'Not set for this package' : formatHkd(cf)}
-                    </span>
+                    <span>{charges === null ? 'Not live yet' : formatHkd(charges.cfHkd)}</span>
                   </p>
                 ) : null}
               </div>

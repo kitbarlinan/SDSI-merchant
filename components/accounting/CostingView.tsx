@@ -15,16 +15,34 @@ import {
 } from '@/lib/costing';
 import { passwordProblem } from '@/lib/costing-lock';
 import { formatCurrency, formatDateTime, formatHkd } from '@/lib/format';
+import { CATEGORIES, type InventoryItem } from '@/lib/types';
+import type { CostingRow } from '@/lib/costing';
 import { useAppData } from '@/lib/store';
 
 const SETTING_KEYS = Object.keys(SETTING_LABEL) as (keyof CostingSettings)[];
 
+interface DialogState {
+  title: string;
+  intro: string;
+  confirmLabel: string;
+  lines: string[];
+  warnings: string[];
+  /** Runs after the password is right. Returns an error text, or null when done. */
+  apply: () => string | null;
+}
+
 function ReviewDialog({
+  title,
+  intro,
+  confirmLabel,
   lines,
   warnings,
   onCancel,
   onConfirm,
 }: {
+  title: string;
+  intro: string;
+  confirmLabel: string;
   lines: string[];
   warnings: string[];
   onCancel: () => void;
@@ -48,10 +66,8 @@ function ReviewDialog({
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
     >
       <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
-        <h2 className="text-lg font-semibold text-slate-900">Review before saving</h2>
-        <p className="mt-1 text-sm text-slate-500">
-          These changes affect what merchants are paid. Check every line.
-        </p>
+        <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+        <p className="mt-1 text-sm text-slate-500">{intro}</p>
 
         <ul className="mt-4 max-h-64 divide-y divide-slate-100 overflow-y-auto rounded-xl border border-slate-200 text-sm">
           {lines.map((line) => (
@@ -102,7 +118,7 @@ function ReviewDialog({
             disabled={busy || password === ''}
             className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {busy ? 'Saving…' : 'Confirm and save'}
+            {busy ? 'Working…' : confirmLabel}
           </button>
         </div>
       </div>
@@ -166,16 +182,107 @@ function PasswordPanel({ session, onClose }: { session: CostingSession; onClose:
   );
 }
 
+function NewSkuCard({ onAdded }: { onAdded: (message: string) => void }) {
+  const { user } = useAuth();
+  const { merchants, addSku } = useAppData();
+  const [merchantId, setMerchantId] = useState('');
+  const [sku, setSku] = useState('');
+  const [name, setName] = useState('');
+  const [category, setCategory] = useState<InventoryItem['category']>(CATEGORIES[0]);
+  const [srp, setSrp] = useState('');
+  const [qtys, setQtys] = useState('1,2,3');
+  const [error, setError] = useState<string | null>(null);
+
+  function submit() {
+    if (!user) return;
+    const list = qtys
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map(Number);
+    const result = addSku(user, { merchantId, sku, name, category, unitPrice: Number(srp), qtys: list });
+    if (!result.ok) return setError(result.error);
+    setError(null);
+    onAdded(`${result.value.sku} added as draft. Approve and go live a package to put it on sale. Receive stock in Inventory.`);
+    setSku('');
+    setName('');
+    setSrp('');
+  }
+
+  return (
+    <Card title="New SKU" subtitle="Same as the sheet: SKU code, product name, merchant SRP and the package quantities. The SKU code must be new and is never reused. It goes on sale only after a package is approved and live.">
+      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <label className="text-xs font-medium text-slate-500">
+          Merchant
+          <select value={merchantId} onChange={(event) => setMerchantId(event.target.value)} className={`mt-1 ${inputClass(false)}`}>
+            <option value="">Choose merchant…</option>
+            {merchants.map((merchant) => (
+              <option key={merchant.id} value={merchant.id}>{merchant.name}</option>
+            ))}
+          </select>
+        </label>
+        <label className="text-xs font-medium text-slate-500">
+          SKU code
+          <input value={sku} onChange={(event) => setSku(event.target.value)} placeholder="SKU-001" className={`mt-1 ${inputClass(Boolean(error))}`} />
+        </label>
+        <label className="text-xs font-medium text-slate-500">
+          Product name
+          <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Q10pro 30's" className={`mt-1 ${inputClass(false)}`} />
+        </label>
+        <label className="text-xs font-medium text-slate-500">
+          Category
+          <select value={category} onChange={(event) => setCategory(event.target.value as InventoryItem['category'])} className={`mt-1 ${inputClass(false)}`}>
+            {CATEGORIES.map((option) => (
+              <option key={option} value={option}>{option}</option>
+            ))}
+          </select>
+        </label>
+        <label className="text-xs font-medium text-slate-500">
+          Net SRP per unit (PHP)
+          <input type="number" min={0} step="0.01" value={srp} onChange={(event) => setSrp(event.target.value)} placeholder="990" className={`mt-1 ${inputClass(false)}`} />
+        </label>
+        <label className="text-xs font-medium text-slate-500">
+          Package quantities
+          <input value={qtys} onChange={(event) => setQtys(event.target.value)} placeholder="1,2,3" className={`mt-1 ${inputClass(false)}`} />
+        </label>
+      </div>
+      {error ? <p role="alert" className="mt-3 text-sm text-rose-600">{error}</p> : null}
+      <button
+        type="button"
+        onClick={submit}
+        disabled={!merchantId || !sku || !name || !srp}
+        className="mt-3 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        Add SKU as draft
+      </button>
+    </Card>
+  );
+}
+
 function CostingEditor({ session }: { session: CostingSession }) {
   const { user } = useAuth();
-  const { items, merchants, users, costing, setPickupPrices, setCostingSettings, addCostingRow, removeCostingRow } =
-    useAppData();
+  const {
+    items,
+    merchants,
+    users,
+    costing,
+    setPickupPrices,
+    setCostingSettings,
+    addCostingRow,
+    removeCostingRow,
+    approveCostingRow,
+    revokeApproval,
+    goLiveCostingRow,
+    setSkuDisabled,
+    addSku,
+  } = useAppData();
 
   const [prices, setPrices] = useState<Record<string, string>>({});
   const [settingsDraft, setSettingsDraft] = useState<Partial<Record<keyof CostingSettings, string>>>({});
   const [query, setQuery] = useState('');
   const [merchantId, setMerchantId] = useState('all');
-  const [reviewing, setReviewing] = useState(false);
+  const [dialog, setDialog] = useState<DialogState | null>(null);
+  const [showNewSku, setShowNewSku] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [newItem, setNewItem] = useState('');
   const [newQty, setNewQty] = useState('');
@@ -239,7 +346,7 @@ function CostingEditor({ session }: { session: CostingSession }) {
     reviewLines.push(`${SETTING_LABEL[key]}: ${saved[key]} → ${preview[key]}`);
   }
   if (settingChanges.length > 0) {
-    warnings.push('Changing a setting changes the CF and net COD of every package, even those you did not edit.');
+    warnings.push('A setting change shows in every row below, but packages already live keep their frozen SF and CF until they are approved and go live again.');
   }
   for (const change of priceChanges) {
     const row = costing.rows.find((candidate) => candidate.id === change.rowId)!;
@@ -259,9 +366,8 @@ function CostingEditor({ session }: { session: CostingSession }) {
     }
   }
 
-  async function confirm(password: string): Promise<string | null> {
+  function saveChanges(): string | null {
     if (!user) return 'Please sign in again.';
-    if (!(await session.confirmPassword(password))) return 'Wrong password.';
     if (settingChanges.length > 0) {
       const patch: Partial<CostingSettings> = {};
       for (const key of settingChanges) patch[key] = preview[key];
@@ -277,9 +383,83 @@ function CostingEditor({ session }: { session: CostingSession }) {
     }
     setPrices({});
     setSettingsDraft({});
-    setReviewing(false);
-    setNotice(`Saved ${changeCount} change${changeCount === 1 ? '' : 's'}. It is in the change log below.`);
+    setNotice(`Saved ${changeCount} change${changeCount === 1 ? '' : 's'} as draft. Approve and go live to use them.`);
     return null;
+  }
+
+  function openSaveReview() {
+    setDialog({
+      title: 'Review before saving',
+      intro: 'Saved prices are drafts. They do not touch orders until approved and live.',
+      confirmLabel: 'Confirm and save',
+      lines: reviewLines,
+      warnings,
+      apply: saveChanges,
+    });
+  }
+
+  function askRowAction(kind: 'approve' | 'revoke' | 'live', row: CostingRow, item: InventoryItem) {
+    if (!user) return;
+    const result = computeCosting(item.unitPrice, row.qty, row.pickupPriceHkd, saved);
+    const label = `${item.sku} ×${row.qty}`;
+    const figures = `Pickup ${formatHkd(row.pickupPriceHkd ?? 0)} · SF ${formatHkd(result.sfHkd ?? 0)} · CF ${formatHkd(result.cfHkd ?? 0)} · Net COD ${formatHkd(result.netCodHkd ?? 0)} · Remit ${formatCurrency(result.netRemittancePhp)}`;
+    const base = { lines: [label, figures], warnings: [] as string[] };
+    if (kind === 'approve') {
+      setDialog({
+        ...base,
+        title: 'Approve this package?',
+        intro: 'Approved is not live yet. You still click Go live after.',
+        confirmLabel: 'Approve',
+        apply: () => {
+          const r = approveCostingRow(user, row.id);
+          if (r.ok) setNotice(`${label} approved. Click Go live when ready.`);
+          return r.ok ? null : r.error;
+        },
+      });
+    } else if (kind === 'revoke') {
+      setDialog({
+        ...base,
+        title: 'Take back the approval?',
+        intro: 'The package goes back to draft.',
+        confirmLabel: 'Back to draft',
+        apply: () => {
+          const r = revokeApproval(user, row.id);
+          return r.ok ? null : r.error;
+        },
+      });
+    } else {
+      setDialog({
+        lines: [label, figures, row.live ? `Replaces the live version: pickup ${formatHkd(row.live.pickupPriceHkd)}, net COD ${formatHkd(row.live.netCodHkd)}` : 'First time live: this SKU becomes available for orders.'],
+        warnings: ['From now on new orders and the merchant remittance use these numbers.'],
+        title: 'Go live?',
+        intro: 'Orders will use this price, SF and CF right away.',
+        confirmLabel: 'Go live',
+        apply: () => {
+          const r = goLiveCostingRow(user, row.id);
+          if (r.ok) setNotice(`${label} is live.`);
+          return r.ok ? null : r.error;
+        },
+      });
+    }
+  }
+
+  function askToggleSku(item: InventoryItem) {
+    if (!user) return;
+    const disabling = !item.disabled;
+    setDialog({
+      title: disabling ? `Disable ${item.sku}?` : `Enable ${item.sku}?`,
+      intro: disabling
+        ? 'It can no longer be ordered or sold. Open orders are not affected. The SKU code stays reserved forever.'
+        : 'It can be ordered again if it has a live package.',
+      confirmLabel: disabling ? 'Disable SKU' : 'Enable SKU',
+      lines: [`${item.sku} · ${item.name}`],
+      warnings: [],
+      apply: () => {
+        const r = setSkuDisabled(user, item.id, disabling);
+        if (r.ok) setNotice(`${item.sku} ${disabling ? 'disabled' : 'enabled'}.`);
+        return r.ok ? null : r.error;
+      },
+    });
   }
 
   function addRow() {
@@ -359,10 +539,21 @@ function CostingEditor({ session }: { session: CostingSession }) {
         </p>
       </Card>
 
+      <div>
+        <button
+          type="button"
+          onClick={() => setShowNewSku((current) => !current)}
+          className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+        >
+          {showNewSku ? 'Close new SKU' : '+ New SKU'}
+        </button>
+      </div>
+      {showNewSku ? <NewSkuCard onAdded={setNotice} /> : null}
+
       <Card
         flush
         title="Costing per package"
-        subtitle="Each row is one product at one quantity. Type the pickup price (HKD); everything after it is computed."
+        subtitle="Each row is one product at one quantity. Type the pickup price (HKD), save it as a draft, then Approve, then Go live. Only live rows are used by orders and remittance."
         action={
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <select
@@ -408,13 +599,14 @@ function CostingEditor({ session }: { session: CostingSession }) {
                 <th className="px-3 py-3 text-right">CF ({preview.cfRatePct}%, min {preview.cfMinHkd})</th>
                 <th className="px-3 py-3 text-right">Net COD (HKD)</th>
                 <th className="px-3 py-3 text-right">Net remittance (PHP)</th>
+                <th className="px-3 py-3 text-left">Status</th>
                 <th className="px-3 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="px-5 py-10 text-center text-slate-500">
+                  <td colSpan={14} className="px-5 py-10 text-center text-slate-500">
                     No costing rows match.
                   </td>
                 </tr>
@@ -430,7 +622,17 @@ function CostingEditor({ session }: { session: CostingSession }) {
                   return (
                     <tr key={row.id} className={changed ? 'bg-amber-50/60' : ''}>
                       <td className="whitespace-nowrap px-4 py-3 font-mono text-xs">{item.sku}</td>
-                      <td className="min-w-[12rem] px-3 py-3 text-slate-900">{item.name}</td>
+                      <td className={`min-w-[12rem] px-3 py-3 ${item.disabled ? 'text-slate-400' : 'text-slate-900'}`}>
+                        {item.name}
+                        {item.disabled ? <span className="ml-2 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-600">Disabled</span> : null}
+                        <button
+                          type="button"
+                          onClick={() => askToggleSku(item)}
+                          className="mt-0.5 block text-xs font-medium text-slate-500 hover:text-slate-800 hover:underline"
+                        >
+                          {item.disabled ? 'Enable SKU' : 'Disable SKU'}
+                        </button>
+                      </td>
                       <td className="px-3 py-3 text-right font-semibold">{row.qty}</td>
                       <td className="px-3 py-3 text-right">{formatCurrency(result.netSrpPhp)}</td>
                       <td className="px-3 py-3 text-right">{formatCurrency(result.grossPayablePhp)}</td>
@@ -477,8 +679,58 @@ function CostingEditor({ session }: { session: CostingSession }) {
                         {result.netCodHkd === null ? '—' : result.netCodHkd.toFixed(2)}
                       </td>
                       <td className="px-3 py-3 text-right">{formatCurrency(result.netRemittancePhp)}</td>
+                      <td className="min-w-[10rem] px-3 py-3">
+                        {(() => {
+                          const dirty = changed || Boolean(error);
+                          const chip =
+                            row.status === 'live'
+                              ? 'bg-blue-100 text-blue-700'
+                              : row.status === 'approved'
+                                ? 'bg-rose-100 text-rose-700'
+                                : 'bg-slate-100 text-slate-600';
+                          return (
+                            <div className="space-y-1">
+                              <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${chip}`}>
+                                {row.status === 'live' ? 'Live' : row.status === 'approved' ? 'Approved' : 'Draft'}
+                              </span>
+                              {row.status === 'draft' && row.live ? (
+                                <p className="text-xs text-blue-700">Live now: {formatHkd(row.live.pickupPriceHkd)}</p>
+                              ) : null}
+                              {dirty ? (
+                                <p className="text-xs text-amber-700">Save the price first</p>
+                              ) : row.status === 'draft' ? (
+                                <button
+                                  type="button"
+                                  disabled={row.pickupPriceHkd === null}
+                                  onClick={() => askRowAction('approve', row, item)}
+                                  className="block rounded-lg border border-rose-300 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                >
+                                  Approve
+                                </button>
+                              ) : row.status === 'approved' ? (
+                                <div className="flex gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => askRowAction('live', row, item)}
+                                    className="rounded-lg bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-500"
+                                  >
+                                    Go live
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => askRowAction('revoke', row, item)}
+                                    className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
+                                  >
+                                    Undo
+                                  </button>
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })()}
+                      </td>
                       <td className="px-3 py-3 text-right">
-                        <button
+                        {row.live ? null : <button
                           type="button"
                           onClick={() => {
                             if (window.confirm(`Remove ${item.sku} ×${row.qty} from the costing?`)) {
@@ -494,7 +746,7 @@ function CostingEditor({ session }: { session: CostingSession }) {
                           className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
                         >
                           <Icon name="x" className="h-4 w-4" />
-                        </button>
+                        </button>}
                       </td>
                     </tr>
                   );
@@ -565,7 +817,7 @@ function CostingEditor({ session }: { session: CostingSession }) {
             ) : null}
             <button
               type="button"
-              onClick={() => setReviewing(true)}
+              onClick={openSaveReview}
               disabled={changeCount === 0 || errorCount > 0}
               className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -602,12 +854,20 @@ function CostingEditor({ session }: { session: CostingSession }) {
         )}
       </Card>
 
-      {reviewing ? (
+      {dialog ? (
         <ReviewDialog
-          lines={reviewLines}
-          warnings={warnings}
-          onCancel={() => setReviewing(false)}
-          onConfirm={confirm}
+          title={dialog.title}
+          intro={dialog.intro}
+          confirmLabel={dialog.confirmLabel}
+          lines={dialog.lines}
+          warnings={dialog.warnings}
+          onCancel={() => setDialog(null)}
+          onConfirm={async (password) => {
+            if (!(await session.confirmPassword(password))) return 'Wrong password.';
+            const error = dialog.apply();
+            if (!error) setDialog(null);
+            return error;
+          }}
         />
       ) : null}
     </div>

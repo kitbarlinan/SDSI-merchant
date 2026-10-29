@@ -9,7 +9,10 @@ import { roundMoney } from './format';
 import {
   computeCosting,
   costingRowFor,
-  orderCollectionFee,
+  orderCharges,
+  isSellable,
+  snapshotLive,
+  validateSkuCode,
   validatePickupPrice,
   validateSettings,
   SETTING_LABEL,
@@ -95,6 +98,7 @@ function buildLines(
   for (const [itemId, quantity] of mergeLines(requested)) {
     const item = state.items.find((candidate) => candidate.id === itemId);
     if (!item || (merchantId && item.merchantId !== merchantId)) return fail('Product not found.');
+    if (!isSellable(item, state.costing)) return fail(`"${item.name}" is not on sale.`);
     if (!Number.isInteger(quantity) || quantity < 1) {
       return fail('Quantities must be whole numbers of at least 1.');
     }
@@ -158,11 +162,15 @@ export function placeMerchantOrder(
     status: 'pending',
   };
   if (input.terms === 'COD') {
-    const cf = orderCollectionFee(
+    const charges = orderCharges(
       built.lines.map((line) => ({ itemId: line.itemId, quantity: line.quantity })),
       state.costing,
     );
-    if (cf !== null) order.collectionFeeHkd = cf;
+    if (charges) {
+      order.sfHkd = charges.sfHkd;
+      order.collectionFeeHkd = charges.cfHkd;
+      order.netCodHkd = charges.netCodHkd;
+    }
   }
   return {
     ok: true,
@@ -606,13 +614,17 @@ export function setPickupPrices(
     const problem = validatePickupPrice(change.pickupPriceHkd);
     if (problem) return fail(problem);
     if (priceOf.has(row.id)) return fail('The same row was changed twice.');
+    if (change.pickupPriceHkd === row.pickupPriceHkd) return fail('A price was not changed.');
     priceOf.set(row.id, change.pickupPriceHkd);
     const item = state.items.find((candidate) => candidate.id === row.itemId);
     details.push(`${item?.sku ?? row.itemId} x${row.qty}: ${hk(row.pickupPriceHkd)} -> ${hk(change.pickupPriceHkd)}`);
   }
 
+  // A new price is a new draft. Any earlier approval no longer counts. The live version stays in use until the new one goes live.
   const rows = state.costing.rows.map((row) =>
-    priceOf.has(row.id) ? { ...row, pickupPriceHkd: priceOf.get(row.id)! } : row,
+    priceOf.has(row.id)
+      ? { ...row, pickupPriceHkd: priceOf.get(row.id)!, status: 'draft' as const, approvedBy: undefined, approvedAt: undefined }
+      : row,
   );
   return {
     ok: true,
@@ -673,6 +685,8 @@ export function addCostingRow(
     itemId: item.id,
     qty: input.qty,
     pickupPriceHkd: null,
+    status: 'draft',
+    live: null,
   };
   return {
     ok: true,
@@ -693,6 +707,7 @@ export function removeCostingRow(
   if (denied) return denied;
   const row = state.costing.rows.find((candidate) => candidate.id === rowId);
   if (!row) return fail('Costing row not found.');
+  if (row.live) return fail('This package has been live. Disable the SKU instead of removing it.');
   const item = state.items.find((candidate) => candidate.id === row.itemId);
   return {
     ok: true,
@@ -705,6 +720,157 @@ export function removeCostingRow(
       { rows: state.costing.rows.filter((candidate) => candidate.id !== rowId) },
     ),
     value: row,
+  };
+}
+
+const rowLabel = (state: AppState, row: CostingRow) =>
+  `${state.items.find((candidate) => candidate.id === row.itemId)?.sku ?? row.itemId} x${row.qty}`;
+
+const replaceRow = (state: AppState, rowId: string, patch: Partial<CostingRow>): CostingRow[] =>
+  state.costing.rows.map((row) => (row.id === rowId ? { ...row, ...patch } : row));
+
+/** Step 1: the draft is checked and approved. Needs a pickup price. */
+export function approveCostingRow(state: AppState, actor: Actor, rowId: string, now: string): Outcome<CostingRow> {
+  const denied = costingGuard(actor);
+  if (denied) return denied;
+  const row = state.costing.rows.find((candidate) => candidate.id === rowId);
+  if (!row) return fail('Costing row not found.');
+  if (row.status !== 'draft') return fail('Only a draft can be approved.');
+  if (row.pickupPriceHkd === null) return fail('Set the pickup price before approving.');
+  const next = { ...row, status: 'approved' as const, approvedBy: actor.id, approvedAt: now };
+  return {
+    ok: true,
+    state: logged(state, actor, now, 'Package approved', [`${rowLabel(state, row)}: pickup ${hk(row.pickupPriceHkd)}`], {
+      rows: replaceRow(state, rowId, next),
+    }),
+    value: next,
+  };
+}
+
+/** Takes an approved package back to draft, for example when a mistake is found before going live. */
+export function revokeApproval(state: AppState, actor: Actor, rowId: string, now: string): Outcome<CostingRow> {
+  const denied = costingGuard(actor);
+  if (denied) return denied;
+  const row = state.costing.rows.find((candidate) => candidate.id === rowId);
+  if (!row) return fail('Costing row not found.');
+  if (row.status !== 'approved') return fail('Only an approved package can go back to draft.');
+  const next = { ...row, status: 'draft' as const, approvedBy: undefined, approvedAt: undefined };
+  return {
+    ok: true,
+    state: logged(state, actor, now, 'Approval removed', [rowLabel(state, row)], { rows: replaceRow(state, rowId, next) }),
+    value: next,
+  };
+}
+
+/** Step 2: an approved package goes live. Orders use its frozen price, SF and CF from now on. */
+export function goLiveCostingRow(state: AppState, actor: Actor, rowId: string, now: string): Outcome<CostingRow> {
+  const denied = costingGuard(actor);
+  if (denied) return denied;
+  const row = state.costing.rows.find((candidate) => candidate.id === rowId);
+  if (!row) return fail('Costing row not found.');
+  if (row.status !== 'approved') return fail('Approve the package before going live.');
+  const item = state.items.find((candidate) => candidate.id === row.itemId);
+  if (!item) return fail('Product not found.');
+  const live = snapshotLive(item.unitPrice, row, state.costing.settings, actor.id, now);
+  if (!live) return fail('Set the pickup price first.');
+  const next = { ...row, status: 'live' as const, live };
+  const before = row.live ? `was ${hk(row.live.pickupPriceHkd)}, ` : 'first time live, ';
+  return {
+    ok: true,
+    state: logged(
+      state,
+      actor,
+      now,
+      'Package went live',
+      [`${rowLabel(state, row)}: ${before}now pickup ${hk(live.pickupPriceHkd)}, SF ${hk(live.sfHkd)}, CF ${hk(live.cfHkd)}, net COD ${hk(live.netCodHkd)}`],
+      { rows: replaceRow(state, rowId, next) },
+    ),
+    value: next,
+  };
+}
+
+/** Disable or re-enable a whole SKU. Open orders are not touched; new orders cannot include it. */
+export function setSkuDisabled(
+  state: AppState,
+  actor: Actor,
+  itemId: string,
+  disabled: boolean,
+  now: string,
+): Outcome<InventoryItem> {
+  const denied = costingGuard(actor);
+  if (denied) return denied;
+  const item = state.items.find((candidate) => candidate.id === itemId);
+  if (!item) return fail('Product not found.');
+  if (Boolean(item.disabled) === disabled) return fail(disabled ? 'This SKU is already disabled.' : 'This SKU is already enabled.');
+  const next = { ...item, disabled };
+  return {
+    ok: true,
+    state: {
+      ...logged(state, actor, now, disabled ? 'SKU disabled' : 'SKU enabled', [`${item.sku} ${item.name}`], {}),
+      items: state.items.map((candidate) => (candidate.id === itemId ? next : candidate)),
+    },
+    value: next,
+  };
+}
+
+export interface NewSkuInput {
+  merchantId: string;
+  sku: string;
+  name: string;
+  category: InventoryItem['category'];
+  /** Merchant SRP per unit, PHP. */
+  unitPrice: number;
+  /** Package quantities to cost, e.g. [1, 2, 3]. */
+  qtys: number[];
+}
+
+/**
+ * Adds a new SKU. It exists in Inventory (so stock can be received) but cannot be sold until
+ * one of its packages is approved and goes live. The SKU code must be new.
+ */
+export function addSku(state: AppState, actor: Actor, input: NewSkuInput, now: string): Outcome<InventoryItem> {
+  const denied = costingGuard(actor);
+  if (denied) return denied;
+  const sku = input.sku.trim().toUpperCase();
+  const problem = validateSkuCode(sku, state.items);
+  if (problem) return fail(problem);
+  if (input.name.trim().length < 2) return fail('Enter the product name.');
+  if (!input.merchantId) return fail('Choose a merchant.');
+  if (!Number.isFinite(input.unitPrice) || input.unitPrice <= 0 || input.unitPrice > 1_000_000) {
+    return fail('Enter the merchant SRP (PHP) above 0.');
+  }
+  const qtys = [...new Set(input.qtys)];
+  if (qtys.length === 0) return fail('Add at least one package quantity.');
+  if (qtys.some((qty) => !Number.isInteger(qty) || qty < 1 || qty > 99)) {
+    return fail('Quantities must be whole numbers from 1 to 99.');
+  }
+
+  const next = state.items.reduce((max, item) => Math.max(max, Number(item.id.replace('itm-', '')) || 0), 0) + 1;
+  const id = `itm-${String(next).padStart(3, '0')}`;
+  const item: InventoryItem = {
+    id,
+    merchantId: input.merchantId,
+    sku,
+    name: input.name.trim(),
+    category: input.category,
+    unitCost: 0,
+    unitPrice: roundMoney(input.unitPrice),
+    stock: 0,
+    reorderLevel: 10,
+    expiryDate: '2099-12-31',
+  };
+  const rows: CostingRow[] = qtys
+    .sort((a, b) => a - b)
+    .map((qty) => ({ id: `cst-${String(next).padStart(3, '0')}-${qty}`, itemId: id, qty, pickupPriceHkd: null, status: 'draft', live: null }));
+  return {
+    ok: true,
+    state: {
+      ...logged(state, actor, now, 'New SKU added', [`${sku} ${item.name}, SRP ${item.unitPrice}, packages x${qtys.join(', x')}`], {
+        rows: [...state.costing.rows, ...rows],
+      }),
+      items: [...state.items, item],
+    },
+    value: item,
   };
 }
 
