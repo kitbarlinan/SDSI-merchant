@@ -478,9 +478,9 @@ function CostingEditor() {
           <table className="min-w-full text-sm">
             <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-4 py-3 text-left">SKU</th>
-                <th className="px-3 py-3 text-left">Product</th>
-                <th className="px-3 py-3 text-right">Qty (pcs)</th>
+                <th className="w-[7.5rem] min-w-[7.5rem] bg-slate-50 px-4 py-3 text-left md:sticky md:left-0 md:z-20">SKU</th>
+                <th className="sticky left-0 z-20 min-w-[9rem] bg-slate-50 px-3 py-3 text-left shadow-[2px_0_4px_-2px_rgba(15,23,42,0.15)] md:left-[7.5rem] md:w-[12rem] md:min-w-[12rem] md:max-w-[12rem] md:shadow-none">Product</th>
+                <th className="bg-slate-50 px-3 py-3 text-right md:sticky md:left-[19.5rem] md:z-20 md:w-[4.5rem] md:min-w-[4.5rem] md:shadow-[2px_0_4px_-2px_rgba(15,23,42,0.15)]">Qty (pcs)</th>
                 <th className="px-3 py-3 text-right">Net SRP (PHP)</th>
                 <th className="px-3 py-3 text-right">{preview.markupPct}% MU (PHP)</th>
                 <th className="px-3 py-3 text-right">Basis (HKD)</th>
@@ -511,9 +511,19 @@ function CostingEditor() {
                   const changed = raw !== undefined && valid && typed !== row.pickupPriceHkd;
                   const below = valid && typed! < result.finalBasisHkd;
                   return (
-                    <tr key={row.id} className={changed ? 'bg-amber-50/60' : ''}>
-                      <td className="whitespace-nowrap px-4 py-3 font-mono text-xs">{item.sku}</td>
-                      <td className={`min-w-[12rem] px-3 py-3 ${item.disabled ? 'text-slate-400' : 'text-slate-900'}`}>
+                    <tr key={row.id} className={changed ? 'bg-amber-50' : ''}>
+                      <td
+                        className={`w-[7.5rem] min-w-[7.5rem] whitespace-nowrap px-4 py-3 font-mono text-xs md:sticky md:left-0 md:z-10 ${
+                          changed ? 'bg-amber-50' : 'bg-white'
+                        }`}
+                      >
+                        {item.sku}
+                      </td>
+                      <td
+                        className={`sticky left-0 z-10 min-w-[9rem] px-3 py-3 shadow-[2px_0_4px_-2px_rgba(15,23,42,0.15)] md:left-[7.5rem] md:w-[12rem] md:min-w-[12rem] md:max-w-[12rem] md:shadow-none ${
+                          changed ? 'bg-amber-50' : 'bg-white'
+                        } ${item.disabled ? 'text-slate-400' : 'text-slate-900'}`}
+                      >
                         {item.name}
                         {item.disabled ? <span className="ml-2 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-600">Disabled</span> : null}
                         <button
@@ -524,7 +534,13 @@ function CostingEditor() {
                           {item.disabled ? 'Enable SKU' : 'Disable SKU'}
                         </button>
                       </td>
-                      <td className="px-3 py-3 text-right font-semibold">{row.qty}</td>
+                      <td
+                        className={`px-3 py-3 text-right font-semibold md:sticky md:left-[19.5rem] md:z-10 md:w-[4.5rem] md:min-w-[4.5rem] md:shadow-[2px_0_4px_-2px_rgba(15,23,42,0.15)] ${
+                          changed ? 'md:bg-amber-50' : 'md:bg-white'
+                        }`}
+                      >
+                        {row.qty}
+                      </td>
                       <td className="px-3 py-3 text-right">{formatCurrency(result.netSrpPhp)}</td>
                       <td className="px-3 py-3 text-right">{formatCurrency(result.grossPayablePhp)}</td>
                       <td className="px-3 py-3 text-right">{result.basisHkd.toFixed(2)}</td>
