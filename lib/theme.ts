@@ -11,10 +11,8 @@ export const CATEGORY_COLORS: Record<Category, string> = {
 
 export const PAYMENT_COLORS: Record<PaymentMethod, string> = {
   Cash: '#64748b',
-  GCash: '#2563eb',
-  Maya: '#16a34a',
   'Bank Transfer': '#7c3aed',
-  Card: '#db2777',
+  'Debit / Credit Card': '#db2777',
 };
 
 export const TERMS_COLORS: Record<OrderTerms, string> = {

@@ -257,22 +257,19 @@ const RTS_REASONS = [
 ];
 
 const WALK_IN_PAYMENTS: readonly (readonly [PaymentMethod, number])[] = [
-  ['Cash', 50],
-  ['GCash', 30],
-  ['Maya', 10],
-  ['Card', 10],
+  ['Cash', 60],
+  ['Bank Transfer', 15],
+  ['Debit / Credit Card', 25],
 ];
 const COD_PAYMENTS: readonly (readonly [PaymentMethod, number])[] = [
-  ['Cash', 70],
-  ['GCash', 20],
-  ['Bank Transfer', 5],
-  ['Maya', 5],
+  ['Cash', 75],
+  ['Bank Transfer', 15],
+  ['Debit / Credit Card', 10],
 ];
 const COP_PAYMENTS: readonly (readonly [PaymentMethod, number])[] = [
-  ['Cash', 55],
-  ['GCash', 30],
-  ['Maya', 10],
-  ['Bank Transfer', 5],
+  ['Cash', 65],
+  ['Bank Transfer', 15],
+  ['Debit / Credit Card', 20],
 ];
 
 const two = (value: number): string => String(value).padStart(2, '0');

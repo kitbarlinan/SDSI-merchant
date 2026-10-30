@@ -1,4 +1,4 @@
-export const PAYMENT_METHODS = ['Cash', 'GCash', 'Maya', 'Bank Transfer', 'Card'] as const;
+export const PAYMENT_METHODS = ['Cash', 'Bank Transfer', 'Debit / Credit Card'] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
 export const CATEGORIES = [

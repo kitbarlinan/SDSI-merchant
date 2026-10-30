@@ -158,7 +158,7 @@ function RemittanceRow({ remittance, showMerchant }: { remittance: Remittance; s
                 type="text"
                 value={reference}
                 onChange={(event) => setReference(event.target.value)}
-                placeholder="Bank / GCash reference no."
+                placeholder="Bank reference no."
                 className={`mt-1 ${inputClass(false)}`}
               />
             </label>
