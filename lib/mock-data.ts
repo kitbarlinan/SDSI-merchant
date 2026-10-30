@@ -233,14 +233,14 @@ const CUSTOMERS = [
 ];
 
 const ADDRESSES = [
-  'Brgy. Sumacab Este, Cabanatuan City',
-  'Brgy. Bitas, Cabanatuan City',
-  'Brgy. Zulueta, Cabanatuan City',
-  'Brgy. Caalibangbangan, Cabanatuan City',
-  'Brgy. Poblacion, Gapan City',
-  'Brgy. Sto. Niño, San Jose City',
-  'Brgy. Bantug, Science City of Muñoz',
-  'Brgy. Mabini, Palayan City',
+  'Flat 12B, Lai Chi Kok Road, Sham Shui Po, Kowloon',
+  'Rm 805, Tsuen Wan Plaza, Tsuen Wan, New Territories',
+  'Flat 3A, 18 Nathan Road, Tsim Sha Tsui, Kowloon',
+  'G/F, 66 Tung Choi Street, Mong Kok, Kowloon',
+  'Flat 21F, Yuen Long Centre, Yuen Long, New Territories',
+  'Rm 1102, Sha Tin Centre, Sha Tin, New Territories',
+  'Flat 9C, King\'s Road, North Point, Hong Kong Island',
+  'Flat 5D, Wan Chai Road, Wan Chai, Hong Kong Island',
 ];
 
 const CANCEL_REASONS = [
@@ -385,7 +385,7 @@ function generateOrders(): Order[] {
               ? CUSTOMERS[Math.floor(rand() * CUSTOMERS.length)]
               : 'Walk-in client'
             : CUSTOMERS[Math.floor(rand() * CUSTOMERS.length)],
-          contactNo: walkIn ? '' : `09${Math.floor(100000000 + rand() * 899999999)}`,
+          contactNo: walkIn ? '' : String(Math.floor(50000000 + rand() * 49999999)),
           address: !walkIn && terms === 'COD' ? ADDRESSES[Math.floor(rand() * ADDRESSES.length)] : '',
           notes: '',
           terms,

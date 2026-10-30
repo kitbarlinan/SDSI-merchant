@@ -20,7 +20,6 @@ const EMPTY_FORM: RawOrderForm = {
   customerName: '',
   contactNo: '',
   address: '',
-  barangay: '',
   city: '',
   terms: 'COD',
 };
@@ -78,7 +77,7 @@ export function NewOrderForm() {
 
     const isCod = form.terms === 'COD';
     const address = isCod
-      ? [form.address, form.barangay && `Brgy. ${form.barangay.replace(/^brgy\.?\s*/i, '')}`, form.city]
+      ? [form.address, form.city]
           .map((part) => (part || '').trim())
           .filter(Boolean)
           .join(', ')
@@ -223,11 +222,11 @@ export function NewOrderForm() {
                       onBlur={touch('address')}
                       aria-invalid={Boolean(showError('address'))}
                       className={inputClass(Boolean(showError('address')))}
-                      placeholder="House no., street"
+                      placeholder="Flat, floor, building, street"
                     />
                   </Field>
                 </div>
-                <Field label="City / Town" htmlFor="city" error={showError('city')}>
+                <Field label="District / Area" htmlFor="city" error={showError('city')}>
                   <input
                     id="city"
                     type="text"
@@ -238,15 +237,6 @@ export function NewOrderForm() {
                     className={inputClass(Boolean(showError('city')))}
                   />
                 </Field>
-                <Field label="Brgy" htmlFor="barangay">
-                  <input
-                    id="barangay"
-                    type="text"
-                    value={form.barangay}
-                    onChange={(event) => update('barangay', event.target.value)}
-                    className={inputClass(false)}
-                  />
-                </Field>
                 <div className="md:col-span-2">
                   <Field label="Landmarks" htmlFor="landmarks">
                     <textarea
@@ -255,7 +245,7 @@ export function NewOrderForm() {
                       value={landmarks}
                       onChange={(event) => setLandmarks(event.target.value)}
                       className={inputClass(false)}
-                      placeholder="Near the church, blue gate..."
+                      placeholder="Near the MTR exit, blue door..."
                     />
                   </Field>
                 </div>

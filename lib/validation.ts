@@ -9,7 +9,6 @@ export interface RawOrderForm {
   customerName: string;
   contactNo: string;
   address: string;
-  barangay: string;
   city: string;
   terms: OrderTerms;
 }
@@ -33,7 +32,7 @@ export function validateOrderForm(form: RawOrderForm, lineCount: number): OrderE
     errors.address = 'A delivery address is required for cash on delivery.';
   }
   if (form.terms === 'COD' && form.city.trim().length < 2) {
-    errors.city = 'Enter the city or town.';
+    errors.city = 'Enter the district or area.';
   }
 
   return errors;
