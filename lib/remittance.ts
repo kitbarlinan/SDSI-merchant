@@ -16,6 +16,8 @@ import type { Order, Remittance } from './types';
 /** Monday of the week that contains the date. */
 export const weekStartOf = (date: string): string => addDays(date, -((weekdayOf(date) + 6) % 7));
 export const weekEndOf = (weekStart: string): string => addDays(weekStart, 6);
+/** The payout of a week is due the Monday after it ends (week Oct 12 to 18 is paid on Oct 19). */
+export const payoutDueDate = (weekStart: string): string => addDays(weekStart, 7);
 
 const deliveredDay = (order: Order): string | null =>
   order.status === 'delivered' && order.deliveredAt ? order.deliveredAt.slice(0, 10) : null;
@@ -111,7 +113,7 @@ export function walletOf(merchantId: string, orders: Order[], remittances: Remit
     deducted: roundMoney(released.reduce((sum, remittance) => sum + remittance.deductionPhp, 0)),
     adjustments: roundMoney(released.reduce((sum, remittance) => sum + remittance.adjustmentPhp, 0)),
     awaitingRelease: roundMoney(
-      mine.filter((remittance) => remittance.status === 'pending').reduce((sum, remittance) => sum + remittance.payoutPhp, 0),
+      mine.filter((remittance) => remittance.status !== 'released').reduce((sum, remittance) => sum + remittance.payoutPhp, 0),
     ),
   };
 }

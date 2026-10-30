@@ -88,7 +88,9 @@ interface AppDataValue {
   approveReversal: (actor: Actor, requestId: string) => ActionResult<ReversalRequest>;
   rejectReversal: (actor: Actor, requestId: string, reason: string) => ActionResult<ReversalRequest>;
   closeWeek: (actor: Actor, weekStart: string) => ActionResult<Remittance[]>;
-  releaseRemittance: (
+  approveRelease: (actor: Actor, remittanceId: string) => ActionResult<Remittance>;
+  rejectRelease: (actor: Actor, remittanceId: string, reason: string) => ActionResult<Remittance>;
+  submitRelease: (
     actor: Actor,
     remittanceId: string,
     input: {
@@ -227,8 +229,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       rejectReversal: (actor, requestId, reason) =>
         run((s) => engine.rejectReversal(s, actor, requestId, reason, nowISO())),
       closeWeek: (actor, weekStart) => run((s) => engine.closeWeek(s, actor, weekStart, nowISO())),
-      releaseRemittance: (actor, remittanceId, input) =>
-        run((s) => engine.releaseRemittance(s, actor, remittanceId, input, nowISO())),
+      submitRelease: (actor, remittanceId, input) =>
+        run((s) => engine.submitRelease(s, actor, remittanceId, input, nowISO())),
+      approveRelease: (actor, remittanceId) => run((s) => engine.approveRelease(s, actor, remittanceId, nowISO())),
+      rejectRelease: (actor, remittanceId, reason) =>
+        run((s) => engine.rejectRelease(s, actor, remittanceId, reason, nowISO())),
       approveCostingRow: (actor, rowId) => run((s) => engine.approveCostingRow(s, actor, rowId, nowISO())),
       revokeApproval: (actor, rowId) => run((s) => engine.revokeApproval(s, actor, rowId, nowISO())),
       goLiveCostingRow: (actor, rowId) => run((s) => engine.goLiveCostingRow(s, actor, rowId, nowISO())),

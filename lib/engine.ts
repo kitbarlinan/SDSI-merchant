@@ -1051,7 +1051,8 @@ export function closeWeek(
 }
 
 /** Admin releases the payout: sets the SF advance to deduct, the release date and a reference. */
-export function releaseRemittance(
+/** The cashier releases the payout (money sent, reference noted). The admin still has to approve it. */
+export function submitRelease(
   state: AppState,
   actor: Actor,
   remittanceId: string,
@@ -1066,10 +1067,11 @@ export function releaseRemittance(
   },
   now: string,
 ): Outcome<Remittance> {
-  if (actor.role !== 'admin') return fail('Only the admin can release a payout.');
+  if (actor.role !== 'cashier') return fail('Only the cashier releases a payout. The admin approves it.');
   const remittance = state.remittances.find((candidate) => candidate.id === remittanceId);
   if (!remittance) return fail('Remittance not found.');
-  if (remittance.status !== 'pending') return fail('This payout was already released.');
+  if (remittance.status === 'released') return fail('This payout was already released.');
+  if (remittance.status === 'submitted') return fail('This payout is waiting for the admin to approve it.');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.releasedDate)) return fail('Enter the release date.');
   if (input.releasedDate > dateOf(now)) return fail('The release date cannot be in the future.');
   if (input.releasedDate <= remittance.weekEnd) return fail('The payout is released after the week ends.');
@@ -1093,10 +1095,54 @@ export function releaseRemittance(
     adjustmentPhp: adjustment,
     adjustmentNote: adjustment === 0 ? '' : (input.adjustmentNote ?? '').trim(),
     payoutPhp: roundMoney(remittance.netPayable - deduction + adjustment),
-    status: 'released',
+    status: 'submitted',
     releasedBy: actor.id,
+    releasedAt: now,
+    rejectNote: undefined,
     releasedDate: input.releasedDate,
     reference: input.reference.trim(),
+  };
+  return {
+    ok: true,
+    state: { ...state, remittances: state.remittances.map((candidate) => (candidate.id === remittanceId ? next : candidate)) },
+    value: next,
+  };
+}
+
+export function approveRelease(state: AppState, actor: Actor, remittanceId: string, now: string): Outcome<Remittance> {
+  if (actor.role !== 'admin') return fail('Only the admin can approve a payout release.');
+  const remittance = state.remittances.find((candidate) => candidate.id === remittanceId);
+  if (!remittance) return fail('Remittance not found.');
+  if (remittance.status !== 'submitted') return fail('This payout is not waiting for approval.');
+  const next: Remittance = { ...remittance, status: 'released', approvedBy: actor.id, approvedAt: now };
+  return {
+    ok: true,
+    state: { ...state, remittances: state.remittances.map((candidate) => (candidate.id === remittanceId ? next : candidate)) },
+    value: next,
+  };
+}
+
+/** The admin sends a release back to the cashier (wrong amount, wrong reference). Nothing is paid out. */
+export function rejectRelease(
+  state: AppState,
+  actor: Actor,
+  remittanceId: string,
+  reason: string,
+  now: string,
+): Outcome<Remittance> {
+  if (actor.role !== 'admin') return fail('Only the admin can send a release back.');
+  const remittance = state.remittances.find((candidate) => candidate.id === remittanceId);
+  if (!remittance) return fail('Remittance not found.');
+  if (remittance.status !== 'submitted') return fail('This payout is not waiting for approval.');
+  if (reason.trim().length < 3) return fail('Write why it is sent back.');
+  const next: Remittance = {
+    ...remittance,
+    status: 'pending',
+    rejectNote: reason.trim(),
+    releasedBy: undefined,
+    releasedAt: undefined,
+    releasedDate: undefined,
+    reference: undefined,
   };
   return {
     ok: true,

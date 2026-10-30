@@ -218,7 +218,8 @@ export interface ReversalRequest {
 // Remittances: the weekly payout to each merchant
 // ---------------------------------------------------------------------------
 
-export type RemittanceStatus = 'pending' | 'released';
+/** pending: closed, nobody released it yet. submitted: the cashier released it, the admin must approve. released: approved. */
+export type RemittanceStatus = 'pending' | 'submitted' | 'released';
 
 export interface Remittance {
   id: string;
@@ -244,7 +245,14 @@ export interface Remittance {
   status: RemittanceStatus;
   closedBy: string;
   closedAt: string;
+  /** The cashier who released the payout. */
   releasedBy?: string;
+  releasedAt?: string;
+  /** The admin who approved the release. */
+  approvedBy?: string;
+  approvedAt?: string;
+  /** Why the admin sent the last release back, if they did. */
+  rejectNote?: string;
   /** YYYY-MM-DD, the day the money was released to the merchant. */
   releasedDate?: string;
   reference?: string;

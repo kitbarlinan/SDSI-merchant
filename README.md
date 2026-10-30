@@ -70,3 +70,8 @@ Open http://localhost:3000 and pick an account (demo sign-in, no password).
 - Undo targets: delivered → packed (pickup) / shipped (COD) / voided (counter sale cannot be undone); shipped → packed (waybill cleared, stock back); RTS → shipped (blocked once the goods were received back); not delivered → packed/pending (needs available stock). Delivered orders in a closed week stay locked.
 - Remittances page has **Open** (not closed yet, SF not deducted) and **Closed** sections; merchants see their wallet and total paid out.
 - A released payout is final. A correction goes in as an **adjustment** (+/−, with a note) when the admin releases the next payout.
+
+## Payout release flow
+
+- A week's payout is due the **Monday after the week ends** (week Oct 12 to 18 → Oct 19). Shown on Open and Closed rows.
+- The **cashier releases** the payout (release date, SF advance, adjustment, bank reference) → status *Waiting for admin approval*. The **admin approves** (it counts as paid out and leaves the wallet) or sends it back with a reason. The admin still closes the weeks.

@@ -3,7 +3,7 @@ import { RemittancesView } from '@/components/remittances/RemittancesView';
 
 export default function RemittancesPage() {
   return (
-    <RoleGate allow={['admin', 'merchant']}>
+    <RoleGate allow={['admin', 'cashier', 'merchant']}>
       <RemittancesView />
     </RoleGate>
   );

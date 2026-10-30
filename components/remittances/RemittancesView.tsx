@@ -10,7 +10,7 @@ import { useAuth } from '@/lib/auth';
 import { formatCurrency, formatDate, formatNumber } from '@/lib/format';
 import { MOCK_TODAY } from '@/lib/mock-data';
 import { orderTotal } from '@/lib/orders';
-import { closableWeeks, openWeeks, walletOf, weekEndOf } from '@/lib/remittance';
+import { closableWeeks, openWeeks, payoutDueDate, walletOf, weekEndOf } from '@/lib/remittance';
 import { useAppData } from '@/lib/store';
 import type { Remittance } from '@/lib/types';
 import { useToday } from '@/lib/use-today';
@@ -19,10 +19,12 @@ const weekLabel = (start: string, end: string) => `${formatDate(start)} to ${for
 
 function RemittanceRow({ remittance, showMerchant }: { remittance: Remittance; showMerchant: boolean }) {
   const { user } = useAuth();
-  const { orders, merchants, releaseRemittance } = useAppData();
+  const { orders, merchants, submitRelease, approveRelease, rejectRelease } = useAppData();
   const today = useToday() || MOCK_TODAY;
   const [open, setOpen] = useState(false);
   const [releasing, setReleasing] = useState(false);
+  const [sendingBack, setSendingBack] = useState(false);
+  const [backReason, setBackReason] = useState('');
   const [date, setDate] = useState('');
   const [deduction, setDeduction] = useState('');
   const [note, setNote] = useState('');
@@ -37,6 +39,9 @@ function RemittanceRow({ remittance, showMerchant }: { remittance: Remittance; s
     [remittance.orderIds, orders],
   );
   const released = remittance.status === 'released';
+  const submitted = remittance.status === 'submitted';
+  const dueDate = payoutDueDate(remittance.weekStart);
+  const defaultDate = dueDate <= today ? dueDate : today;
   const deductionValue = deduction.trim() === '' ? 0 : Number(deduction);
   const adjustmentValue = adjustment.trim() === '' ? 0 : Number(adjustment);
   const payoutPreview =
@@ -48,8 +53,8 @@ function RemittanceRow({ remittance, showMerchant }: { remittance: Remittance; s
 
   function release() {
     if (!user) return;
-    const result = releaseRemittance(user, remittance.id, {
-      releasedDate: date || today,
+    const result = submitRelease(user, remittance.id, {
+      releasedDate: date || defaultDate,
       deductionPhp: deductionValue,
       deductionNote: note,
       adjustmentPhp: adjustmentValue,
@@ -78,7 +83,9 @@ function RemittanceRow({ remittance, showMerchant }: { remittance: Remittance; s
             <span className="font-mono">{remittance.id}</span> · {formatNumber(remittance.orderIds.length)} delivered orders
             {released && remittance.releasedDate
               ? ` · released ${formatDate(remittance.releasedDate)} · ref ${remittance.reference}`
-              : ' · closed, waiting for release'}
+              : submitted
+                ? ` · released by cashier ${remittance.releasedDate ? formatDate(remittance.releasedDate) : ''} · ref ${remittance.reference}`
+                : ` · closed, due ${formatDate(dueDate)}`}
           </p>
         </div>
         <div className="flex items-center gap-5 text-right">
@@ -104,16 +111,16 @@ function RemittanceRow({ remittance, showMerchant }: { remittance: Remittance; s
           <div>
             <p className="text-xs text-slate-500">Payout</p>
             <p className="font-semibold text-emerald-700">
-              {released ? formatCurrency(remittance.payoutPhp) : formatCurrency(remittance.netPayable)}
-              {released ? '' : '*'}
+              {released || submitted ? formatCurrency(remittance.payoutPhp) : formatCurrency(remittance.netPayable)}
+              {released || submitted ? '' : '*'}
             </p>
           </div>
           <span
             className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-              released ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+              released ? 'bg-emerald-100 text-emerald-800' : submitted ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800'
             }`}
           >
-            {released ? 'Released' : 'Pending release'}
+            {released ? 'Released' : submitted ? 'Waiting for admin approval' : 'Pending release'}
           </span>
         </div>
       </div>
@@ -130,22 +137,74 @@ function RemittanceRow({ remittance, showMerchant }: { remittance: Remittance; s
         <button type="button" onClick={() => setOpen((current) => !current)} className="font-medium text-emerald-700 hover:underline">
           {open ? 'Hide orders' : 'Show orders'}
         </button>
-        {user.role === 'admin' && !released && !releasing ? (
+        {user.role === 'cashier' && remittance.status === 'pending' && !releasing ? (
           <button type="button" onClick={() => setReleasing(true)} className="font-semibold text-blue-700 hover:underline">
             Release payout
           </button>
         ) : null}
+        {user.role === 'admin' && submitted ? (
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                const result = approveRelease(user, remittance.id);
+                setError(result.ok ? null : result.error);
+              }}
+              className="font-semibold text-emerald-700 hover:underline"
+            >
+              Approve release
+            </button>
+            {!sendingBack ? (
+              <button type="button" onClick={() => setSendingBack(true)} className="font-semibold text-rose-700 hover:underline">
+                Send back
+              </button>
+            ) : null}
+          </>
+        ) : null}
       </div>
+
+      {remittance.rejectNote && remittance.status === 'pending' ? (
+        <p className="mt-1 text-xs text-rose-700">Sent back by admin: {remittance.rejectNote}</p>
+      ) : null}
+      {sendingBack ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <input
+            type="text"
+            value={backReason}
+            onChange={(event) => setBackReason(event.target.value)}
+            placeholder="Why is it sent back?"
+            className={`min-w-[14rem] flex-1 ${inputClass(false)}`}
+          />
+          <button
+            type="button"
+            onClick={() => {
+              const result = rejectRelease(user, remittance.id, backReason);
+              if (!result.ok) return setError(result.error);
+              setError(null);
+              setSendingBack(false);
+              setBackReason('');
+            }}
+            className="rounded-xl bg-rose-600 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-500"
+          >
+            Send back
+          </button>
+        </div>
+      ) : null}
+      {error && !releasing ? (
+        <p role="alert" className="mt-1 text-xs text-rose-600">
+          {error}
+        </p>
+      ) : null}
 
       {releasing ? (
         <div className="mt-3 space-y-3 rounded-xl border border-blue-200 bg-blue-50 p-4">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <label className="text-xs font-medium text-slate-600">
-              Release date
+              Release date (due {formatDate(dueDate)})
               <input
                 type="date"
-                value={date || today}
-                min={weekEndOf(remittance.weekStart)}
+                value={date || defaultDate}
+                min={dueDate > today ? weekEndOf(remittance.weekStart) : weekEndOf(remittance.weekStart)}
                 max={today}
                 onChange={(event) => setDate(event.target.value)}
                 className={`mt-1 ${inputClass(false)}`}
@@ -220,7 +279,7 @@ function RemittanceRow({ remittance, showMerchant }: { remittance: Remittance; s
               onClick={release}
               className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500"
             >
-              Release payout
+              Send for approval
             </button>
             <button type="button" onClick={() => setReleasing(false)} className="rounded-xl border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
               Cancel
@@ -388,7 +447,7 @@ export function RemittancesView() {
                         </span>
                       ) : null}
                     </p>
-                    <p className="text-xs text-slate-500">{formatNumber(week.orderIds.length)} delivered orders</p>
+                    <p className="text-xs text-slate-500">{formatNumber(week.orderIds.length)} delivered orders · payout due {formatDate(payoutDueDate(week.weekStart))}</p>
                   </div>
                   <div className="flex items-center gap-4 text-right">
                     <div>
