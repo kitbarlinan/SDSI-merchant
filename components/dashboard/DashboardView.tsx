@@ -295,7 +295,7 @@ function AdminDashboard({
 
       <InventoryByMerchant merchants={merchants} items={items} reserved={reserved} />
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 [&>*]:min-w-0">
         <AlertsPanel items={items} sales={sales} today={today} merchants={allMerchants} />
         <RecentOrders orders={orders} merchants={allMerchants} showMerchant />
       </div>
@@ -428,7 +428,7 @@ function MerchantDashboard({
         </div>
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 [&>*]:min-w-0">
         <AlertsPanel items={items} sales={sales} today={today} />
         <RecentOrders orders={orders} merchants={merchants} showMerchant={false} />
       </div>
