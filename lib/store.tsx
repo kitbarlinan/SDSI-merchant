@@ -91,7 +91,14 @@ interface AppDataValue {
   releaseRemittance: (
     actor: Actor,
     remittanceId: string,
-    input: { releasedDate: string; deductionPhp: number; deductionNote: string; reference: string },
+    input: {
+      releasedDate: string;
+      deductionPhp: number;
+      deductionNote: string;
+      adjustmentPhp?: number;
+      adjustmentNote?: string;
+      reference: string;
+    },
   ) => ActionResult<Remittance>;
   approveCostingRow: (actor: Actor, rowId: string) => ActionResult<CostingRow>;
   revokeApproval: (actor: Actor, rowId: string) => ActionResult<CostingRow>;
@@ -102,7 +109,7 @@ interface AppDataValue {
 }
 
 // Bumped whenever the saved data shape changes.
-const STORAGE_KEY = 'sdsi-wellness:v10';
+const STORAGE_KEY = 'sdsi-wellness:v11';
 
 const createInitialState = (): AppState => ({
   items: MOCK_INVENTORY.map((item) => ({ ...item })),

@@ -63,3 +63,10 @@ Open http://localhost:3000 and pick an account (demo sign-in, no password).
 - **Remittances (weekly, Monday to Sunday).** The admin closes a finished week. That creates one remittance per merchant and **locks** its orders, so they can no longer be reversed. The admin then releases the payout with a release date, a reference and the **actual SF PH to HK that SDSI advanced** as a deduction (a note is required). Payout = net payable − SF advance.
 - **Merchant wallet** (admin and merchant see it on Remittances): balance = net payable of delivered orders not yet released. It is not sales. Also shows closed-awaiting-release, total paid out and total SF advance deducted.
 - **Cashier and clerk** do not see peso amounts (line prices, Net SRP, remittance). They only deal in HKD.
+
+## Undo requests and payout adjustments
+
+- The cashier can ask to undo **Delivered, Shipped, RTS and Not delivered** (one step back). A note (5+ characters) is required and the inventory clerk or admin must approve it in *For Approval*. Nobody can approve their own request. While a request is pending, the order is frozen.
+- Undo targets: delivered → packed (pickup) / shipped (COD) / voided (counter sale cannot be undone); shipped → packed (waybill cleared, stock back); RTS → shipped (blocked once the goods were received back); not delivered → packed/pending (needs available stock). Delivered orders in a closed week stay locked.
+- Remittances page has **Open** (not closed yet, SF not deducted) and **Closed** sections; merchants see their wallet and total paid out.
+- A released payout is final. A correction goes in as an **adjustment** (+/−, with a note) when the admin releases the next payout.

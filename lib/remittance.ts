@@ -70,6 +70,8 @@ export function buildWeekRemittances(
         netPayable,
         deductionPhp: 0,
         deductionNote: '',
+        adjustmentPhp: 0,
+        adjustmentNote: '',
         payoutPhp: netPayable,
         status: 'pending' as const,
         closedBy,
@@ -87,6 +89,8 @@ export interface Wallet {
   paidOut: number;
   /** SF advanced by SDSI and deducted so far. */
   deducted: number;
+  /** Corrections of earlier payouts, added or taken away. */
+  adjustments: number;
   /** Payouts closed but not released yet. */
   awaitingRelease: number;
 }
@@ -105,8 +109,46 @@ export function walletOf(merchantId: string, orders: Order[], remittances: Remit
     balance: roundMoney(earned - releasedNet),
     paidOut: roundMoney(released.reduce((sum, remittance) => sum + remittance.payoutPhp, 0)),
     deducted: roundMoney(released.reduce((sum, remittance) => sum + remittance.deductionPhp, 0)),
+    adjustments: roundMoney(released.reduce((sum, remittance) => sum + remittance.adjustmentPhp, 0)),
     awaitingRelease: roundMoney(
       mine.filter((remittance) => remittance.status === 'pending').reduce((sum, remittance) => sum + remittance.payoutPhp, 0),
     ),
   };
+}
+
+/** A week that is not closed yet: still running, or finished and waiting for the cutoff. */
+export interface OpenWeek {
+  merchantId: string;
+  weekStart: string;
+  weekEnd: string;
+  orderIds: string[];
+  /** Net SRP so far. The SF advance is not deducted yet. */
+  netPayable: number;
+  /** True for the week that is still going on. */
+  running: boolean;
+}
+
+/** Delivered orders not in any remittance yet, grouped by merchant and week. Newest first. */
+export function openWeeks(orders: Order[], remittances: Remittance[], today: string): OpenWeek[] {
+  const taken = remittedOrderIds(remittances);
+  const groups = new Map<string, Order[]>();
+  for (const order of orders) {
+    const day = deliveredDay(order);
+    if (!day || taken.has(order.id)) continue;
+    const key = `${order.merchantId}|${weekStartOf(day)}`;
+    groups.set(key, [...(groups.get(key) ?? []), order]);
+  }
+  return [...groups.entries()]
+    .map(([key, list]) => {
+      const [merchantId, weekStart] = key.split('|');
+      return {
+        merchantId,
+        weekStart,
+        weekEnd: weekEndOf(weekStart),
+        orderIds: list.map((order) => order.id).sort(),
+        netPayable: roundMoney(list.reduce((sum, order) => sum + orderTotal(order), 0)),
+        running: weekEndOf(weekStart) >= today,
+      };
+    })
+    .sort((a, b) => b.weekStart.localeCompare(a.weekStart) || a.merchantId.localeCompare(b.merchantId));
 }

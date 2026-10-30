@@ -34,7 +34,7 @@ function ReversalRow({ request }: { request: ReversalRequest }) {
             {orderAmountLabel(order)}
           </p>
           <p className="text-xs text-slate-500">
-            {merchant?.name} · {order.terms} · {request.id} · requested by {nameOf(request.requestedBy)},{' '}
+            {merchant?.name} · {order.terms} · {request.id} · undo “{request.fromStatus === 'rts' ? 'RTS' : request.fromStatus === 'cancelled' ? 'not delivered' : request.fromStatus}” · requested by {nameOf(request.requestedBy)},{' '}
             {formatDateTime(request.requestedAt)}
           </p>
         </div>
@@ -96,7 +96,7 @@ function ReversalRow({ request }: { request: ReversalRequest }) {
             }}
             className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
           >
-            Approve reversal
+            Approve undo
           </button>
           <button
             type="button"
@@ -146,11 +146,11 @@ export function ApprovalsView() {
 
       <Card
         flush
-        title="Reversal requests (delivered orders)"
+        title="Undo requests"
         subtitle={`${formatNumber(reversalPending.length)} waiting · the cashier must give a note`}
       >
         {reversalPending.length === 0 ? (
-          <p className="px-5 pb-6 text-sm text-slate-500">No reversal requests.</p>
+          <p className="px-5 pb-6 text-sm text-slate-500">No undo requests.</p>
         ) : (
           <ul className="divide-y divide-slate-100">
             {reversalPending.map((request) => (
@@ -177,7 +177,7 @@ export function ApprovalsView() {
       </Card>
 
       {reversalDecided.length > 0 ? (
-        <Card flush title="Recent reversal decisions">
+        <Card flush title="Recent undo decisions">
           <ul className="divide-y divide-slate-100">
             {reversalDecided.map((request) => (
               <ReversalRow key={request.id} request={request} />

@@ -62,7 +62,18 @@ export function OrderCard({
   const total = orderTotal(order);
   // The cashier and the clerk only deal in HKD. The peso Net SRP (what is remitted) is for the admin and the merchant.
   const showPeso = user.role === 'admin' || user.role === 'merchant';
-  const requests = order.status === 'delivered' ? reversals.filter((request) => request.orderId === order.id) : [];
+  const requests = reversals.filter((request) => request.orderId === order.id);
+  const undoable =
+    order.status === 'delivered' ||
+    order.status === 'shipped' ||
+    (order.status === 'rts' && !order.returnReceiptId) ||
+    (order.status === 'cancelled' && order.source !== 'walk-in');
+  const undoWhat: Record<string, string> = {
+    delivered: 'delivered',
+    shipped: 'shipped',
+    rts: 'returned to sender',
+    cancelled: 'not delivered',
+  };
   const pendingRequest = requests.find((request) => request.status === 'pending');
   const lastRejected = requests.find((request) => request.status === 'rejected');
   const remitted = order.status === 'delivered' && remittances.some((remittance) => remittance.orderIds.includes(order.id));
@@ -193,21 +204,21 @@ export function OrderCard({
             </p>
           ) : null}
 
-          {canHandle && order.status === 'delivered' ? (
+          {canHandle && undoable ? (
             <div className="space-y-2">
               {pendingRequest ? (
                 <p className="rounded-xl bg-amber-50 p-2.5 text-xs text-amber-900">
-                  <span className="font-semibold">Reversal waiting for approval</span> ({pendingRequest.id}). Your note:
+                  <span className="font-semibold">Undo waiting for approval</span> ({pendingRequest.id}). Your note:
                   “{pendingRequest.note}”
                 </p>
               ) : remitted ? (
                 <p className="text-xs text-slate-500">
-                  Locked: this order is in a closed remittance week and can no longer be reversed.
+                  Locked: this order is in a closed remittance week and can no longer be undone.
                 </p>
               ) : panel === 'reverse' ? (
                 <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
                   <label className="block text-xs font-medium text-amber-900">
-                    Why is this delivered order being undone? (required)
+                    {`Why is this order being undone (marked ${undoWhat[order.status]})? (required)`}
                     <textarea
                       autoFocus
                       rows={3}
@@ -244,7 +255,7 @@ export function OrderCard({
                   onClick={() => open('reverse')}
                   className="w-full rounded-xl border border-amber-300 px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-50"
                 >
-                  Request reversal
+                  Request undo
                 </button>
               )}
               {lastRejected && !pendingRequest ? (

@@ -27,6 +27,7 @@ import {
   type InventoryItem,
   type Order,
   type OrderLine,
+  type OrderStatus,
   type OrderTerms,
   type PaymentMethod,
   type ReceiptLine,
@@ -348,6 +349,7 @@ export function markDelivered(
   if (!PAYMENT_METHODS.includes(paymentMethod)) return fail('Choose how the payment was collected.');
   const order = state.orders.find((candidate) => candidate.id === orderId);
   if (!order) return fail('Order not found.');
+  if (hasPendingUndo(state, orderId)) return fail('An undo request for this order is waiting for approval.');
 
   let base = state;
   if (order.terms === 'COD') {
@@ -382,6 +384,7 @@ export function markRts(
   const order = state.orders.find((candidate) => candidate.id === orderId);
   if (!order) return fail('Order not found.');
   if (order.status !== 'shipped') return fail('Only shipped orders can be returned to sender.');
+  if (hasPendingUndo(state, orderId)) return fail('An undo request for this order is waiting for approval.');
   const next = updateOrder(state, orderId, {
     status: 'rts',
     rtsAt: now,
@@ -480,6 +483,7 @@ export function createReturnReceipt(
   const order = state.orders.find((candidate) => candidate.id === input.orderId);
   if (!order) return fail('Order not found.');
   if (order.status !== 'rts') return fail('Only RTS orders can be received back.');
+  if (hasPendingUndo(state, order.id)) return fail('An undo request for this order is waiting for approval.');
   if (order.returnReceiptId) return fail('These goods were already received back.');
 
   const receipt: StockReceipt = {
@@ -862,7 +866,14 @@ export const costingLine = (state: AppState, row: CostingRow) => {
 // or admin approves. Orders in a closed remittance week are locked.
 // ---------------------------------------------------------------------------
 
+/** True while an undo request for the order waits for approval. The order is frozen until it is decided. */
+const hasPendingUndo = (state: AppState, orderId: string): boolean =>
+  state.reversals.some((request) => request.orderId === orderId && request.status === 'pending');
+
 const reversalId = (state: AppState) => `REV-${String(state.reversals.length + 1).padStart(6, '0')}`;
+
+/** Statuses a cashier can ask to undo. Each goes back one step, with a note and an approval. */
+const UNDOABLE: OrderStatus[] = ['delivered', 'shipped', 'rts', 'cancelled'];
 
 export function requestReversal(
   state: AppState,
@@ -871,21 +882,28 @@ export function requestReversal(
   note: string,
   now: string,
 ): Outcome<ReversalRequest> {
-  if (!isStaff(actor)) return fail('Only the cashier or admin can request a reversal.');
-  if (note.trim().length < 5) return fail('Write a note: why is this delivered order being undone?');
+  if (!isStaff(actor)) return fail('Only the cashier or admin can request an undo.');
+  if (note.trim().length < 5) return fail('Write a note: why is this being undone?');
   const order = state.orders.find((candidate) => candidate.id === orderId);
   if (!order) return fail('Order not found.');
-  if (order.status !== 'delivered') return fail('Only delivered orders can be reversed.');
-  if (remittedOrderIds(state.remittances).has(order.id)) {
+  if (!UNDOABLE.includes(order.status)) return fail('This order has nothing to undo.');
+  if (order.status === 'cancelled' && order.source === 'walk-in') {
+    return fail('A voided counter sale cannot be brought back. Ring up a new sale.');
+  }
+  if (order.status === 'delivered' && remittedOrderIds(state.remittances).has(order.id)) {
     return fail('This order is already in a closed remittance week and is locked. Ask the admin for an adjustment.');
   }
-  if (state.reversals.some((request) => request.orderId === orderId && request.status === 'pending')) {
-    return fail('A reversal request for this order is already waiting for approval.');
+  if (order.status === 'rts' && order.returnReceiptId) {
+    return fail('The returned goods were already received back. Reject that receipt first.');
+  }
+  if (hasPendingUndo(state, orderId)) {
+    return fail('An undo request for this order is already waiting for approval.');
   }
   const request: ReversalRequest = {
     id: reversalId(state),
     orderId,
     merchantId: order.merchantId,
+    fromStatus: order.status,
     requestedBy: actor.id,
     requestedAt: now,
     note: note.trim(),
@@ -894,39 +912,75 @@ export function requestReversal(
   return { ok: true, state: { ...state, reversals: [request, ...state.reversals] }, value: request };
 }
 
+/** What an approved undo does: the order goes back one step. */
+export function undoTarget(order: Order): OrderStatus {
+  switch (order.status) {
+    case 'delivered':
+      return order.source === 'walk-in' ? 'cancelled' : order.terms === 'COD' ? 'shipped' : 'packed';
+    case 'shipped':
+      return 'packed';
+    case 'rts':
+      return 'shipped';
+    default:
+      return order.packedAt ? 'packed' : 'pending';
+  }
+}
+
 export function approveReversal(
   state: AppState,
   actor: Actor,
   requestId: string,
   now: string,
 ): Outcome<ReversalRequest> {
-  if (!canApprove(actor)) return fail('Only the inventory clerk or admin can approve a reversal.');
+  if (!canApprove(actor)) return fail('Only the inventory clerk or admin can approve an undo.');
   const request = state.reversals.find((candidate) => candidate.id === requestId);
   if (!request) return fail('Request not found.');
   if (request.status !== 'pending') return fail('This request was already decided.');
   if (request.requestedBy === actor.id) return fail('You cannot approve your own request.');
   const order = state.orders.find((candidate) => candidate.id === request.orderId);
-  if (!order || order.status !== 'delivered') return fail('This order is no longer delivered.');
-  if (remittedOrderIds(state.remittances).has(order.id)) {
+  if (!order || order.status !== request.fromStatus) {
+    return fail(`This order is no longer ${request.fromStatus}.`);
+  }
+  if (order.status === 'delivered' && remittedOrderIds(state.remittances).has(order.id)) {
     return fail('This order is already in a closed remittance week and is locked.');
   }
+  if (order.status === 'rts' && order.returnReceiptId) {
+    return fail('The returned goods were already received back. Reject that receipt first.');
+  }
 
-  // Back to the status before delivery. Walk-in sales have no earlier status, so they are voided.
-  let change: Partial<Order>;
+  const target = undoTarget(order);
+  let change: Partial<Order> = { status: target };
   let items = state.items;
-  const clear = { deliveredAt: undefined, paymentMethod: undefined, topUpRate: undefined };
-  if (order.source === 'walk-in') {
-    change = { ...clear, status: 'cancelled', cancelledAt: now, cancelReason: `Sale voided (${request.id})` };
-  } else if (order.terms === 'COD') {
-    change = { ...clear, status: 'shipped' };
-  } else {
-    change = { ...clear, status: 'packed' };
-  }
-  if (order.terms !== 'COD') {
+  const give = (sign: 1 | -1) => {
+    const qty = new Map(order.lines.map((line) => [line.itemId, line.quantity] as const));
+    items = state.items.map((item) => (qty.has(item.id) ? { ...item, stock: item.stock + sign * qty.get(item.id)! } : item));
+  };
+
+  if (order.status === 'delivered') {
+    change = { ...change, deliveredAt: undefined, paymentMethod: undefined, topUpRate: undefined };
+    if (target === 'cancelled') {
+      change = { ...change, cancelledAt: now, cancelReason: `Sale voided (${request.id})` };
+    }
     // Counter and pickup sales took the goods off the shelf at delivery. Put them back.
-    const back = new Map(order.lines.map((line) => [line.itemId, line.quantity] as const));
-    items = state.items.map((item) => (back.has(item.id) ? { ...item, stock: item.stock + back.get(item.id)! } : item));
+    if (order.terms !== 'COD') give(1);
+  } else if (order.status === 'shipped') {
+    // The goods never left: back on the shelf, waybill cleared.
+    change = { ...change, shippedAt: undefined, waybill: undefined };
+    give(1);
+  } else if (order.status === 'rts') {
+    change = { ...change, rtsAt: undefined, rtsReason: undefined };
+  } else {
+    // "Not delivered" before shipping: the stock is reserved again, so there must be enough of it.
+    const reserved = reservedByItem(state.orders);
+    for (const line of order.lines) {
+      const item = state.items.find((candidate) => candidate.id === line.itemId);
+      if (!item || line.quantity > availableOf(item, reserved)) {
+        return fail(`Not enough "${line.name}" available to reserve this order again.`);
+      }
+    }
+    change = { ...change, cancelledAt: undefined, cancelReason: undefined };
   }
+
   const next: ReversalRequest = { ...request, status: 'approved', decidedBy: actor.id, decidedAt: now };
   return {
     ok: true,
@@ -1001,7 +1055,15 @@ export function releaseRemittance(
   state: AppState,
   actor: Actor,
   remittanceId: string,
-  input: { releasedDate: string; deductionPhp: number; deductionNote: string; reference: string },
+  input: {
+    releasedDate: string;
+    deductionPhp: number;
+    deductionNote: string;
+    /** Correction of an earlier payout: + adds to this payout, - takes away from it. */
+    adjustmentPhp?: number;
+    adjustmentNote?: string;
+    reference: string;
+  },
   now: string,
 ): Outcome<Remittance> {
   if (actor.role !== 'admin') return fail('Only the admin can release a payout.');
@@ -1017,12 +1079,20 @@ export function releaseRemittance(
     return fail('Write what the deduction is (the actual SF PH to HK advanced).');
   }
   if (input.reference.trim().length < 2) return fail('Enter a payment reference.');
+  const adjustment = roundMoney(input.adjustmentPhp ?? 0);
+  if (!Number.isFinite(adjustment)) return fail('Enter the adjustment as a number.');
+  if (adjustment !== 0 && (input.adjustmentNote ?? '').trim().length < 3) {
+    return fail('Write what the adjustment corrects (which earlier payout).');
+  }
   const deduction = roundMoney(input.deductionPhp);
+  if (remittance.netPayable - deduction + adjustment < 0) return fail('The payout cannot be negative.');
   const next: Remittance = {
     ...remittance,
     deductionPhp: deduction,
     deductionNote: input.deductionNote.trim(),
-    payoutPhp: roundMoney(remittance.netPayable - deduction),
+    adjustmentPhp: adjustment,
+    adjustmentNote: adjustment === 0 ? '' : (input.adjustmentNote ?? '').trim(),
+    payoutPhp: roundMoney(remittance.netPayable - deduction + adjustment),
     status: 'released',
     releasedBy: actor.id,
     releasedDate: input.releasedDate,

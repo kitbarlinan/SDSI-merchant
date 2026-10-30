@@ -200,6 +200,8 @@ export interface ReversalRequest {
   id: string;
   orderId: string;
   merchantId: string;
+  /** The order's status when the undo was requested. */
+  fromStatus: OrderStatus;
   requestedBy: string;
   /** YYYY-MM-DDTHH:mm */
   requestedAt: string;
@@ -231,7 +233,13 @@ export interface Remittance {
   /** Actual SF from PH to HK that SDSI advanced, deducted from the payout (PHP). */
   deductionPhp: number;
   deductionNote: string;
-  /** What is actually paid out: net payable minus the deduction. */
+  /**
+   * Correction of an earlier payout (SF advance entered wrong, for example). A released payout is
+   * never edited; the fix goes into the next payout. + adds to this payout, - takes away from it.
+   */
+  adjustmentPhp: number;
+  adjustmentNote: string;
+  /** What is actually paid out: net payable minus the deduction, plus the adjustment. */
   payoutPhp: number;
   status: RemittanceStatus;
   closedBy: string;
