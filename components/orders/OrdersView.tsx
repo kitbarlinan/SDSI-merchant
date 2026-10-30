@@ -30,7 +30,8 @@ export function OrdersView() {
   const { user } = useAuth();
   const { orders, merchants } = useAppData();
 
-  const isMerchant = user?.role === 'merchant';
+  const isReseller = user?.role === 'customer';
+  const isMerchant = user?.role === 'merchant' || isReseller;
   const [tab, setTab] = useState<Tab>('open');
   const [merchantId, setMerchantId] = useState('all');
   const [query, setQuery] = useState('');
@@ -42,6 +43,7 @@ export function OrdersView() {
   const scoped = useMemo(() => {
     if (!user) return [];
     if (user.role === 'merchant') return orders.filter((order) => order.merchantId === user.merchantId);
+    if (user.role === 'customer') return orders.filter((order) => order.createdBy === user.id);
     return merchantId === 'all' ? orders : orders.filter((order) => order.merchantId === merchantId);
   }, [orders, user, merchantId]);
 
@@ -97,7 +99,9 @@ export function OrdersView() {
         title={isMerchant ? 'My Orders' : 'Orders'}
         description={
           isMerchant
-            ? 'Track the orders you placed. COD orders get a waybill once they ship.'
+            ? isReseller
+              ? 'Your orders, for pickup. Pay at the counter when you collect. Your reseller discount is already in the price.'
+              : 'Track the orders you placed. COD orders get a waybill once they ship.'
             : 'Pack incoming orders. Ship COD with a waybill, then mark delivered once payment is collected.'
         }
         actions={
@@ -226,7 +230,7 @@ export function OrdersView() {
                 key={order.id}
                 order={order}
                 merchant={merchants.find((merchant) => merchant.id === order.merchantId)}
-                showMerchant={!isMerchant}
+                showMerchant={!isMerchant || isReseller}
               />
             ))}
           </div>

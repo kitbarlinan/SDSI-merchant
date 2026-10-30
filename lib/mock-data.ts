@@ -36,6 +36,8 @@ export const MOCK_USERS: User[] = [
   { id: 'usr-m1', name: 'Liza Fernandez', role: 'merchant', merchantId: 'mrc-1' },
   { id: 'usr-m2', name: 'Bea Ramirez', role: 'merchant', merchantId: 'mrc-2' },
   { id: 'usr-m3', name: 'Carlo Navarro', role: 'merchant', merchantId: 'mrc-3' },
+  { id: 'usr-c1', name: 'Wong Mei Ling', role: 'customer' },
+  { id: 'usr-c2', name: 'Chan Ka Ho', role: 'customer' },
 ];
 
 const CASHIER_ID = 'usr-cashier';
@@ -443,6 +445,72 @@ function generateOrders(): Order[] {
         orders.push(order);
       }
     }
+  }
+
+  // A few reseller orders (pickup only, 10% discount carried by the merchant).
+  {
+    const resellerOrder = (
+      userId: string,
+      name: string,
+      merchantId: string,
+      picks: [string, number][],
+      status: Order['status'],
+      date: string,
+      hour: number,
+    ): void => {
+      counter += 1;
+      const lines: OrderLine[] = picks.map(([itemId, quantity]) => {
+        const item = MOCK_INVENTORY.find((candidate) => candidate.id === itemId)!;
+        return {
+          itemId,
+          sku: item.sku,
+          name: item.name,
+          category: item.category,
+          quantity,
+          unitPrice: item.unitPrice,
+          unitCost: item.unitCost,
+          total: roundMoney(quantity * item.unitPrice),
+        };
+      });
+      const charges = orderCharges(lines.map((line) => ({ itemId: line.itemId, quantity: line.quantity })), MOCK_COSTING)!;
+      const pct = MOCK_COSTING.settings.resellerDiscountPct;
+      const discountHkd = roundMoney((charges.pickupHkd * pct) / 100);
+      const order: Order = {
+        id: formatPoid(counter),
+        merchantId,
+        source: 'reseller',
+        createdBy: userId,
+        createdAt: stamp(date, hour, 10),
+        customerName: name,
+        contactNo: '',
+        address: '',
+        notes: '',
+        terms: 'COP',
+        lines,
+        status,
+        pickupHkd: charges.pickupHkd,
+        discountPct: pct,
+        discountHkd,
+        discountPhp: roundMoney(discountHkd * MOCK_COSTING.settings.fxPhpPerHkd),
+        amountHkd: roundMoney(charges.pickupHkd - discountHkd),
+      };
+      if (status !== 'pending') {
+        order.packedAt = stamp(date, hour + 1, 0);
+        order.handledBy = CASHIER_ID;
+      }
+      if (status === 'delivered') {
+        order.deliveredAt = stamp(date, hour + 2, 30);
+        order.paymentMethod = 'Cash';
+        order.topUpRate = MOCK_COSTING.settings.markupPct;
+      }
+      orders.push(order);
+    };
+    const firstOf = (merchantId: string, nth: number): string =>
+      MOCK_INVENTORY.filter((item) => item.merchantId === merchantId)[nth].id;
+    resellerOrder('usr-c1', 'Wong Mei Ling', 'mrc-1', [[firstOf('mrc-1', 0), 2]], 'pending', MOCK_TODAY, 10);
+    resellerOrder('usr-c1', 'Wong Mei Ling', 'mrc-2', [[firstOf('mrc-2', 0), 1], [firstOf('mrc-2', 1), 1]], 'packed', MOCK_TODAY, 9);
+    resellerOrder('usr-c2', 'Chan Ka Ho', 'mrc-1', [[firstOf('mrc-1', 2), 1]], 'delivered', addDays(MOCK_TODAY, -1), 11);
+    resellerOrder('usr-c1', 'Wong Mei Ling', 'mrc-3', [[firstOf('mrc-3', 0), 3]], 'delivered', addDays(MOCK_TODAY, -2), 14);
   }
 
   // Make sure a few parcels are on the road right now, so the Shipped view has something in it.

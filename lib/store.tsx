@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from 'react';
 import * as engine from './engine';
-import type { Actor, AppState, PlaceOrderInput } from './engine';
+import type { Actor, AppState, PlaceOrderInput, ResellerOrderInput } from './engine';
 import { nowISO } from './format';
 import {
   MOCK_COSTING,
@@ -50,6 +50,7 @@ interface AppDataValue {
   costing: CostingState;
   hydrated: boolean;
   placeOrder: (actor: Actor, input: PlaceOrderInput) => ActionResult<Order>;
+  placeResellerOrder: (actor: Actor, input: ResellerOrderInput) => ActionResult<Order[]>;
   checkoutWalkIn: (
     actor: Actor,
     input: {
@@ -112,7 +113,7 @@ interface AppDataValue {
 }
 
 // Bumped whenever the saved data shape changes.
-const STORAGE_KEY = 'sdsi-wellness:v11';
+const STORAGE_KEY = 'sdsi-wellness:v12';
 
 const createInitialState = (): AppState => ({
   items: MOCK_INVENTORY.map((item) => ({ ...item })),
@@ -202,6 +203,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       costing: state.costing,
       hydrated,
       placeOrder: (actor, input) => run((s) => engine.placeMerchantOrder(s, actor, input, nowISO())),
+      placeResellerOrder: (actor, input) => run((s) => engine.placeResellerOrder(s, actor, input, nowISO())),
       checkoutWalkIn: (actor, input) => run((s) => engine.checkoutWalkIn(s, actor, input, nowISO())),
       markPacked: (actor, orderId) => run((s) => engine.markPacked(s, actor, orderId, nowISO())),
       shipOrder: (actor, orderId, waybill) =>

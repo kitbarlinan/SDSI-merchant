@@ -33,6 +33,8 @@ export interface CostingSettings {
   cfRatePct: number;
   /** The collection fee is never lower than this, in HKD. */
   cfMinHkd: number;
+  /** Discount for resellers / customers with a login, percent of the pickup price. Charged to the merchant. */
+  resellerDiscountPct: number;
 }
 
 /** Values from the costing sheet. The exchange rate matches the sheet's 1,485 PHP = 182.36 HKD. */
@@ -43,6 +45,7 @@ export const DEFAULT_COSTING_SETTINGS: CostingSettings = {
   shippingFeeHkd: 34,
   cfRatePct: 2.5,
   cfMinHkd: 5,
+  resellerDiscountPct: 10,
 };
 
 /**
@@ -249,6 +252,7 @@ const RANGES: Record<keyof CostingSettings, { label: string; min: number; max: n
   shippingFeeHkd: { label: 'Shipping fee', min: 0, max: 10_000 },
   cfRatePct: { label: 'Collection fee %', min: 0, max: 100 },
   cfMinHkd: { label: 'Minimum collection fee', min: 0, max: 1000 },
+  resellerDiscountPct: { label: 'Reseller discount %', min: 0, max: 90 },
 };
 
 export const SETTING_LABEL: Record<keyof CostingSettings, string> = {
@@ -258,6 +262,7 @@ export const SETTING_LABEL: Record<keyof CostingSettings, string> = {
   shippingFeeHkd: 'Shipping fee, SF (HKD)',
   cfRatePct: 'Collection fee rate (%)',
   cfMinHkd: 'Minimum collection fee (HKD)',
+  resellerDiscountPct: 'Reseller discount (%)',
 };
 
 export function validateSettings(patch: Partial<CostingSettings>): string | null {

@@ -13,6 +13,7 @@ const ROLE_BLURB: Record<Role, string> = {
     'Packs and ships orders, collects payment, runs the walk-in counter, receives stock and returns.',
   clerk: 'Approves received stock and returns before they go on the shelf.',
   merchant: 'Places orders, tracks own sales and running inventory.',
+  customer: 'Reseller or distributor. Orders for pickup only, with a discount, and sees only their own orders.',
 };
 
 export function LoginScreen() {
@@ -22,7 +23,7 @@ export function LoginScreen() {
   const merchantName = (user: User) =>
     merchants.find((merchant) => merchant.id === user.merchantId)?.name;
 
-  const groups: Role[] = ['admin', 'cashier', 'clerk', 'merchant'];
+  const groups: Role[] = ['admin', 'cashier', 'clerk', 'merchant', 'customer'];
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-emerald-950 via-emerald-900 to-teal-900 px-4 py-10">

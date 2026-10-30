@@ -83,3 +83,11 @@ Open http://localhost:3000 and pick an account (demo sign-in, no password).
 - Stock out needs a reason and cannot exceed the available stock (on hand minus reserved). It is checked again at approval.
 - Unit cost is no longer shown in Inventory. Stock value is at SRP.
 - **Days of cover** = on hand ÷ (units delivered in the last 30 days ÷ 30).
+
+## Reseller / customer login
+
+- New role **Reseller** (demo accounts Wong Mei Ling, Chan Ka Ho). They see only **New Order** and **My Orders**, in HKD, no peso, no remittance or costing.
+- Pickup only (COP), no SF or CF. Products from several merchants split into one order per merchant. The cashier packs and marks delivered like any pickup order.
+- The discount (**Reseller discount %**, Accounting → Costing settings, 10% for now) comes off the pickup price in HKD (200 → 180). The order shows the pickup price, the discount and what to pay.
+- **The merchant carries the discount**: the discount in HKD, converted to PHP at the rate of that day, comes off the merchant's net payable. SDSI's top-up is unchanged.
+- The rate is one setting for now. Per-customer rates come later.

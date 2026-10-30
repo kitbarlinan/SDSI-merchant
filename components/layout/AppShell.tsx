@@ -25,13 +25,13 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: 'dashboard', roles: ['admin', 'merchant'] },
-  { href: '/orders/new', label: 'New Order', icon: 'plus', roles: ['merchant'] },
+  { href: '/orders/new', label: 'New Order', icon: 'plus', roles: ['merchant', 'customer'] },
   {
     href: '/orders',
     label: 'Orders',
     merchantLabel: 'My Orders',
     icon: 'orders',
-    roles: ['admin', 'cashier', 'clerk', 'merchant'],
+    roles: ['admin', 'cashier', 'clerk', 'merchant', 'customer'],
     badge: 'orders',
   },
   { href: '/pos', label: 'Walk-in POS', icon: 'pos', roles: ['admin', 'cashier'] },
@@ -90,8 +90,9 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (!user) return { orders: 0, inventory: 0, approvals: 0 };
     const mine = <T extends { merchantId: string }>(rows: T[]) =>
       user.role === 'merchant' ? rows.filter((row) => row.merchantId === user.merchantId) : rows;
+    const myOrders = user.role === 'customer' ? orders.filter((order) => order.createdBy === user.id) : mine(orders);
     return {
-      orders: mine(orders).filter(isOpen).length,
+      orders: myOrders.filter(isOpen).length,
       inventory: mine(items).filter((item) => getStockStatus(item) !== 'ok').length,
       approvals: canApprove(user.role)
         ? receipts.filter((receipt) => receipt.status === 'pending').length +
@@ -124,7 +125,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   };
 
   const labelOf = (entry: NavItem) =>
-    user.role === 'merchant' && entry.merchantLabel ? entry.merchantLabel : entry.label;
+    (user.role === 'merchant' || user.role === 'customer') && entry.merchantLabel ? entry.merchantLabel : entry.label;
 
   const badgeOf = (entry: NavItem) => (entry.badge ? badges[entry.badge] : 0);
 

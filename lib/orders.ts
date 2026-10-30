@@ -30,8 +30,26 @@ export const isOpen = (order: Order): boolean =>
 export const reservesStock = (order: Order): boolean =>
   order.status === 'pending' || order.status === 'packed';
 
+/**
+ * Net SRP of the order, in PHP. A reseller discount comes off it: the merchant carries the discount,
+ * so the amount remitted to the merchant is lower.
+ */
 export const orderTotal = (order: Order): number =>
-  roundMoney(order.lines.reduce((sum, line) => sum + line.total, 0));
+  roundMoney(order.lines.reduce((sum, line) => sum + line.total, 0) - (order.discountPhp ?? 0));
+
+/** The order's discount shared over its lines in proportion to their Net SRP. The last line takes the rounding. */
+export function lineDiscounts(order: Order): number[] {
+  const discount = order.discountPhp ?? 0;
+  const gross = order.lines.reduce((sum, line) => sum + line.total, 0);
+  if (discount <= 0 || gross <= 0) return order.lines.map(() => 0);
+  let given = 0;
+  return order.lines.map((line, index) => {
+    if (index === order.lines.length - 1) return roundMoney(discount - given);
+    const share = roundMoney((discount * line.total) / gross);
+    given += share;
+    return share;
+  });
+}
 
 export const orderUnits = (order: Order): number =>
   order.lines.reduce((sum, line) => sum + line.quantity, 0);
@@ -85,7 +103,9 @@ export function flattenDelivered(orders: Order[]): SaleLine[] {
   for (const order of orders) {
     if (order.status !== 'delivered' || !order.deliveredAt || !order.paymentMethod) continue;
     const rate = order.topUpRate ?? 0;
+    const discounts = lineDiscounts(order);
     order.lines.forEach((line, index) => {
+      const net = roundMoney(line.total - discounts[index]);
       lines.push({
         id: `${order.id}-${index + 1}`,
         orderId: order.id,
@@ -98,8 +118,8 @@ export function flattenDelivered(orders: Order[]): SaleLine[] {
         quantity: line.quantity,
         unitPrice: line.unitPrice,
         unitCost: line.unitCost,
-        total: line.total,
-        gross: roundMoney(line.total + lineTopUp(line, rate)),
+        total: net,
+        gross: roundMoney(net + lineTopUp(line, rate)),
         topUp: lineTopUp(line, rate),
         paymentMethod: order.paymentMethod!,
         terms: order.terms,

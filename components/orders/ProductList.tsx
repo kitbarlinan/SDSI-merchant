@@ -42,6 +42,9 @@ export function parseQuantities(rows: ListRow[], typed: Record<string, string>):
   return { lines, totalHkd: roundMoney(totalHkd), errors };
 }
 
+/** Unit price after the reseller discount. */
+export const discounted = (priceHkd: number, pct: number): number => roundMoney(priceHkd * (1 - pct / 100));
+
 const COLUMNS = 'md:grid md:grid-cols-[2.5rem_8.5rem_1fr_6rem_5.5rem_6.5rem_7rem] md:items-center md:gap-3';
 
 /**
@@ -55,6 +58,7 @@ export function ProductList({
   onChange,
   errors,
   showMerchant = false,
+  discountPct = 0,
   footer,
 }: {
   rows: ListRow[];
@@ -64,6 +68,8 @@ export function ProductList({
   errors: Record<string, string>;
   /** Show which merchant owns each product (staff views). */
   showMerchant?: boolean;
+  /** Reseller discount, percent. Shows the price before and after the discount. */
+  discountPct?: number;
   footer?: ReactNode;
 }) {
   const [query, setQuery] = useState('');
@@ -155,7 +161,15 @@ export function ProductList({
                   </p>
                   <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-slate-500 md:hidden">
                     <span className="font-mono">{item.sku}</span>
-                    <span>{formatHkd(pickupHkd)}</span>
+                    <span>
+                      {discountPct > 0 ? (
+                        <>
+                          <s className="text-slate-400">{formatHkd(pickupHkd)}</s> {formatHkd(discounted(pickupHkd, discountPct))}
+                        </>
+                      ) : (
+                        formatHkd(pickupHkd)
+                      )}
+                    </span>
                   </p>
                   {showMerchant && merchant ? (
                     <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-500">
@@ -170,7 +184,16 @@ export function ProductList({
                   ) : null}
                 </div>
 
-                <span className="hidden text-right text-sm md:block">{formatHkd(pickupHkd)}</span>
+                <span className="hidden text-right text-sm md:block">
+                  {discountPct > 0 ? (
+                    <>
+                      <s className="block text-xs text-slate-400">{formatHkd(pickupHkd)}</s>
+                      <span className="font-medium text-emerald-700">{formatHkd(discounted(pickupHkd, discountPct))}</span>
+                    </>
+                  ) : (
+                    formatHkd(pickupHkd)
+                  )}
+                </span>
                 <span
                   className={`mt-1 block text-xs md:mt-0 md:text-right md:text-sm ${
                     disabled ? 'font-medium text-rose-600' : 'text-slate-600'

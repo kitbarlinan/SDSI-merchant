@@ -124,6 +124,7 @@ export function OrderCard({
               <Icon name="user" className="h-4 w-4 text-slate-400" />
               <span className="font-medium">{order.customerName ?? 'Walk-in client'}</span>
               {order.source === 'walk-in' ? <Badge tone="slate">Walk-in</Badge> : null}
+              {order.source === 'reseller' ? <Badge tone="sky">Reseller</Badge> : null}
               {order.contactNo ? <span className="text-xs text-slate-500">{order.contactNo}</span> : null}
             </p>
             {order.address ? (
@@ -168,6 +169,24 @@ export function OrderCard({
             </span>
             <span className="text-lg font-semibold text-slate-900">{orderAmountLabel(order)}</span>
           </div>
+          {order.discountHkd ? (
+            <div className="space-y-0.5 text-xs">
+              <p className="flex justify-between">
+                <span className="text-slate-500">Pickup price (HKD)</span>
+                <span className="text-slate-700">{formatHkd(order.pickupHkd ?? 0)}</span>
+              </p>
+              <p className="flex justify-between">
+                <span className="text-slate-500">Reseller discount {order.discountPct}% (HKD)</span>
+                <span className="font-semibold text-emerald-700">− {formatHkd(order.discountHkd)}</span>
+              </p>
+              {showPeso && order.discountPhp ? (
+                <p className="flex justify-between">
+                  <span className="text-slate-500">Discount charged to merchant (PHP)</span>
+                  <span className="font-semibold text-rose-700">− {formatCurrency(order.discountPhp)}</span>
+                </p>
+              ) : null}
+            </div>
+          ) : null}
           {order.amountHkd != null && showPeso ? (
             <p className="flex justify-between text-xs">
               <span className="text-slate-500">Net SRP, remit to merchant</span>

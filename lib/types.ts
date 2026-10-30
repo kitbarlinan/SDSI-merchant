@@ -14,7 +14,7 @@ export type Category = (typeof CATEGORIES)[number];
 // People
 // ---------------------------------------------------------------------------
 
-export type Role = 'admin' | 'cashier' | 'clerk' | 'merchant';
+export type Role = 'admin' | 'cashier' | 'clerk' | 'merchant' | 'customer';
 
 export interface User {
   id: string;
@@ -69,7 +69,8 @@ export type OrderTerms = (typeof ORDER_TERMS)[number];
  */
 export type OrderStatus = 'pending' | 'packed' | 'shipped' | 'delivered' | 'rts' | 'cancelled';
 
-export type OrderSource = 'merchant' | 'walk-in';
+/** merchant = the merchant's own customer; walk-in = counter sale; reseller = a reseller / customer ordered with their own login. */
+export type OrderSource = 'merchant' | 'walk-in' | 'reseller';
 
 export interface OrderLine {
   itemId: string;
@@ -127,6 +128,12 @@ export interface Order {
   pickupHkd?: number;
   /** What the customer pays, HKD: COD = net COD price; pickup and counter sales = pickup total. */
   amountHkd?: number;
+  /** Reseller orders: the discount rate used (percent of the pickup total). The merchant carries it. */
+  discountPct?: number;
+  /** Reseller orders: the discount in HKD, taken off the pickup total. */
+  discountHkd?: number;
+  /** Same discount in PHP at the exchange rate of that day. It comes off the merchant's net payable. */
+  discountPhp?: number;
 
 }
 

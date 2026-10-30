@@ -187,6 +187,69 @@ export function placeMerchantOrder(
   };
 }
 
+export interface ResellerOrderInput {
+  customerName: string;
+  contactNo: string;
+  notes: string;
+  lines: { itemId: string; quantity: number }[];
+}
+
+/**
+ * A reseller / customer orders with their own login. Pickup only (COP), no SF or CF. The discount
+ * (costing setting, 10% for now) comes off the pickup price in HKD and is charged to the merchant.
+ * Products from different merchants become separate orders, one per merchant. They start Pending.
+ */
+export function placeResellerOrder(
+  state: AppState,
+  actor: Actor,
+  input: ResellerOrderInput,
+  now: string,
+): Outcome<Order[]> {
+  if (actor.role !== 'customer') return fail('Only resellers can place this kind of order.');
+  if (input.customerName.trim().length < 2) return fail('Enter your name.');
+
+  const built = buildLines(state, input.lines, dateOf(now));
+  if (!built.ok) return fail(built.error);
+
+  const byMerchant = new Map<string, OrderLine[]>();
+  for (const line of built.lines) {
+    const merchantId = state.items.find((item) => item.id === line.itemId)!.merchantId;
+    byMerchant.set(merchantId, [...(byMerchant.get(merchantId) ?? []), line]);
+  }
+
+  const { ids, poSeq } = nextPoids(state, byMerchant.size);
+  const { resellerDiscountPct, fxPhpPerHkd } = state.costing.settings;
+  const created: Order[] = [];
+  for (const [merchantId, lines] of byMerchant) {
+    const charges = orderCharges(
+      lines.map((line) => ({ itemId: line.itemId, quantity: line.quantity })),
+      state.costing,
+    );
+    if (!charges) return fail('One of these products has no live price.');
+    const discountHkd = roundMoney((charges.pickupHkd * resellerDiscountPct) / 100);
+    created.push({
+      id: ids[created.length],
+      merchantId,
+      source: 'reseller',
+      createdBy: actor.id,
+      createdAt: now,
+      customerName: input.customerName.trim(),
+      contactNo: input.contactNo.trim(),
+      address: '',
+      notes: input.notes.trim(),
+      terms: 'COP',
+      lines,
+      status: 'pending',
+      pickupHkd: charges.pickupHkd,
+      discountPct: resellerDiscountPct,
+      discountHkd,
+      discountPhp: roundMoney(discountHkd * fxPhpPerHkd),
+      amountHkd: roundMoney(charges.pickupHkd - discountHkd),
+    });
+  }
+  return { ok: true, state: { ...state, poSeq, orders: [...created.reverse(), ...state.orders] }, value: created };
+}
+
 /**
  * Counter sale: the customer name is optional. Paid on the spot, so it is delivered immediately.
  * Items from different merchants become separate orders because each sale belongs to one merchant.
