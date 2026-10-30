@@ -66,6 +66,7 @@ interface AppDataValue {
   receiveStock: (
     actor: Actor,
     input: {
+      kind?: 'stock-in' | 'stock-out';
       merchantId: string;
       receivedDate: string;
       note: string;

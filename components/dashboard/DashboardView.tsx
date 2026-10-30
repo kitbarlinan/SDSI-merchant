@@ -118,7 +118,7 @@ function InventoryByMerchant({
               <th className="px-4 py-3 text-right">On hand</th>
               <th className="px-4 py-3 text-right">Reserved</th>
               <th className="px-4 py-3 text-right">Available</th>
-              <th className="px-4 py-3 text-right">Value (cost)</th>
+              <th className="px-4 py-3 text-right">Value (SRP)</th>
               <th className="px-5 py-3 text-right">Alerts</th>
             </tr>
           </thead>
@@ -128,7 +128,7 @@ function InventoryByMerchant({
               const onHand = own.reduce((sum, item) => sum + item.stock, 0);
               const held = own.reduce((sum, item) => sum + (reserved.get(item.id) ?? 0), 0);
               const available = own.reduce((sum, item) => sum + availableOf(item, reserved), 0);
-              const value = own.reduce((sum, item) => sum + item.stock * item.unitCost, 0);
+              const value = own.reduce((sum, item) => sum + item.stock * item.unitPrice, 0);
               const alerts = own.filter((item) => getStockStatus(item) !== 'ok').length;
               return (
                 <tr key={merchant.id}>

@@ -28,7 +28,6 @@ export function InventoryView() {
   const isMerchant = user?.role === 'merchant';
   const isStaff = isSdsiTeam(user?.role ?? 'merchant');
   const [tab, setTab] = useState<'stock' | 'receiving' | 'rts'>('stock');
-  const showCost = user?.role !== 'cashier';
 
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<Category | 'all'>('all');
@@ -49,19 +48,17 @@ export function InventoryView() {
   );
 
   const stats = useMemo(() => {
-    let costValue = 0;
     let retailValue = 0;
     let units = 0;
     let stockAlerts = 0;
     let expiring = 0;
     for (const item of scopedItems) {
-      costValue += item.stock * item.unitCost;
       retailValue += item.stock * item.unitPrice;
       units += item.stock;
       if (getStockStatus(item) !== 'ok') stockAlerts += 1;
       if (today && getExpiry(item, today).status !== 'ok') expiring += 1;
     }
-    return { costValue, retailValue, units, stockAlerts, expiring };
+    return { retailValue, units, stockAlerts, expiring };
   }, [scopedItems, today]);
 
   const rows = useMemo(() => {
@@ -76,13 +73,13 @@ export function InventoryView() {
 
   if (!user) return null;
 
-  const colCount = 9 + (showCost ? 1 : 0);
+  const colCount = 9;
 
   const scopedOrders = orders.filter((o) => (isMerchant ? o.merchantId === user.merchantId : merchantId === 'all' || o.merchantId === merchantId));
   const scopedReceipts = receipts.filter((r) => (isMerchant ? r.merchantId === user.merchantId : merchantId === 'all' || r.merchantId === merchantId));
   const tabs = [
     { key: 'stock' as const, label: 'Stock', count: 0 },
-    { key: 'receiving' as const, label: 'Receiving', count: scopedReceipts.filter((r) => r.status === 'pending').length },
+    { key: 'receiving' as const, label: 'Stock in / out', count: scopedReceipts.filter((r) => r.status === 'pending').length },
     { key: 'rts' as const, label: 'RTS', count: scopedOrders.filter((o) => o.status === 'rts' && !o.returnReceiptId).length },
   ];
 
@@ -93,7 +90,7 @@ export function InventoryView() {
         description={
           isMerchant
             ? 'Your running stock. On hand drops when the cashier marks an order delivered.'
-            : 'Running stock per merchant. The cashier receives deliveries and returns; the admin or inventory clerk approves them.'
+            : 'Running stock per merchant. Stock in and out: the cashier records, the admin or inventory clerk approves. The clerk and admin post directly.'
         }
       />
 
@@ -145,24 +142,32 @@ export function InventoryView() {
 
       {tab === 'stock' ? (
       <>
+      {!isMerchant ? (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setTab('receiving')}
+            className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
+          >
+            + Stock in
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab('receiving')}
+            className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            − Stock out
+          </button>
+        </div>
+      ) : null}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {showCost ? (
-          <StatCard
-            variant="primary"
-            icon="inventory"
-            label="Stock value (at cost)"
-            value={formatCurrency(stats.costValue)}
-            hint={`${formatCurrency(stats.retailValue)} at selling price`}
-          />
-        ) : (
-          <StatCard
-            variant="primary"
-            icon="inventory"
-            label="Units on hand"
-            value={formatNumber(stats.units)}
-            hint={`${formatCurrency(stats.retailValue)} at selling price`}
-          />
-        )}
+        <StatCard
+          variant="primary"
+          icon="inventory"
+          label="Stock value (at SRP)"
+          value={formatCurrency(stats.retailValue)}
+          hint={`${formatNumber(stats.units)} units on hand`}
+        />
         <StatCard
           icon="leaf"
           label="Products"
@@ -241,7 +246,6 @@ export function InventoryView() {
                 <th className="px-4 py-3 text-right" title="Shipped to customers, payment not collected yet">
                   In transit
                 </th>
-                {showCost ? <th className="px-4 py-3 text-right">Unit cost</th> : null}
                 <th className="px-4 py-3 text-right">Unit price</th>
                 <th className="px-4 py-3">Expiry</th>
                 <th className="px-4 py-3 text-right">Days of cover</th>
@@ -303,9 +307,6 @@ export function InventoryView() {
                       <td className="px-4 py-4 text-right text-violet-700">
                         {(inTransit.get(item.id) ?? 0) > 0 ? formatNumber(inTransit.get(item.id) ?? 0) : '—'}
                       </td>
-                      {showCost ? (
-                        <td className="px-4 py-4 text-right">{formatCurrency(item.unitCost)}</td>
-                      ) : null}
                       <td className="px-4 py-4 text-right">{formatCurrency(item.unitPrice)}</td>
                       <td className="px-4 py-4">
                         <p className="whitespace-nowrap text-slate-700">{formatDate(item.expiryDate)}</p>

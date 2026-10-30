@@ -38,8 +38,8 @@ export function ReceiptRow({ receipt, merchantFilter }: { receipt: StockReceipt;
         <div className="space-y-0.5">
           <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900">
             <span className="font-mono">{receipt.id}</span>
-            <Badge tone={receipt.kind === 'rts' ? 'red' : 'sky'}>
-              {receipt.kind === 'rts' ? `RTS return · ${receipt.orderId}` : 'Stock in'}
+            <Badge tone={receipt.kind === 'rts' || receipt.kind === 'stock-out' ? 'red' : 'sky'}>
+              {receipt.kind === 'rts' ? `RTS return · ${receipt.orderId}` : receipt.kind === 'stock-out' ? 'Stock out' : 'Stock in'}
             </Badge>
             <Badge tone={receipt.status === 'pending' ? 'amber' : receipt.status === 'approved' ? 'green' : 'red'}>
               {receipt.status === 'pending' ? 'Awaiting approval' : receipt.status === 'approved' ? 'Approved' : 'Rejected'}
@@ -69,7 +69,10 @@ export function ReceiptRow({ receipt, merchantFilter }: { receipt: StockReceipt;
             <span className="min-w-0 truncate text-slate-800">
               {line.name} <span className="font-mono text-xs text-slate-500">{line.sku}</span>
             </span>
-            <span className="shrink-0 font-semibold">+{formatNumber(line.quantity)}</span>
+            <span className="shrink-0 font-semibold">
+              {receipt.kind === 'stock-out' ? '−' : '+'}
+              {formatNumber(line.quantity)}
+            </span>
           </li>
         ))}
       </ul>
@@ -113,7 +116,7 @@ export function ReceiptRow({ receipt, merchantFilter }: { receipt: StockReceipt;
                 className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
               >
                 <Icon name="check" className="h-4 w-4" />
-                Approve · add to stock
+                {receipt.kind === 'stock-out' ? 'Approve · take out of stock' : 'Approve · add to stock'}
               </button>
               <button
                 type="button"
@@ -142,6 +145,7 @@ function ReceiveForm() {
   const { items, merchants, receiveStock } = useAppData();
   const today = useToday() || MOCK_TODAY;
 
+  const [kind, setKind] = useState<'stock-in' | 'stock-out'>('stock-in');
   const [merchantId, setMerchantId] = useState(merchants[0]?.id ?? '');
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [date, setDate] = useState('');
@@ -154,6 +158,7 @@ function ReceiveForm() {
 
   const submit = () => {
     const result = receiveStock(user, {
+      kind,
       merchantId,
       receivedDate: date || today,
       note,
@@ -165,17 +170,41 @@ function ReceiveForm() {
       return;
     }
     setError(null);
-    setDone(result.value.id);
+    setDone(`${result.value.id} ${result.value.status === 'approved' ? 'posted to stock' : 'submitted for approval'}`);
     setQuantities({});
     setNote('');
   };
 
   return (
     <Card
-      title="Receive stock"
-      subtitle="Record what the merchant delivered. It goes on the shelf once the admin or inventory clerk approves."
+      title={kind === 'stock-in' ? 'Stock in' : 'Stock out'}
+      subtitle={
+        user.role === 'cashier'
+          ? 'Choose the product and the quantity. It changes the stock once the admin or inventory clerk approves.'
+          : 'Choose the product and the quantity. As clerk or admin it is posted right away, no approver needed.'
+      }
     >
       <div className="mt-3 space-y-4">
+        <div role="group" aria-label="Movement" className="inline-flex rounded-xl border border-slate-200 bg-white p-1">
+          {(['stock-in', 'stock-out'] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              aria-pressed={kind === option}
+              onClick={() => {
+                setKind(option);
+                setQuantities({});
+                setError(null);
+                setDone(null);
+              }}
+              className={`rounded-lg px-4 py-1.5 text-sm font-medium ${
+                kind === option ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              {option === 'stock-in' ? 'Stock in' : 'Stock out'}
+            </button>
+          ))}
+        </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="text-xs font-medium text-slate-500">
             Merchant
@@ -195,7 +224,7 @@ function ReceiveForm() {
             </select>
           </label>
           <label className="text-xs font-medium text-slate-500">
-            Date received
+            {kind === 'stock-in' ? 'Date received' : 'Date taken out'}
             <input
               type="date"
               value={date || today}
@@ -222,7 +251,7 @@ function ReceiveForm() {
                 inputMode="numeric"
                 value={quantities[item.id] ?? ''}
                 onChange={(event) => setQuantities((prev) => ({ ...prev, [item.id]: event.target.value }))}
-                aria-label={`Quantity received of ${item.name}`}
+                aria-label={`Quantity of ${item.name}`}
                 placeholder="0"
                 className={`w-24 text-center ${inputClass(false)}`}
               />
@@ -231,12 +260,12 @@ function ReceiveForm() {
         </ul>
 
         <label className="block text-xs font-medium text-slate-500">
-          Note (optional)
+          {kind === 'stock-out' ? 'Reason (required)' : 'Note (optional)'}
           <input
             type="text"
             value={note}
             onChange={(event) => setNote(event.target.value)}
-            placeholder="e.g. delivery receipt no., condition of boxes"
+            placeholder={kind === 'stock-out' ? 'e.g. damaged in the warehouse, expired, sample' : 'e.g. delivery receipt no., condition of boxes'}
             className={`mt-1 ${inputClass(false)}`}
           />
         </label>
@@ -258,7 +287,7 @@ function ReceiveForm() {
           className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500"
         >
           <Icon name="box" className="h-4 w-4" />
-          Submit for approval
+          {user.role === 'cashier' ? 'Submit for approval' : kind === 'stock-in' ? 'Add to stock' : 'Take out of stock'}
         </button>
       </div>
     </Card>
@@ -282,7 +311,7 @@ export function ReceivingPanel({ merchantFilter }: { merchantFilter: string }) {
 
   return (
     <div className="space-y-6">
-      {user.role === 'cashier' ? <ReceiveForm /> : null}
+      {user.role !== 'merchant' ? <ReceiveForm /> : null}
 
       <Card
         flush

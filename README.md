@@ -75,3 +75,11 @@ Open http://localhost:3000 and pick an account (demo sign-in, no password).
 
 - A week's payout is due the **Monday after the week ends** (week Oct 12 to 18 → Oct 19). Shown on Open and Closed rows.
 - The **cashier releases** the payout (release date, SF advance, adjustment, bank reference) → status *Waiting for admin approval*. The **admin approves** (it counts as paid out and leaves the wallet) or sends it back with a reason. The admin still closes the weeks.
+
+## Stock in / stock out
+
+- Inventory → **Stock in / out** (or the "+ Stock in" / "− Stock out" buttons). Pick the merchant, the product and the quantity.
+- The cashier's entry waits for the inventory clerk or admin. The clerk's and admin's own entries are posted at once (no approver).
+- Stock out needs a reason and cannot exceed the available stock (on hand minus reserved). It is checked again at approval.
+- Unit cost is no longer shown in Inventory. Stock value is at SRP.
+- **Days of cover** = on hand ÷ (units delivered in the last 30 days ÷ 30).

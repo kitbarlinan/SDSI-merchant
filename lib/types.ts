@@ -158,7 +158,7 @@ export interface SaleLine {
 // Stock receiving (cashier receives, admin or inventory clerk approves)
 // ---------------------------------------------------------------------------
 
-export type ReceiptKind = 'stock-in' | 'rts';
+export type ReceiptKind = 'stock-in' | 'stock-out' | 'rts';
 export type ReceiptStatus = 'pending' | 'approved' | 'rejected';
 
 export interface ReceiptLine {

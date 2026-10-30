@@ -429,10 +429,16 @@ function validReceivedDate(date: string, now: string): string | null {
   return null;
 }
 
+/**
+ * Stock in (goods arrived) or stock out (damaged, expired, sample, sent back to the merchant).
+ * The cashier's entry waits for the inventory clerk or admin. The clerk's and admin's own entries
+ * need no approver: they go through at once.
+ */
 export function createStockInReceipt(
   state: AppState,
   actor: Actor,
   input: {
+    kind?: 'stock-in' | 'stock-out';
     merchantId: string;
     receivedDate: string;
     note: string;
@@ -440,34 +446,49 @@ export function createStockInReceipt(
   },
   now: string,
 ): Outcome<StockReceipt> {
-  if (actor.role !== 'cashier') return fail('Only the cashier can receive stock.');
+  if (!(actor.role === 'cashier' || canApprove(actor))) return fail('Only SDSI staff can record stock movements.');
+  const kind = input.kind ?? 'stock-in';
   const dateError = validReceivedDate(input.receivedDate, now);
   if (dateError) return fail(dateError);
   if (!state.items.some((item) => item.merchantId === input.merchantId)) {
     return fail('Choose the merchant the stock belongs to.');
   }
+  if (kind === 'stock-out' && input.note.trim().length < 3) return fail('Write the reason for the stock out.');
+  const reserved = reservedByItem(state.orders);
   const lines: ReceiptLine[] = [];
   for (const [itemId, quantity] of mergeLines(input.lines)) {
     if (quantity === 0) continue;
     const item = state.items.find((candidate) => candidate.id === itemId);
     if (!item || item.merchantId !== input.merchantId) return fail('Product not found for this merchant.');
     if (!Number.isInteger(quantity) || quantity < 1) return fail('Quantities must be whole numbers.');
+    if (kind === 'stock-out' && quantity > availableOf(item, reserved)) {
+      return fail(`Only ${availableOf(item, reserved)} of "${item.name}" are available to take out.`);
+    }
     lines.push({ itemId, sku: item.sku, name: item.name, quantity });
   }
-  if (lines.length === 0) return fail('Enter the quantity received for at least one product.');
+  if (lines.length === 0) {
+    return fail(`Enter the quantity ${kind === 'stock-in' ? 'received' : 'to take out'} for at least one product.`);
+  }
 
+  const selfApproved = canApprove(actor);
   const receipt: StockReceipt = {
     id: formatReceiptId(state.receipts.length + 1),
-    kind: 'stock-in',
+    kind,
     merchantId: input.merchantId,
     receivedDate: input.receivedDate,
     lines,
     note: input.note.trim(),
     receivedBy: actor.id,
     createdAt: now,
-    status: 'pending',
+    status: selfApproved ? 'approved' : 'pending',
+    ...(selfApproved ? { decidedBy: actor.id, decidedAt: now } : {}),
   };
-  return { ok: true, state: { ...state, receipts: [receipt, ...state.receipts] }, value: receipt };
+  const sign = kind === 'stock-in' ? 1 : -1;
+  const qty = new Map(lines.map((line) => [line.itemId, line.quantity] as const));
+  const items = selfApproved
+    ? state.items.map((item) => (qty.has(item.id) ? { ...item, stock: item.stock + sign * qty.get(item.id)! } : item))
+    : state.items;
+  return { ok: true, state: { ...state, items, receipts: [receipt, ...state.receipts] }, value: receipt };
 }
 
 /** The courier brought an RTS order back. The cashier logs it; approval puts it back on the shelf. */
@@ -537,9 +558,19 @@ function decide(
 
   let items = state.items;
   if (status === 'approved') {
+    const sign = receipt.kind === 'stock-out' ? -1 : 1;
+    if (sign === -1) {
+      const reserved = reservedByItem(state.orders);
+      for (const line of receipt.lines) {
+        const item = state.items.find((candidate) => candidate.id === line.itemId);
+        if (!item || line.quantity > availableOf(item, reserved)) {
+          return fail(`Not enough "${line.name}" available to take out anymore.`);
+        }
+      }
+    }
     const add = new Map(receipt.lines.map((line) => [line.itemId, line.quantity] as const));
     items = state.items.map((item) =>
-      add.has(item.id) ? { ...item, stock: item.stock + add.get(item.id)! } : item,
+      add.has(item.id) ? { ...item, stock: item.stock + sign * add.get(item.id)! } : item,
     );
   }
 
