@@ -106,6 +106,6 @@ Open http://localhost:3000 and pick an account (demo sign-in, no password).
 - **Split of one package** (all % are Costing settings): top-up 50% (495), reseller 15% (148.50), tier income 5% (49.50), SDSI net 30% (297). Tier income is 2% / 2% / 1% to the 3 active sponsors above the buyer. A level with nobody above stays with SDSI. Paid out of SDSI's top-up, not the merchant. Admin sees the split; the cashier sees HKD only.
 - **Orders of an active reseller:** pickup (COP) only. Products of a merchant in the program (LSM) get the reseller discount (15% of the HKD pickup price). The merchant carries that discount. No commission on regular orders.
 - **Program:** per merchant (Accounting → Costing → *Reseller program*) with an on/off per SKU.
-- A reseller sees the tier income from their downline on the Orders page.
+- A reseller sees the tier income from their downline on the Orders page. The package is sold in Walk-in POS (or confirmed from Orders after the reseller taps "Request reseller package"). Accounting shows the package income sample (net 30%) and the real totals.
 - Database: run `supabase/0003_reseller_program.sql`, then `0004_reseller_package.sql` (replaces the order commission with package sales and tier income).
 - Not built yet: paying out tier income, a screen to assign sponsors and create new resellers.

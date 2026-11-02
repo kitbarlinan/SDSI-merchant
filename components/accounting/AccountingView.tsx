@@ -1,5 +1,6 @@
 'use client';
 
+import { PackageIncomeCard } from '@/components/accounting/PackageIncomeCard';
 import { useMemo, useState } from 'react';
 import { DonutChart } from '@/components/charts/DonutChart';
 import { TrendChart } from '@/components/charts/TrendChart';
@@ -381,7 +382,10 @@ export function AccountingView() {
         ))}
       </div>
       {tab === 'reports' ? (
-        <AccountingReports />
+        <>
+          <AccountingReports />
+          <PackageIncomeCard />
+        </>
       ) : (
         <div className="space-y-6">
           <PageHeader title="Costing" description="Pickup prices, collection fee and net COD per package. These numbers decide what merchants are paid." />

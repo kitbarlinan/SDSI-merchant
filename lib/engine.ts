@@ -32,6 +32,7 @@ import {
   type OrderLine,
   type OrderStatus,
   type OrderTerms,
+  type PackageRequest,
   type PackageSale,
   type PaymentMethod,
   type ReceiptLine,
@@ -54,6 +55,8 @@ export interface AppState {
   costing: CostingState;
   /** Reseller packages sold. A reseller is active once they have one. */
   packageSales: PackageSale[];
+  /** Resellers who asked to buy the package and have not paid yet. */
+  packageRequests: PackageRequest[];
   /** Last PO number handed out. Only ever goes up, so a POID is never reused. */
   poSeq: number;
 }
@@ -206,6 +209,15 @@ export interface ResellerOrderInput {
 export const isActiveReseller = (state: AppState, userId: string): boolean =>
   state.packageSales.some((sale) => sale.resellerId === userId);
 
+/** A reseller who has not bought the package yet asks to buy it. The cashier sees it and takes the payment. */
+export function requestPackage(state: AppState, actor: Actor, now: string): Outcome<PackageRequest> {
+  if (actor.role !== 'customer') return fail('Only resellers can request the package.');
+  if (isActiveReseller(state, actor.id)) return fail('You already have the package.');
+  if (state.packageRequests.some((request) => request.resellerId === actor.id)) return fail('You already asked. Pay at the counter.');
+  const request: PackageRequest = { id: `PKR-${String(state.packageRequests.length + state.packageSales.length + 1).padStart(4, '0')}`, resellerId: actor.id, createdAt: now };
+  return { ok: true, state: { ...state, packageRequests: [request, ...state.packageRequests] }, value: request };
+}
+
 /**
  * The cashier or admin records that a reseller bought the package. From then on the reseller is active
  * (orders with the program discount) and the three sponsors above earn tier income out of SDSI's top-up.
@@ -213,7 +225,7 @@ export const isActiveReseller = (state: AppState, userId: string): boolean =>
 export function recordPackageSale(
   state: AppState,
   actor: Actor,
-  input: { resellerId: string },
+  input: { resellerId: string; paymentMethod?: PaymentMethod },
   users: User[],
   now: string,
 ): Outcome<PackageSale> {
@@ -230,7 +242,19 @@ export function recordPackageSale(
     actor.id,
     now,
   );
-  return { ok: true, state: { ...state, packageSales: [sale, ...state.packageSales] }, value: sale };
+  if (input.paymentMethod) {
+    if (!PAYMENT_METHODS.includes(input.paymentMethod)) return fail('Choose a payment method.');
+    sale.paymentMethod = input.paymentMethod;
+  }
+  return {
+    ok: true,
+    state: {
+      ...state,
+      packageSales: [sale, ...state.packageSales],
+      packageRequests: state.packageRequests.filter((request) => request.resellerId !== buyer.id),
+    },
+    value: sale,
+  };
 }
 
 /**

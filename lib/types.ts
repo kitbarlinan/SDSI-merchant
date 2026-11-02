@@ -284,4 +284,12 @@ export interface PackageSale {
   /** Tier income paid to the upline, level 1 to 3. */
   tiers: { level: 1 | 2 | 3; userId: string; pct: number; php: number }[];
   netPhp: number;
+  paymentMethod?: PaymentMethod;
+}
+
+/** A reseller asked to buy the package. The cashier confirms it when paid. */
+export interface PackageRequest {
+  id: string;
+  resellerId: string;
+  createdAt: string;
 }

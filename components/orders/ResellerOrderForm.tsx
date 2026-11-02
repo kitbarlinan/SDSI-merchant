@@ -18,7 +18,7 @@ import { useToday } from '@/lib/use-today';
 /** A reseller / customer orders for pickup, with the reseller discount. */
 export function ResellerOrderForm() {
   const { user } = useAuth();
-  const { items, orders, merchants, costing, packageSales, placeResellerOrder } = useAppData();
+  const { items, orders, merchants, costing, packageSales, packageRequests, requestPackage, placeResellerOrder } = useAppData();
   const today = useToday() || MOCK_TODAY;
 
   const [typed, setTyped] = useState<Record<string, string>>({});
@@ -65,6 +65,19 @@ export function ResellerOrderForm() {
           Buy the reseller package ({formatHkd(costing.settings.packageHkd)}) at the counter. After the cashier records it you can order here with
           the reseller discount.
         </p>
+        {packageRequests.some((request) => request.resellerId === user.id) ? (
+          <p role="status" className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+            Requested. The cashier will see it, so just pay at the counter.
+          </p>
+        ) : (
+          <button
+            type="button"
+            onClick={() => requestPackage(user)}
+            className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500"
+          >
+            Request reseller package · {formatHkd(costing.settings.packageHkd)}
+          </button>
+        )}
       </div>
     );
   }

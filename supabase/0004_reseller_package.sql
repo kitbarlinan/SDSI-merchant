@@ -33,8 +33,23 @@ create table public.package_sales (
   srp_php     numeric(12, 2) not null,
   gross_php   numeric(12, 2) not null,
   reseller_php numeric(12, 2) not null,
-  net_php     numeric(12, 2) not null
+  net_php     numeric(12, 2) not null,
+  payment_method text check (payment_method in ('Cash', 'Bank Transfer', 'Debit / Credit Card'))
 );
+
+-- A reseller asked to buy the package; the cashier clears it when the sale is recorded.
+create table public.package_requests (
+  id          text primary key,
+  reseller_id uuid not null unique references public.profiles (id),
+  created_at  timestamp not null default now()
+);
+alter table public.package_requests enable row level security;
+revoke all on public.package_requests from anon, authenticated;
+create view public.package_requests_open as
+select r.id, r.reseller_id, p.name as reseller_name, r.created_at
+from public.package_requests r join public.profiles p on p.id = r.reseller_id
+where public.is_sdsi_staff() or r.reseller_id = auth.uid();
+grant select on public.package_requests_open to authenticated;
 
 -- Who earned what on that sale (levels 1 to 3 above the buyer).
 create table public.package_tiers (

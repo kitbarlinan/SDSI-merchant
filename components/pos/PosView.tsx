@@ -1,5 +1,6 @@
 'use client';
 
+import { PackagePanel } from '@/components/pos/PackagePanel';
 import { useMemo, useState } from 'react';
 import { ProductList, parseQuantities, type ListRow } from '@/components/orders/ProductList';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -121,6 +122,8 @@ export function PosView() {
           </button>
         </div>
       ) : null}
+
+      <PackagePanel />
 
       <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
         <div className="grid gap-x-6 gap-y-4 md:grid-cols-3">

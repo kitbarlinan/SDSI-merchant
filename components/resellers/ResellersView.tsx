@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { Card } from '@/components/ui/Card';
 import { useAuth } from '@/lib/auth';
 import { formatCurrency, formatDate, formatHkd } from '@/lib/format';
+import { tierIncome } from '@/lib/orders';
 import { useAppData } from '@/lib/store';
 
 /** Admin and cashier: who has bought the reseller package, and record a new package sale. */
@@ -56,6 +57,7 @@ export function ResellersView() {
                 <span className="font-medium text-slate-900">{reseller.name}</span>
                 <span className="ml-2 text-xs text-slate-500">
                   Sponsor: {reseller.sponsorId ? nameOf(reseller.sponsorId) : 'none'}
+                  {showPeso && bought.has(reseller.id) ? ` · Tier income ${formatCurrency(tierIncome(packageSales, reseller.id).total)}` : ''}
                 </span>
               </span>
               {bought.has(reseller.id) ? (
