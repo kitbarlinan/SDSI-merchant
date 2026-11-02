@@ -118,6 +118,39 @@ const A = (id: string) => ({ authId: 'auth-' + id });
   const dup = await act(db, deps, A('usr-admin'), 'addUser', { name: 'Nina Again', role: 'merchant', email: 'NINA@example.com', merchantId: addM.value.id }, 'https://x') as any;
   check('same email cannot be added twice', !dup.ok);
 
+
+  // ---- merchant profile, edit, delete
+  const prof = { name: 'Bank Test Co', ownerName: 'Juan Dela Cruz', bankName: 'BDO', bankAccountName: 'Bank Test Co', bankAccountNo: '0012 3456 7890' };
+  const mp = await act(db, deps, A('usr-admin'), 'addMerchant', prof, 'https://x') as any;
+  check('admin adds a merchant with owner and bank details', mp.ok && mp.value.profile.ownerName === 'Juan Dela Cruz' && mp.value.profile.bankAccountNo === '0012 3456 7890');
+  const partial = await act(db, deps, A('usr-admin'), 'addMerchant', { name: 'Half Bank Co', bankName: 'BPI' }, 'https://x') as any;
+  check('half-filled bank details are refused', !partial.ok && /all three/i.test(partial.error));
+  const badNo = await act(db, deps, A('usr-admin'), 'addMerchant', { ...prof, name: 'Bad No Co', bankAccountNo: 'abc' }, 'https://x') as any;
+  check('a non-numeric account number is refused', !badNo.ok);
+  const noProf = await act(db, deps, A('usr-admin'), 'addMerchant', { name: 'No Bank Yet' }, 'https://x') as any;
+  check('details can be left empty and added later', noProf.ok && !noProf.value.profile);
+  const upd = await act(db, deps, A('usr-admin'), 'updateMerchant', { id: noProf.value.id, ...prof, name: 'No Bank Yet' }, 'https://x') as any;
+  check('edit adds the bank details later', upd.ok && upd.value.profile.bankName === 'BDO');
+  const clear = await act(db, deps, A('usr-admin'), 'updateMerchant', { id: noProf.value.id, name: 'Renamed Co' }, 'https://x') as any;
+  check('edit can rename and clear the details', clear.ok && clear.value.name === 'Renamed Co' && !clear.value.profile);
+  const dupName = await act(db, deps, A('usr-admin'), 'updateMerchant', { id: noProf.value.id, name: 'green leaf naturals' }, 'https://x') as any;
+  check('rename to an existing merchant is refused', !dupName.ok);
+  const cashierEdit = await act(db, deps, A('usr-cashier'), 'updateMerchant', { id: mp.value.id, name: 'Hacked' }, 'https://x') as any;
+  check('only the admin edits merchants', !cashierEdit.ok && cashierEdit.status === 403);
+  const delUsed = await act(db, deps, A('usr-admin'), 'deleteMerchant', { id: 'mrc-1' }, 'https://x') as any;
+  check('a merchant with products and orders cannot be deleted', !delUsed.ok && /cannot be deleted/.test(delUsed.error));
+  const delOk = await act(db, deps, A('usr-admin'), 'deleteMerchant', { id: noProf.value.id }, 'https://x') as any;
+  const left = await db.tx((q) => loadAll(q));
+  check('an empty merchant can be deleted', delOk.ok && !left.merchants.some((m: any) => m.id === noProf.value.id));
+  const seeA = await dataFor(db, A('usr-admin')) as any, seeC = await dataFor(db, A('usr-cashier')) as any, seeM = await dataFor(db, A('usr-m1')) as any, seeK = await dataFor(db, A('usr-clerk')) as any, seeR = await dataFor(db, A('usr-c1')) as any;
+  const bankOf = (r: any) => r.data.merchants.find((m: any) => m.id === mp.value.id)?.profile;
+  check('bank details: admin and cashier see them; clerk, reseller and other merchants do not', !!bankOf(seeA) && !!bankOf(seeC) && !bankOf(seeK) && !bankOf(seeR) && !bankOf(seeM));
+  const own = await db.tx(async (q) => { const l = await loadAll(q); await saveDiff(q, l, { ...l, merchants: l.merchants.map((m: any) => m.id === 'mrc-1' ? { ...m, profile: { ownerName: 'Liza', bankName: 'BPI', bankAccountName: 'Green Leaf', bankAccountNo: '123456' } } : m) }); });
+  const seeM2 = await dataFor(db, A('usr-m1')) as any;
+  check('a merchant sees their own bank details', !!seeM2.data.merchants.find((m: any) => m.id === 'mrc-1').profile && !seeM2.data.merchants.find((m: any) => m.id === 'mrc-2').profile);
+  const pub = await publicCatalog(db);
+  check('the public page gets no merchant details at all', pub.merchants.length === 0 && !JSON.stringify(pub).includes('0012 3456'));
+
   // ---- first admin bootstrap on an empty database
   const fresh = await newDb();
   await fresh.pg.exec("insert into public.profiles values ('11111111-1111-1111-1111-111111111111', 'Kit', 'admin', true), ('22222222-2222-2222-2222-222222222222', 'Sneaky', 'cashier', true)");

@@ -91,6 +91,14 @@ function RemittanceRow({ remittance, showMerchant }: { remittance: Remittance; s
                 ? ` · released by cashier ${remittance.releasedDate ? formatDate(remittance.releasedDate) : ''} · ref ${remittance.reference}`
                 : ` · closed, due ${formatDate(dueDate)}`}
           </p>
+          {merchant?.profile ? (
+            <p className="mt-0.5 text-xs text-slate-600">
+              Remit to: <span className="font-medium">{merchant.profile.bankName}</span> · {merchant.profile.bankAccountName} ·{' '}
+              <span className="font-mono">{merchant.profile.bankAccountNo}</span>
+            </p>
+          ) : user?.role !== 'merchant' ? (
+            <p className="mt-0.5 text-xs text-amber-700">No bank account on file for this merchant. Ask the admin to add it under Team & accounts.</p>
+          ) : null}
           <p className="mt-0.5 text-xs text-slate-500">
             By branch: {BRANCHES.map((branch) => `${branch.name} ${formatCurrency(split[branch.id])}`).join(' + ')} = {formatCurrency(remittance.netPayable)}
           </p>

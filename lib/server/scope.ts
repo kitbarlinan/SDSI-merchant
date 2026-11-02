@@ -60,7 +60,19 @@ function chainOf(users: User[], meId: string): Set<string> {
 
 const stripCost = (item: InventoryItem): InventoryItem => ({ ...item, unitCost: 0 });
 
-export function scopeFor(me: User, state: AppState, merchants: Merchant[]): Scoped {
+/** Who may read a merchant's owner and bank details: the admin, the cashier who releases payouts, and that merchant. */
+const merchantsFor = (me: User, merchants: Merchant[]): Merchant[] =>
+  merchants.map((merchant) => {
+    if (!merchant.profile) return merchant;
+    const allowed = me.role === 'admin' || me.role === 'cashier' || (me.role === 'merchant' && me.merchantId === merchant.id);
+    if (allowed) return merchant;
+    const { profile: _profile, ...rest } = merchant;
+    void _profile;
+    return rest;
+  });
+
+export function scopeFor(me: User, state: AppState, merchantList: Merchant[]): Scoped {
+  const merchants = merchantsFor(me, merchantList);
   const base: AppState = { ...state, outbox: [], poSeq: 0 };
 
   if (me.role === 'admin') {

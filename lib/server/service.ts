@@ -3,7 +3,7 @@
  * Takes its database and its sign-in/invite helpers as arguments so it can be tested without Supabase.
  */
 import type { Actor, AppState } from '../engine';
-import type { Merchant, Role, User } from '../types';
+import type { Merchant, MerchantProfile, Role, User } from '../types';
 import { ACTIONS, PUBLIC_ACTIONS, actorOf } from './actions';
 import type { TxDb } from './db';
 import { loadAll, lockWriters, saveDiff, type Loaded } from './repo';
@@ -118,7 +118,7 @@ export async function act(db: TxDb, deps: Deps, auth: AuthedUser | null, name: s
     const before = await loadAll(q);
 
     // Account management belongs to the admin and is done here, not in the shared rules.
-    if (name === 'addMerchant' || name === 'addUser' || name === 'resendInvite') {
+    if (['addMerchant', 'updateMerchant', 'deleteMerchant', 'addUser', 'resendInvite'].includes(name)) {
       if (actor.role !== 'admin') return { error: 'Only the admin can do this.' as const, status: 403 };
       return adminAction(q, before, name, args);
     }
@@ -170,17 +170,70 @@ async function runPublic(
   return 'error' in result ? bad(result.status ?? 400, result.error ?? 'Failed.') : { ok: true, value: result.value };
 }
 
+/** The owner and bank details typed by the admin. Nothing here is required, but what is typed must make sense. */
+function readProfile(args: Record<string, unknown>): { profile?: MerchantProfile; error?: string } {
+  const text = (value: unknown) => String(value ?? '').replace(/\s+/g, ' ').trim();
+  const profile: MerchantProfile = {
+    ownerName: text(args.ownerName),
+    bankName: text(args.bankName),
+    bankAccountName: text(args.bankAccountName),
+    bankAccountNo: text(args.bankAccountNo),
+  };
+  if (Object.values(profile).some((value) => value.length > 80)) return { error: 'Each detail is limited to 80 characters.' };
+  if (profile.bankAccountNo && !/^[0-9][0-9 -]{4,28}[0-9]$/.test(profile.bankAccountNo)) return { error: 'The account number should be digits only (spaces and dashes are fine), 6 to 30 characters.' };
+  const anyBank = profile.bankName || profile.bankAccountName || profile.bankAccountNo;
+  if (anyBank && !(profile.bankName && profile.bankAccountName && profile.bankAccountNo)) return { error: 'Fill in all three bank details (bank, account name, account number), or leave them all empty.' };
+  const empty = Object.values(profile).every((value) => value === '');
+  return empty ? {} : { profile };
+}
+
 async function adminAction(q: Parameters<Parameters<TxDb['tx']>[0]>[0], before: Loaded, name: string, args: Record<string, unknown>) {
   if (name === 'addMerchant') {
     const merchantName = String(args.name ?? '').trim();
     if (merchantName.length < 2) return { error: 'Enter the merchant name.', status: 422 };
     if (before.merchants.some((m) => m.name.toLowerCase() === merchantName.toLowerCase())) return { error: 'That merchant already exists.', status: 422 };
+    const read = readProfile(args);
+    if (read.error) return { error: read.error, status: 422 };
     const next = before.merchants.reduce((max, m) => Math.max(max, Number(/^mrc-(\d+)$/.exec(m.id)?.[1] ?? 0)), 0) + 1;
     const palette = ['#059669', '#e11d48', '#0284c7', '#7c3aed', '#d97706', '#0f766e'];
-    const merchant: Merchant = { id: `mrc-${next}`, name: merchantName, color: String(args.color ?? palette[(next - 1) % palette.length]) };
+    const merchant: Merchant = { id: `mrc-${next}`, name: merchantName, color: String(args.color ?? palette[(next - 1) % palette.length]), ...(read.profile ? { profile: read.profile } : {}) };
     const after: Loaded = { ...before, merchants: [...before.merchants, merchant] };
     await saveDiff(q, before, after);
     return { done: true as const, after, invites: [] as User[], value: merchant };
+  }
+  if (name === 'updateMerchant') {
+    const current = before.merchants.find((m) => m.id === args.id);
+    if (!current) return { error: 'Merchant not found.', status: 404 };
+    const merchantName = String(args.name ?? '').trim();
+    if (merchantName.length < 2) return { error: 'Enter the merchant name.', status: 422 };
+    if (before.merchants.some((m) => m.id !== current.id && m.name.toLowerCase() === merchantName.toLowerCase())) return { error: 'Another merchant already has that name.', status: 422 };
+    const read = readProfile(args);
+    if (read.error) return { error: read.error, status: 422 };
+    const { profile: _old, ...rest } = current;
+    void _old;
+    const merchant: Merchant = { ...rest, name: merchantName, ...(read.profile ? { profile: read.profile } : {}) };
+    const after: Loaded = { ...before, merchants: before.merchants.map((m) => (m.id === current.id ? merchant : m)) };
+    await saveDiff(q, before, after);
+    return { done: true as const, after, invites: [] as User[], value: merchant };
+  }
+  if (name === 'deleteMerchant') {
+    const current = before.merchants.find((m) => m.id === args.id);
+    if (!current) return { error: 'Merchant not found.', status: 404 };
+    const st = before.state;
+    const used: string[] = [];
+    const count = (label: string, n: number) => n > 0 && used.push(`${n} ${label}`);
+    count('product(s)', st.items.filter((i) => i.merchantId === current.id).length);
+    count('order(s)', st.orders.filter((o) => o.merchantId === current.id).length);
+    count('stock receipt(s)', st.receipts.filter((r) => r.merchantId === current.id).length);
+    count('payout(s)', st.remittances.filter((r) => r.merchantId === current.id).length);
+    count('login(s)', st.users.filter((u) => u.merchantId === current.id).length);
+    if (used.length > 0) return { error: `${current.name} cannot be deleted because it already has ${used.join(', ')}. These records stay so the books are complete. A merchant can be deleted only while it has no products, orders, stock, payouts or logins.`, status: 422 };
+    const after: Loaded = {
+      merchants: before.merchants.filter((m) => m.id !== current.id),
+      state: { ...st, costing: { ...st.costing, programMerchantIds: st.costing.programMerchantIds.filter((id) => id !== current.id) } },
+    };
+    await saveDiff(q, before, after);
+    return { done: true as const, after, invites: [] as User[], value: true };
   }
   if (name === 'addUser') {
     const a = args as Staffing;

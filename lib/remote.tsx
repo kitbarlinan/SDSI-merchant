@@ -155,7 +155,9 @@ export function RemoteProviders({ children }: { children: ReactNode }) {
       hydrated: loaded,
       remote: true,
       team: {
-        addMerchant: (input) => call('addMerchant', input),
+        addMerchant: (input) => call('addMerchant', { ...input }),
+        updateMerchant: (input) => call('updateMerchant', { ...input }),
+        deleteMerchant: (id) => call('deleteMerchant', { id }),
         addUser: (input) => call('addUser', input),
         resendInvite: (userId) => call('resendInvite', { userId }),
       },

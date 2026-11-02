@@ -42,8 +42,19 @@ import type {
 
 export type ActionResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
+/** Name plus the optional owner and bank details. */
+export interface MerchantInput {
+  name: string;
+  ownerName?: string;
+  bankName?: string;
+  bankAccountName?: string;
+  bankAccountNo?: string;
+}
+
 export interface TeamTools {
-  addMerchant: (input: { name: string }) => Promise<ActionResult<Merchant>>;
+  addMerchant: (input: MerchantInput) => Promise<ActionResult<Merchant>>;
+  updateMerchant: (input: MerchantInput & { id: string }) => Promise<ActionResult<Merchant>>;
+  deleteMerchant: (id: string) => Promise<ActionResult<boolean>>;
   addUser: (input: { name: string; role: string; email: string; branchId?: string; merchantId?: string }) => Promise<ActionResult<User>>;
   resendInvite: (userId: string) => Promise<ActionResult<boolean>>;
 }

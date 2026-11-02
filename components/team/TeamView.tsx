@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { MerchantsCard } from '@/components/team/MerchantsCard';
 import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import { Field, inputClass } from '@/components/ui/Field';
@@ -14,7 +15,6 @@ const INVITE_ROLES: Role[] = ['cashier', 'clerk', 'merchant', 'admin'];
 /** The admin makes merchants and gives people their login. Each person gets an invitation email to choose a password. */
 export function TeamView() {
   const { users, merchants, team } = useAppData();
-  const [mName, setMName] = useState('');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<Role>('cashier');
@@ -35,15 +35,6 @@ export function TeamView() {
   }
 
   const show = (tone: 'ok' | 'bad', text: string, warnings?: string[]) => setMessage({ tone: warnings?.length ? 'bad' : tone, text: warnings?.length ? `${text} ${warnings.join(' ')}` : text });
-
-  async function addMerchant() {
-    setBusy(true);
-    const result = await team!.addMerchant({ name: mName });
-    setBusy(false);
-    if (!result.ok) return show('bad', result.error);
-    setMName('');
-    show('ok', `${result.value.name} added. Now give its owner a login below.`);
-  }
 
   async function addUser() {
     setBusy(true);
@@ -75,26 +66,7 @@ export function TeamView() {
       ) : null}
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card title="Add a merchant" subtitle="A company whose products SDSI fulfills.">
-          <form className="flex items-end gap-3" onSubmit={(event) => { event.preventDefault(); void addMerchant(); }}>
-            <div className="flex-1">
-              <Field label="Merchant name" htmlFor="merchantName">
-                <input id="merchantName" value={mName} onChange={(event) => setMName(event.target.value)} className={inputClass(false)} />
-              </Field>
-            </div>
-            <button type="submit" disabled={busy} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-emerald-950 hover:bg-emerald-500 disabled:opacity-60">Add</button>
-          </form>
-          <ul className="mt-4 divide-y divide-slate-100 text-sm">
-            {merchants.map((merchant) => (
-              <li key={merchant.id} className="flex items-center gap-2 py-2">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ background: merchant.color }} />
-                {merchant.name}
-                <span className="ml-auto font-mono text-xs text-slate-400">{merchant.id}</span>
-              </li>
-            ))}
-            {merchants.length === 0 ? <li className="py-2 text-slate-500">No merchants yet.</li> : null}
-          </ul>
-        </Card>
+        <MerchantsCard onMessage={(tone, text) => setMessage({ tone, text })} />
 
         <Card title="Invite someone" subtitle="They get an email with a link to choose a password.">
           <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); void addUser(); }}>

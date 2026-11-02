@@ -61,11 +61,20 @@ export interface User {
   refCode?: string;
 }
 
+/** Who owns the merchant and where SDSI remits their payout. Only the admin, the cashier who releases payouts and the merchant see it. */
+export interface MerchantProfile {
+  ownerName: string;
+  bankName: string;
+  bankAccountName: string;
+  bankAccountNo: string;
+}
+
 export interface Merchant {
   id: string;
   name: string;
   /** Used for chips and charts. */
   color: string;
+  profile?: MerchantProfile;
 }
 
 // ---------------------------------------------------------------------------
