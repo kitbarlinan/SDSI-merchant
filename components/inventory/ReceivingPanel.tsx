@@ -27,7 +27,8 @@ export function ReceiptRow({ receipt, merchantFilter }: { receipt: StockReceipt;
   const nameOf = (id?: string) => users.find((u) => u.id === id)?.name ?? '—';
   const approver = canApprove(user.role);
 
-  const run = (result: { ok: boolean; error?: string }) => {
+  const run = async (pending: Promise<{ ok: boolean; error?: string }>) => {
+    const result = await pending;
     if (result.ok) {
       setError(null);
       setRejecting(false);
@@ -161,8 +162,8 @@ function ReceiveForm() {
   if (!user) return null;
   const branch: BranchId = user.role === 'cashier' ? (user.branchId ?? DEFAULT_BRANCH) : branchPick;
 
-  const submit = () => {
-    const result = receiveStock(user, {
+  const submit = async () => {
+    const result = await receiveStock(user, {
       kind,
       branch,
       merchantId,

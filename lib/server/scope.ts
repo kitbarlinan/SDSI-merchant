@@ -64,7 +64,7 @@ export function scopeFor(me: User, state: AppState, merchants: Merchant[]): Scop
   const base: AppState = { ...state, outbox: [], poSeq: 0 };
 
   if (me.role === 'admin') {
-    return { merchants, state: { ...state, users: state.users.map(noPassword) } };
+    return { merchants, state: { ...state, users: state.users.map((user) => ({ ...noPassword(user), hasLogin: !!user.authId })) } };
   }
 
   // Everyone but the admin gets the costing without the mark-up and its change log.

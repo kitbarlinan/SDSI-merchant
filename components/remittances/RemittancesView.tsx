@@ -55,9 +55,9 @@ function RemittanceRow({ remittance, showMerchant }: { remittance: Remittance; s
 
   if (!user) return null;
 
-  function release() {
+  async function release() {
     if (!user) return;
-    const result = submitRelease(user, remittance.id, {
+    const result = await submitRelease(user, remittance.id, {
       releasedDate: date || defaultDate,
       deductionPhp: deductionValue,
       deductionNote: note,
@@ -153,8 +153,8 @@ function RemittanceRow({ remittance, showMerchant }: { remittance: Remittance; s
           <>
             <button
               type="button"
-              onClick={() => {
-                const result = approveRelease(user, remittance.id);
+              onClick={async () => {
+                const result = await approveRelease(user, remittance.id);
                 setError(result.ok ? null : result.error);
               }}
               className="font-semibold text-emerald-700 hover:underline"
@@ -184,8 +184,8 @@ function RemittanceRow({ remittance, showMerchant }: { remittance: Remittance; s
           />
           <button
             type="button"
-            onClick={() => {
-              const result = rejectRelease(user, remittance.id, backReason);
+            onClick={async () => {
+              const result = await rejectRelease(user, remittance.id, backReason);
               if (!result.ok) return setError(result.error);
               setError(null);
               setSendingBack(false);
@@ -350,8 +350,8 @@ export function RemittancesView() {
   if (!user) return null;
   const actor = user;
 
-  function close(weekStart: string) {
-    const result = closeWeek(actor, weekStart);
+  async function close(weekStart: string) {
+    const result = await closeWeek(actor, weekStart);
     if (!result.ok) {
       setError(result.error);
       setNotice(null);

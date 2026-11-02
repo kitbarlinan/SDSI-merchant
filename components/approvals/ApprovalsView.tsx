@@ -73,8 +73,8 @@ function ReversalRow({ request }: { request: ReversalRequest }) {
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={() => {
-                const result = rejectReversal(user, request.id, reason);
+              onClick={async () => {
+                const result = await rejectReversal(user, request.id, reason);
                 if (!result.ok) setError(result.error);
               }}
               className="rounded-xl bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-500"
@@ -90,8 +90,8 @@ function ReversalRow({ request }: { request: ReversalRequest }) {
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => {
-              const result = approveReversal(user, request.id);
+            onClick={async () => {
+              const result = await approveReversal(user, request.id);
               if (!result.ok) setError(result.error);
             }}
             className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-emerald-950 hover:bg-emerald-500"

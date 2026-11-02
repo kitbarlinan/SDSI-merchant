@@ -55,6 +55,8 @@ export interface User {
   mustChange?: boolean;
   /** Real sign-in (Supabase Auth user id). Server only: never sent to a browser. */
   authId?: string;
+  /** Sent to the admin instead of authId: does this person have a sign-in yet? */
+  hasLogin?: boolean;
   /** Resellers: shared on the landing page link so new resellers land under them. */
   refCode?: string;
 }

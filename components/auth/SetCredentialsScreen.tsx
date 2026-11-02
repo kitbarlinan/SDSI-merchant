@@ -20,10 +20,10 @@ export function SetCredentialsScreen() {
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-emerald-950 via-emerald-900 to-teal-900 px-4 py-10">
       <form
         className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-xl"
-        onSubmit={(event) => {
+        onSubmit={async (event) => {
           event.preventDefault();
           if (password !== again) return setError('The two passwords do not match.');
-          const result = changeCredentials(user.id, username, password);
+          const result = await changeCredentials(user.id, username, password);
           if (!result.ok) setError(result.error);
         }}
       >

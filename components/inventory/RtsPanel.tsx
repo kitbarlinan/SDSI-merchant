@@ -25,8 +25,8 @@ function RtsRow({ order }: { order: Order }) {
   const merchant = merchants.find((m) => m.id === order.merchantId);
   const receipt = receipts.find((r) => r.id === order.returnReceiptId);
 
-  const receive = () => {
-    const result = receiveReturn(user, { orderId: order.id, receivedDate: date || today, note });
+  const receive = async () => {
+    const result = await receiveReturn(user, { orderId: order.id, receivedDate: date || today, note });
     if (!result.ok) setError(result.error);
     else setError(null);
   };

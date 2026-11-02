@@ -82,9 +82,9 @@ export function PosView() {
   const packageOk = !sellingPackage || (parsed.lines.length === 1 && parsed.lines[0].quantity === 1 && buyerOk);
   const canSubmit = parsed.lines.length > 0 && !hasRowErrors && shortBy === 0 && packageOk;
 
-  function complete() {
+  async function complete() {
     if (!user || !canSubmit) return;
-    const result = checkoutWalkIn(user, {
+    const result = await checkoutWalkIn(user, {
       lines: parsed.lines.map((line) => ({ itemId: line.item.id, quantity: line.quantity })),
       paymentMethod: method,
       customerName,

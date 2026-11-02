@@ -4,7 +4,10 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useMemo, type ReactNode } from 'react';
 import { LoginScreen } from '@/components/auth/LoginScreen';
+import { NoAccountScreen } from '@/components/auth/NoAccountScreen';
+import { RemoteSignIn } from '@/components/auth/RemoteSignIn';
 import { SetCredentialsScreen } from '@/components/auth/SetCredentialsScreen';
+import { SetPasswordScreen } from '@/components/auth/SetPasswordScreen';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { useAuth } from '@/lib/auth';
 import { BRAND } from '@/lib/brand';
@@ -44,6 +47,7 @@ const NAV: NavItem[] = [
     badge: 'inventory',
   },
   { href: '/resellers', label: 'Resellers', icon: 'user', roles: ['admin', 'cashier'] },
+  { href: '/team', label: 'Team & accounts', icon: 'user', roles: ['admin'] },
   { href: '/remittances', label: 'Remittances', icon: 'wallet', roles: ['admin', 'cashier', 'merchant'] },
   { href: '/approvals', label: 'For Approval', icon: 'check', roles: ['admin', 'clerk'], badge: 'approvals' },
   { href: '/accounting', label: 'Accounting', icon: 'wallet', roles: ['admin'] },
@@ -71,7 +75,8 @@ function Logo({ small = false }: { small?: boolean }) {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const { user, ready, logout } = useAuth();
+  const auth = useAuth();
+  const { user, ready, logout } = auth;
   const { items, orders, receipts, reversals, remittances, merchants, resetDemo } = useAppData();
 
   const visibleNav = useMemo(
@@ -115,7 +120,9 @@ export function AppShell({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!user) return <LoginScreen />;
+  if (auth.needPassword) return <SetPasswordScreen />;
+  if (auth.accountProblem) return <NoAccountScreen />;
+  if (!user) return auth.remote ? <RemoteSignIn /> : <LoginScreen />;
   if (user.mustChange) return <SetCredentialsScreen />;
 
   const merchantName =
@@ -190,9 +197,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm text-emerald-100/70 transition-colors hover:bg-white/5 hover:text-white"
           >
             <Icon name="logout" className="h-4 w-4" />
-            Switch account
+            {auth.remote ? 'Sign out' : 'Switch account'}
           </button>
-          {user.role === 'admin' ? (
+          {user.role === 'admin' && !auth.remote ? (
             <button
               type="button"
               onClick={handleReset}

@@ -79,13 +79,15 @@ export function OrderCard({
   const remitted = order.status === 'delivered' && remittances.some((remittance) => remittance.orderIds.includes(order.id));
   const nameOf = (id?: string) => users.find((candidate) => candidate.id === id)?.name;
 
-  const finish = <T,>(result: ActionResult<T>) => {
+  const finish = async <T,>(pending: Promise<ActionResult<T>>) => {
+    const result = await pending;
     if (result.ok) {
       setError(null);
       setPanel(null);
     } else {
       setError(result.error);
     }
+    return result;
   };
   const open = (next: Panel) => {
     setError(null);
@@ -261,9 +263,8 @@ export function OrderCard({
                     <button
                       type="button"
                       disabled={reverseNote.trim().length < 5}
-                      onClick={() => {
-                        const result = requestReversal(user, order.id, reverseNote);
-                        finish(result);
+                      onClick={async () => {
+                        const result = await finish(requestReversal(user, order.id, reverseNote));
                         if (result.ok) setReverseNote('');
                       }}
                       className={`flex-1 bg-amber-600 hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50 ${buttonBase}`}

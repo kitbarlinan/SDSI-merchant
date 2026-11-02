@@ -60,9 +60,9 @@ export function ResellerOrderForm() {
 
   if (!user) return null;
 
-  function submit() {
+  async function submit() {
     if (!user || !canSubmit) return;
-    const result = placeResellerOrder(user, {
+    const result = await placeResellerOrder(user, {
       customerName: user.name,
       contactNo,
       notes,

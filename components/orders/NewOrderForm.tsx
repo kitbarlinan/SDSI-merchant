@@ -74,7 +74,7 @@ export function NewOrderForm() {
     setServerError(null);
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitted(true);
     if (!user || hasRowErrors || Object.keys(errors).length > 0) return;
@@ -88,7 +88,7 @@ export function NewOrderForm() {
       : '';
     const noteParts = [landmarks.trim() && `Landmark: ${landmarks.trim()}`, notes.trim()].filter(Boolean);
 
-    const result = placeOrder(user, {
+    const result = await placeOrder(user, {
       customerName: form.customerName,
       contactNo: form.contactNo,
       address,

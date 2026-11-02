@@ -120,3 +120,33 @@ Open http://localhost:3000 and pick an account (demo sign-in, no password).
 - **Branches:** SDSI Sheung Wan (default) and Central. Orders, POS sales and applications carry a branch. Merchants and resellers choose the branch on a new order. Each branch has its own cashier (Ana Cruz at Sheung Wan, Ben Lau at Central) who only sees and handles that branch's orders. The admin sees all with a branch filter and chooses the counter in the POS. Stock is kept per branch (`branchStock`; the item total is always the sum). Stock in/out and returns go to one branch (a cashier's own, the admin or clerk choose). Orders reserve and deduct from their own branch only. If a product has no stock on the chosen branch the app says "No stocks left on this branch" and shows what the other branch has, so the buyer can switch. Each branch has its address (Sheung Wan: 7/F, Room 704, 60–66 Cheong Tai Building, Wing Lok Street; Central: 3/F, Shop 345, Worldwide Plaza, 19 Des Voeux Road Central) shown on the landing page, the branch pickers and open orders. Run `supabase/0006_branch_stock.sql` for the database side.
 - **Branch check & balances:** payouts stay ONE consolidated remittance per merchant per week, whichever branch delivered. Each remittance shows its split by branch, and Accounting has a card with merchant income at Sheung Wan + Central = total earned, then SF advance, adjustments, paid out and still owed, with four balance checks (`lib/branch-balance.ts`). Nothing new in the database: the split comes from `orders.branch_id`.
 - Every reseller has a referral code and link, shown in their Tier income card.
+
+
+## Going live (real data)
+
+The app runs in two modes. **Demo** (default) keeps sample data in your browser. **Live** runs the same rules on the server and keeps everything in your Supabase database, with real sign-in.
+
+**Live mode is only switched on by `NEXT_PUBLIC_DATA_MODE=live`.** Adding the Supabase keys alone never flips it.
+
+### One-time setup
+1. Supabase SQL Editor: run `supabase/0001` to `0007`, in order. `0007_app_records.sql` is the table the live app saves to. (0002 makes your own email the first admin: create the user under Authentication, then run it.)
+2. Supabase Authentication → URL Configuration: Site URL = your Vercel address, and add it to Redirect URLs.
+3. Supabase Authentication → Emails → SMTP: your email service (Brevo etc.), so invitations are delivered.
+4. Vercel environment variables (all environments):
+   - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (public)
+   - `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL` (secret, server only, never `NEXT_PUBLIC_`)
+   - `NEXT_PUBLIC_DATA_MODE` = `live` (set this last, then redeploy)
+5. Sign in with your admin email. Open **Team & accounts**: add merchants, invite cashiers (choose their branch), the clerk and merchant owners. Each person gets an email with a link to choose a password.
+6. Add products under Accounting → Costing, receive opening stock per branch under Inventory → Receiving, then approve and go live each package price.
+
+### How it works
+- `lib/engine.ts` holds every business rule. In live mode it runs only on the server (`app/api/act`), after checking who is signed in. The browser never says who it is.
+- Data is saved one record per row in `public.app_records` (item, order, receipt, ...). Only the server can read it (RLS on, no policies).
+- `GET /api/state` returns only the signed-in person's part (`lib/server/scope.ts`): a merchant gets their own orders and items, a reseller only their orders and downline, and nobody but the admin gets the mark-up or the change log. Other people's orders reach resellers and the other branch's cashier only as anonymous stock holds.
+- A reseller application on the landing page is saved with no sign-in. When the cashier delivers the package, the server creates the reseller account and Supabase emails them an invitation to choose a password. No temporary password is stored anywhere.
+- Everyone's changes are applied one at a time, so two people cannot sell the same last item.
+
+### Known limits
+- The browser refreshes every 20 seconds and when you return to the tab, not instantly.
+- Cashier and clerk accounts still receive product peso prices (the screens hide them). Tightening that is a later step.
+- `app_records` stores whole records as JSON. It is simple and safe for this size; if orders grow into the tens of thousands, move orders to their own columns.

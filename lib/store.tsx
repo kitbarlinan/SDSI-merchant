@@ -42,7 +42,13 @@ import type {
 
 export type ActionResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
-interface AppDataValue {
+export interface TeamTools {
+  addMerchant: (input: { name: string }) => Promise<ActionResult<Merchant>>;
+  addUser: (input: { name: string; role: string; email: string; branchId?: string; merchantId?: string }) => Promise<ActionResult<User>>;
+  resendInvite: (userId: string) => Promise<ActionResult<boolean>>;
+}
+
+export interface AppDataValue {
   merchants: Merchant[];
   users: User[];
   items: InventoryItem[];
@@ -52,13 +58,13 @@ interface AppDataValue {
   remittances: Remittance[];
   packageSales: PackageSale[];
   outbox: SentEmail[];
-  applyForReseller: (input: ResellerApplication) => ActionResult<Order>;
-  changeCredentials: (userId: string, username: string, password: string) => ActionResult<User>;
+  applyForReseller: (input: ResellerApplication) => Promise<ActionResult<Order>>;
+  changeCredentials: (userId: string, username: string, password: string) => Promise<ActionResult<User>>;
   /** Costing table, settings and change log. Show it only to the admin. */
   costing: CostingState;
   hydrated: boolean;
-  placeOrder: (actor: Actor, input: PlaceOrderInput) => ActionResult<Order>;
-  placeResellerOrder: (actor: Actor, input: ResellerOrderInput) => ActionResult<Order[]>;
+  placeOrder: (actor: Actor, input: PlaceOrderInput) => Promise<ActionResult<Order>>;
+  placeResellerOrder: (actor: Actor, input: ResellerOrderInput) => Promise<ActionResult<Order[]>>;
   checkoutWalkIn: (
     actor: Actor,
     input: {
@@ -69,12 +75,12 @@ interface AppDataValue {
       resellerId?: string;
       newReseller?: { name: string; email?: string; sponsorId?: string };
     },
-  ) => ActionResult<Order[]>;
-  markPacked: (actor: Actor, orderId: string) => ActionResult<Order>;
-  shipOrder: (actor: Actor, orderId: string, waybill: string) => ActionResult<Order>;
-  markDelivered: (actor: Actor, orderId: string, paymentMethod: PaymentMethod) => ActionResult<Order>;
-  markRts: (actor: Actor, orderId: string, reason: string) => ActionResult<Order>;
-  cancelOrder: (actor: Actor, orderId: string, reason: string) => ActionResult<Order>;
+  ) => Promise<ActionResult<Order[]>>;
+  markPacked: (actor: Actor, orderId: string) => Promise<ActionResult<Order>>;
+  shipOrder: (actor: Actor, orderId: string, waybill: string) => Promise<ActionResult<Order>>;
+  markDelivered: (actor: Actor, orderId: string, paymentMethod: PaymentMethod) => Promise<ActionResult<Order>>;
+  markRts: (actor: Actor, orderId: string, reason: string) => Promise<ActionResult<Order>>;
+  cancelOrder: (actor: Actor, orderId: string, reason: string) => Promise<ActionResult<Order>>;
   receiveStock: (
     actor: Actor,
     input: {
@@ -85,25 +91,25 @@ interface AppDataValue {
       lines: { itemId: string; quantity: number }[];
       branch?: BranchId;
     },
-  ) => ActionResult<StockReceipt>;
+  ) => Promise<ActionResult<StockReceipt>>;
   receiveReturn: (
     actor: Actor,
     input: { orderId: string; receivedDate: string; note: string },
-  ) => ActionResult<StockReceipt>;
-  approveReceipt: (actor: Actor, receiptId: string) => ActionResult<StockReceipt>;
-  rejectReceipt: (actor: Actor, receiptId: string, reason: string) => ActionResult<StockReceipt>;
+  ) => Promise<ActionResult<StockReceipt>>;
+  approveReceipt: (actor: Actor, receiptId: string) => Promise<ActionResult<StockReceipt>>;
+  rejectReceipt: (actor: Actor, receiptId: string, reason: string) => Promise<ActionResult<StockReceipt>>;
   setPickupPrices: (
     actor: Actor,
     changes: { rowId: string; pickupPriceHkd: number }[],
-  ) => ActionResult<number>;
-  setCostingSettings: (actor: Actor, patch: Partial<CostingSettings>) => ActionResult<CostingSettings>;
-  removeCostingRow: (actor: Actor, rowId: string) => ActionResult<CostingRow>;
-  requestReversal: (actor: Actor, orderId: string, note: string) => ActionResult<ReversalRequest>;
-  approveReversal: (actor: Actor, requestId: string) => ActionResult<ReversalRequest>;
-  rejectReversal: (actor: Actor, requestId: string, reason: string) => ActionResult<ReversalRequest>;
-  closeWeek: (actor: Actor, weekStart: string) => ActionResult<Remittance[]>;
-  approveRelease: (actor: Actor, remittanceId: string) => ActionResult<Remittance>;
-  rejectRelease: (actor: Actor, remittanceId: string, reason: string) => ActionResult<Remittance>;
+  ) => Promise<ActionResult<number>>;
+  setCostingSettings: (actor: Actor, patch: Partial<CostingSettings>) => Promise<ActionResult<CostingSettings>>;
+  removeCostingRow: (actor: Actor, rowId: string) => Promise<ActionResult<CostingRow>>;
+  requestReversal: (actor: Actor, orderId: string, note: string) => Promise<ActionResult<ReversalRequest>>;
+  approveReversal: (actor: Actor, requestId: string) => Promise<ActionResult<ReversalRequest>>;
+  rejectReversal: (actor: Actor, requestId: string, reason: string) => Promise<ActionResult<ReversalRequest>>;
+  closeWeek: (actor: Actor, weekStart: string) => Promise<ActionResult<Remittance[]>>;
+  approveRelease: (actor: Actor, remittanceId: string) => Promise<ActionResult<Remittance>>;
+  rejectRelease: (actor: Actor, remittanceId: string, reason: string) => Promise<ActionResult<Remittance>>;
   submitRelease: (
     actor: Actor,
     remittanceId: string,
@@ -115,15 +121,19 @@ interface AppDataValue {
       adjustmentNote?: string;
       reference: string;
     },
-  ) => ActionResult<Remittance>;
-  approveCostingRow: (actor: Actor, rowId: string) => ActionResult<CostingRow>;
-  revokeApproval: (actor: Actor, rowId: string) => ActionResult<CostingRow>;
-  goLiveCostingRow: (actor: Actor, rowId: string) => ActionResult<CostingRow>;
-  setSkuDisabled: (actor: Actor, itemId: string, disabled: boolean) => ActionResult<InventoryItem>;
-  setProgramMerchant: (actor: Actor, merchantId: string, on: boolean) => ActionResult<string[]>;
-  setSkuReseller: (actor: Actor, itemId: string, inProgram: boolean) => ActionResult<InventoryItem>;
-  addSku: (actor: Actor, input: engine.NewSkuInput) => ActionResult<InventoryItem>;
+  ) => Promise<ActionResult<Remittance>>;
+  approveCostingRow: (actor: Actor, rowId: string) => Promise<ActionResult<CostingRow>>;
+  revokeApproval: (actor: Actor, rowId: string) => Promise<ActionResult<CostingRow>>;
+  goLiveCostingRow: (actor: Actor, rowId: string) => Promise<ActionResult<CostingRow>>;
+  setSkuDisabled: (actor: Actor, itemId: string, disabled: boolean) => Promise<ActionResult<InventoryItem>>;
+  setProgramMerchant: (actor: Actor, merchantId: string, on: boolean) => Promise<ActionResult<string[]>>;
+  setSkuReseller: (actor: Actor, itemId: string, inProgram: boolean) => Promise<ActionResult<InventoryItem>>;
+  addSku: (actor: Actor, input: engine.NewSkuInput) => Promise<ActionResult<InventoryItem>>;
   resetDemo: () => void;
+  /** Account management. Live mode only (null in the demo). */
+  team: TeamTools | null;
+  /** True when the data lives on the server (real sign-in). False = demo data saved in this browser. */
+  remote: boolean;
 }
 
 // Bumped whenever the saved data shape changes.
@@ -165,7 +175,7 @@ const isSavedState = (value: unknown): value is AppState => {
   );
 };
 
-const AppDataContext = createContext<AppDataValue | null>(null);
+export const AppDataContext = createContext<AppDataValue | null>(null);
 
 export function AppDataProvider({ children }: { children: ReactNode }) {
   // Start from mock data so server and client render identically,
@@ -203,11 +213,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   }, [state, hydrated]);
 
   const run = useCallback(
-    <T,>(action: (current: AppState) => engine.Outcome<T>): ActionResult<T> => {
+    <T,>(action: (current: AppState) => engine.Outcome<T>): Promise<ActionResult<T>> => {
       const outcome = action(stateRef.current);
-      if (!outcome.ok) return { ok: false, error: outcome.error };
+      if (!outcome.ok) return Promise.resolve({ ok: false, error: outcome.error });
       commit(outcome.state);
-      return { ok: true, value: outcome.value };
+      return Promise.resolve({ ok: true, value: outcome.value });
     },
     [commit],
   );
@@ -273,6 +283,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         run((s) => engine.setSkuDisabled(s, actor, itemId, disabled, nowISO())),
       addSku: (actor, input) => run((s) => engine.addSku(s, actor, input, nowISO())),
       resetDemo: () => commit(createInitialState()),
+      remote: false,
+      team: null,
     }),
     [state, hydrated, run, commit],
   );

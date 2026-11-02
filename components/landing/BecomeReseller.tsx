@@ -61,8 +61,8 @@ export function BecomeReseller() {
     { icon: 'user' as const, title: 'Your own referral link', text: 'Every reseller gets a personal code and link to invite people under them.' },
   ];
 
-  function submit() {
-    const result = applyForReseller({ name, email, mobile, refCode, branch, itemId: chosen });
+  async function submit() {
+    const result = await applyForReseller({ name, email, mobile, refCode, branch, itemId: chosen });
     if (!result.ok) return setError(result.error);
     setError(null);
     setDone(result.value);

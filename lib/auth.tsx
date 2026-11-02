@@ -28,9 +28,23 @@ interface AuthValue {
   /** Sign in with a username and password. false when they do not match. */
   loginWithPassword: (username: string, password: string) => boolean;
   logout: () => void;
+  /** Live mode only. In demo mode these do nothing. */
+  remote: boolean;
+  /** Email of the person signed in to the sign-in service, even when the app has no account for them yet. */
+  signedInEmail: string | null;
+  /** Signed in, but the admin has not given this email an account. */
+  accountProblem: string | null;
+  /** True right after an invitation or password-reset link: the person must choose a password. */
+  needPassword: boolean;
+  signIn: (email: string, password: string) => Promise<string | null>;
+  sendReset: (email: string) => Promise<string | null>;
+  setNewPassword: (password: string) => Promise<string | null>;
 }
 
-const AuthContext = createContext<AuthValue | null>(null);
+export const AuthContext = createContext<AuthValue | null>(null);
+export type { AuthValue };
+
+export const demoOnly = async (): Promise<string | null> => 'Real sign-in is not switched on.';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { users: accounts } = useAppData();
@@ -89,6 +103,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       loginWithPassword,
       logout,
+      remote: false,
+      signedInEmail: null,
+      accountProblem: null,
+      needPassword: false,
+      signIn: demoOnly,
+      sendReset: demoOnly,
+      setNewPassword: demoOnly,
     }),
     [userId, ready, login, loginWithPassword, logout, accounts],
   );

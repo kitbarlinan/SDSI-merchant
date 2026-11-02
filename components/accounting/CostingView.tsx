@@ -26,7 +26,7 @@ interface DialogState {
   lines: string[];
   warnings: string[];
   /** Runs after the admin confirms. Returns an error text, or null when done. */
-  apply: () => string | null;
+  apply: () => string | null | Promise<string | null>;
 }
 
 function ReviewDialog({
@@ -44,15 +44,16 @@ function ReviewDialog({
   lines: string[];
   warnings: string[];
   onCancel: () => void;
-  onConfirm: () => string | null;
+  onConfirm: () => string | null | Promise<string | null>;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   function submit() {
     setBusy(true);
-    setError(onConfirm());
-    setBusy(false);
+    void Promise.resolve(onConfirm())
+      .then(setError)
+      .finally(() => setBusy(false));
   }
 
   return (
@@ -140,8 +141,8 @@ function ResellerProgramCard({ onChanged }: { onChanged: (message: string) => vo
                     type="checkbox"
                     checked={on}
                     aria-label={`Reseller program for ${merchant.name}`}
-                    onChange={(event) => {
-                      const r = setProgramMerchant(user, merchant.id, event.target.checked);
+                    onChange={async (event) => {
+                      const r = await setProgramMerchant(user, merchant.id, event.target.checked);
                       if (r.ok) {
                         setError(null);
                         onChanged(`${merchant.name} ${event.target.checked ? 'added to' : 'removed from'} the reseller program.`);
@@ -163,8 +164,8 @@ function ResellerProgramCard({ onChanged }: { onChanged: (message: string) => vo
                           type="checkbox"
                           checked={!item.resellerOff}
                           aria-label={`Reseller program for ${item.sku}`}
-                          onChange={(event) => {
-                            const r = setSkuReseller(user, item.id, event.target.checked);
+                          onChange={async (event) => {
+                            const r = await setSkuReseller(user, item.id, event.target.checked);
                             if (r.ok) {
                               setError(null);
                               onChanged(`${item.sku} ${event.target.checked ? 'switched on' : 'switched off'} for resellers.`);
@@ -201,9 +202,9 @@ function NewSkuCard({ onAdded }: { onAdded: (message: string) => void }) {
   const [pieces, setPieces] = useState('1');
   const [error, setError] = useState<string | null>(null);
 
-  function submit() {
+  async function submit() {
     if (!user) return;
-    const result = addSku(user, { merchantId, sku, name, category, unitPrice: Number(srp), qty: Number(pieces) });
+    const result = await addSku(user, { merchantId, sku, name, category, unitPrice: Number(srp), qty: Number(pieces) });
     if (!result.ok) return setError(result.error);
     setError(null);
     onAdded(`${result.value.sku} added as draft. Approve and go live a package to put it on sale. Receive stock in Inventory.`);
@@ -364,16 +365,16 @@ function CostingEditor() {
     }
   }
 
-  function saveChanges(): string | null {
+  async function saveChanges(): Promise<string | null> {
     if (!user) return 'Please sign in again.';
     if (settingChanges.length > 0) {
       const patch: Partial<CostingSettings> = {};
       for (const key of settingChanges) patch[key] = preview[key];
-      const result = setCostingSettings(user, patch);
+      const result = await setCostingSettings(user, patch);
       if (!result.ok) return result.error;
     }
     if (priceChanges.length > 0) {
-      const result = setPickupPrices(
+      const result = await setPickupPrices(
         user,
         priceChanges.map((change) => ({ rowId: change.rowId, pickupPriceHkd: change.value })),
       );
@@ -408,8 +409,8 @@ function CostingEditor() {
         title: 'Approve this package?',
         intro: 'Approved is not live yet. You still click Go live after.',
         confirmLabel: 'Approve',
-        apply: () => {
-          const r = approveCostingRow(user, row.id);
+        apply: async () => {
+          const r = await approveCostingRow(user, row.id);
           if (r.ok) setNotice(`${label} approved. Click Go live when ready.`);
           return r.ok ? null : r.error;
         },
@@ -420,8 +421,8 @@ function CostingEditor() {
         title: 'Take back the approval?',
         intro: 'The package goes back to draft.',
         confirmLabel: 'Back to draft',
-        apply: () => {
-          const r = revokeApproval(user, row.id);
+        apply: async () => {
+          const r = await revokeApproval(user, row.id);
           return r.ok ? null : r.error;
         },
       });
@@ -432,8 +433,8 @@ function CostingEditor() {
         title: 'Go live?',
         intro: 'Orders will use this price, SF and CF right away.',
         confirmLabel: 'Go live',
-        apply: () => {
-          const r = goLiveCostingRow(user, row.id);
+        apply: async () => {
+          const r = await goLiveCostingRow(user, row.id);
           if (r.ok) setNotice(`${label} is live.`);
           return r.ok ? null : r.error;
         },
@@ -452,8 +453,8 @@ function CostingEditor() {
       confirmLabel: disabling ? 'Disable SKU' : 'Enable SKU',
       lines: [`${item.sku} · ${item.name}`],
       warnings: [],
-      apply: () => {
-        const r = setSkuDisabled(user, item.id, disabling);
+      apply: async () => {
+        const r = await setSkuDisabled(user, item.id, disabling);
         if (r.ok) setNotice(`${item.sku} ${disabling ? 'disabled' : 'enabled'}.`);
         return r.ok ? null : r.error;
       },
@@ -727,7 +728,7 @@ function CostingEditor() {
                                 delete next[row.id];
                                 return next;
                               });
-                              removeCostingRow(user, row.id);
+                              void removeCostingRow(user, row.id);
                             }
                           }}
                           aria-label={`Remove ${item.sku}`}
@@ -813,8 +814,8 @@ function CostingEditor() {
           lines={dialog.lines}
           warnings={dialog.warnings}
           onCancel={() => setDialog(null)}
-          onConfirm={() => {
-            const error = dialog.apply();
+          onConfirm={async () => {
+            const error = await dialog.apply();
             if (!error) setDialog(null);
             return error;
           }}
