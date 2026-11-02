@@ -208,6 +208,7 @@ function CostingEditor() {
     revokeApproval,
     goLiveCostingRow,
     setSkuDisabled,
+    setSkuSrp,
     addSku,
   } = useAppData();
 
@@ -218,6 +219,8 @@ function CostingEditor() {
   const [dialog, setDialog] = useState<DialogState | null>(null);
   const [showNewSku, setShowNewSku] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [srpEdit, setSrpEdit] = useState<{ itemId: string; value: string } | null>(null);
+  const [srpError, setSrpError] = useState<string | null>(null);
 
   const saved = costing.settings;
 
@@ -371,6 +374,15 @@ function CostingEditor() {
         },
       });
     }
+  }
+
+  async function saveSrp(item: InventoryItem, value: number) {
+    if (!user) return;
+    const result = await setSkuSrp(user, item.id, value);
+    if (!result.ok) return setSrpError(result.error);
+    setSrpError(null);
+    setSrpEdit(null);
+    setNotice(`${item.sku} Net SRP is now ${formatCurrency(value)}. The package is a draft again: approve it and go live so orders use the new amount. Orders already placed keep their old price.`);
   }
 
   function askToggleSku(item: InventoryItem) {
@@ -560,7 +572,49 @@ function CostingEditor() {
                       >
                         {row.qty}
                       </td>
-                      <td className="px-3 py-3 text-right">{formatCurrency(result.netSrpPhp)}</td>
+                      <td className="px-3 py-3 text-right">
+                        {srpEdit?.itemId === item.id ? (
+                          <div className="space-y-1">
+                            <input
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              autoFocus
+                              aria-label={`Net SRP of ${item.sku}`}
+                              value={srpEdit.value}
+                              onChange={(event) => setSrpEdit({ itemId: item.id, value: event.target.value })}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter') void saveSrp(item, Number(srpEdit.value));
+                                if (event.key === 'Escape') setSrpEdit(null);
+                              }}
+                              className="w-28 rounded-lg border border-slate-300 px-2 py-1 text-right text-sm"
+                            />
+                            {srpError ? <p className="max-w-[9rem] text-xs text-rose-600">{srpError}</p> : null}
+                            <div className="flex justify-end gap-2 text-xs font-semibold">
+                              <button type="button" onClick={() => void saveSrp(item, Number(srpEdit.value))} className="text-emerald-700 underline">Save</button>
+                              <button type="button" onClick={() => { setSrpEdit(null); setSrpError(null); }} className="text-slate-500 underline">Cancel</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            {formatCurrency(result.netSrpPhp)}
+                            <button
+                              type="button"
+                              aria-label={`Edit Net SRP of ${item.sku}`}
+                              onClick={() => { setSrpEdit({ itemId: item.id, value: String(item.unitPrice) }); setSrpError(null); }}
+                              className="ml-1.5 text-xs font-medium text-slate-400 hover:text-emerald-700 hover:underline"
+                            >
+                              Edit
+                            </button>
+                            {item.masterSrp !== undefined && item.masterSrp !== item.unitPrice ? (
+                              <span className="block text-xs text-amber-700">
+                                Master list {formatCurrency(item.masterSrp)} ·{' '}
+                                <button type="button" onClick={() => void saveSrp(item, item.masterSrp!)} className="underline">Reset</button>
+                              </span>
+                            ) : null}
+                          </>
+                        )}
+                      </td>
                       <td className="px-3 py-3 text-right">{formatCurrency(result.grossPayablePhp)}</td>
                       <td className="px-3 py-3 text-right">{result.basisHkd.toFixed(2)}</td>
                       <td className="px-3 py-3 text-right font-medium">{result.finalBasisHkd.toFixed(2)}</td>

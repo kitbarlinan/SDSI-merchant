@@ -140,7 +140,7 @@ export function NewSkuCard({ onAdded }: { onAdded: (message: string) => void }) 
 
       <p className="mt-3 text-sm text-slate-700" data-testid="sku-summary">
         Net SRP <strong>{formatCurrency(srp)}</strong> · <strong>{pieces}</strong> piece{pieces === 1 ? '' : 's'} inside
-        <span className="text-slate-500"> (free pieces cost nothing but still count as pieces)</span>
+        <span className="text-slate-500"> (free pieces cost nothing but still count as pieces). This is the master-list total; if the real SRP is lower, change it in the Costing table after adding.</span>
       </p>
       {error ? <p role="alert" className="mt-3 text-sm text-rose-600">{error}</p> : null}
       <button type="button" onClick={submit} disabled={!merchantId || !sku || parts.length === 0} className={`mt-3 bg-emerald-600 text-emerald-950 hover:bg-emerald-500 ${btn}`}>

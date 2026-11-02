@@ -195,6 +195,7 @@ export function RemoteProviders({ children }: { children: ReactNode }) {
       setProgramMerchant: (_a, merchantId, on) => call('setProgramMerchant', { merchantId, on }),
       setSkuReseller: (_a, itemId, inProgram) => call('setSkuReseller', { itemId, inProgram }),
       addSku: (_a, input) => call('addSku', { input }),
+      setSkuSrp: (_a, itemId, srp) => call('setSkuSrp', { itemId, srp }),
       addProduct: (_a, input) => call('addProduct', { input }),
       updateProduct: (_a, id, patch) => call('updateProduct', { id, patch }),
       deleteProduct: (_a, id) => call('deleteProduct', { id }),

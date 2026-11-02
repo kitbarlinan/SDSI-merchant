@@ -122,6 +122,8 @@ export interface InventoryItem {
   disabled?: boolean;
   /** Switched off for the reseller program by the admin. Only matters if the merchant is in the program. */
   resellerOff?: boolean;
+  /** Sum of the master-list SRPs when the SKU was made. `unitPrice` starts equal to it; the admin may lower it in Costing (twin pack discounts). */
+  masterSrp?: number;
   /** What the SKU is made of, from the master list. Missing on older SKUs that were typed in by hand. */
   parts?: SkuPart[];
   /** A reseller package: a product that bundles other goods. Buying it makes the buyer a reseller. */

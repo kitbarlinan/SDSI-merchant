@@ -1400,7 +1400,7 @@ export function addSku(state: AppState, actor: Actor, input: NewSkuInput, now: s
     branchStock: { 'shueng-wan': 0, central: 0 },
     reorderLevel: 10,
     expiryDate: expiry,
-    ...(parts ? { parts } : {}),
+    ...(parts ? { parts, masterSrp: roundMoney(unitPrice) } : {}),
   };
   const row: CostingRow = {
     id: `cst-${String(next).padStart(3, '0')}`,
@@ -1544,6 +1544,34 @@ export function importSkus(state: AppState, actor: Actor, rows: SkuRow[], now: s
   const plan = planSkuImport(state, actor, rows, now);
   if (plan.errors.length > 0) return fail(joinErrors(plan.errors));
   return { ok: true, state: plan.state, value: { created: plan.created.length } };
+}
+
+/**
+ * Sets the Net SRP of a SKU: the amount SDSI really remits to the merchant per SKU, and the base of the
+ * mark-up (SDSI's top-up). It starts as the master-list total; a discounted twin pack can be lower.
+ * A new SRP makes the package a draft again: approve it and go live to use it. Orders already placed keep their own price.
+ */
+export function setSkuSrp(state: AppState, actor: Actor, itemId: string, srp: number, now: string): Outcome<InventoryItem> {
+  const denied = costingGuard(actor);
+  if (denied) return denied;
+  const item = state.items.find((candidate) => candidate.id === itemId);
+  if (!item) return fail('SKU not found.');
+  if (!Number.isFinite(srp) || srp <= 0 || srp > 1_000_000) return fail('Enter the Net SRP above 0.');
+  const next = roundMoney(srp);
+  if (next === item.unitPrice) return fail('The Net SRP is already that amount.');
+  const updated: InventoryItem = { ...item, unitPrice: next };
+  const rows = state.costing.rows.map((row) =>
+    row.itemId === itemId ? { ...row, status: 'draft' as const, approvedBy: undefined, approvedAt: undefined } : row,
+  );
+  const vs = item.masterSrp !== undefined ? ` (master list ${item.masterSrp})` : '';
+  return {
+    ok: true,
+    state: {
+      ...logged(state, actor, now, 'Net SRP changed', [`${item.sku}: ${item.unitPrice} -> ${next}${vs}`], { rows }),
+      items: state.items.map((candidate) => (candidate.id === itemId ? updated : candidate)),
+    },
+    value: updated,
+  };
 }
 
 /** Convenience for the UI: the full computed line for one costing row. */

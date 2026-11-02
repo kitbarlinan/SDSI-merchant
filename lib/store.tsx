@@ -145,6 +145,7 @@ export interface AppDataValue {
   setProgramMerchant: (actor: Actor, merchantId: string, on: boolean) => Promise<ActionResult<string[]>>;
   setSkuReseller: (actor: Actor, itemId: string, inProgram: boolean) => Promise<ActionResult<InventoryItem>>;
   addSku: (actor: Actor, input: engine.NewSkuInput) => Promise<ActionResult<InventoryItem>>;
+  setSkuSrp: (actor: Actor, itemId: string, srp: number) => Promise<ActionResult<InventoryItem>>;
   addProduct: (actor: Actor, input: engine.ProductInput) => Promise<ActionResult<MasterProduct>>;
   updateProduct: (actor: Actor, id: string, patch: engine.ProductPatch) => Promise<ActionResult<MasterProduct>>;
   deleteProduct: (actor: Actor, id: string) => Promise<ActionResult<MasterProduct>>;
@@ -315,6 +316,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       setSkuDisabled: (actor, itemId, disabled) =>
         run((s) => engine.setSkuDisabled(s, actor, itemId, disabled, nowISO())),
       addSku: (actor, input) => run((s) => engine.addSku(s, actor, input, nowISO())),
+      setSkuSrp: (actor, itemId, srp) => run((s) => engine.setSkuSrp(s, actor, itemId, srp, nowISO())),
       addProduct: (actor, input) => run((s) => engine.addProduct(s, actor, input, nowISO())),
       updateProduct: (actor, id, patch) => run((s) => engine.updateProduct(s, actor, id, patch, nowISO())),
       deleteProduct: (actor, id) => run((s) => engine.deleteProduct(s, actor, id, nowISO())),
