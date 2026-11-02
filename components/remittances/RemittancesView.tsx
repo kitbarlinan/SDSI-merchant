@@ -1,5 +1,8 @@
 'use client';
 
+import { remittanceByBranch } from '@/lib/branch-balance';
+import { BRANCHES } from '@/lib/types';
+
 import { useMemo, useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card } from '@/components/ui/Card';
@@ -38,6 +41,7 @@ function RemittanceRow({ remittance, showMerchant }: { remittance: Remittance; s
     () => remittance.orderIds.map((id) => orders.find((order) => order.id === id)).filter((order) => !!order),
     [remittance.orderIds, orders],
   );
+  const split = useMemo(() => remittanceByBranch(remittance, orders), [remittance, orders]);
   const released = remittance.status === 'released';
   const submitted = remittance.status === 'submitted';
   const dueDate = payoutDueDate(remittance.weekStart);
@@ -86,6 +90,9 @@ function RemittanceRow({ remittance, showMerchant }: { remittance: Remittance; s
               : submitted
                 ? ` · released by cashier ${remittance.releasedDate ? formatDate(remittance.releasedDate) : ''} · ref ${remittance.reference}`
                 : ` · closed, due ${formatDate(dueDate)}`}
+          </p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            By branch: {BRANCHES.map((branch) => `${branch.name} ${formatCurrency(split[branch.id])}`).join(' + ')} = {formatCurrency(remittance.netPayable)}
           </p>
         </div>
         <div className="flex items-center gap-5 text-right">

@@ -624,7 +624,10 @@ function generateOrders(): Order[] {
   );
 }
 
-export const MOCK_ORDERS: Order[] = generateOrders();
+/** Sample history: about a third of the delivered orders were handled at the Central branch. */
+export const MOCK_ORDERS: Order[] = generateOrders().map((order, index) =>
+  order.status === 'delivered' && !order.branch && index % 3 === 1 ? { ...order, branch: 'central' as const } : order,
+);
 
 /** Highest POID handed out so far. New orders continue from here. */
 export const MOCK_PO_SEQ: number = MOCK_ORDERS.length;

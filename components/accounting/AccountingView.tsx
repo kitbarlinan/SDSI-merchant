@@ -1,5 +1,6 @@
 'use client';
 
+import { BranchBalanceCard } from '@/components/accounting/BranchBalanceCard';
 import { PackageIncomeCard } from '@/components/accounting/PackageIncomeCard';
 import { useMemo, useState } from 'react';
 import { DonutChart } from '@/components/charts/DonutChart';
@@ -384,6 +385,7 @@ export function AccountingView() {
       {tab === 'reports' ? (
         <>
           <AccountingReports />
+          <BranchBalanceCard />
           <PackageIncomeCard />
         </>
       ) : (
