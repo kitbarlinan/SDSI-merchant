@@ -2,7 +2,7 @@ import type { Category, OrderTerms, PaymentMethod } from './types';
 
 /** Hex colors for SVG charts. Kept in one place so every chart agrees. */
 export const CATEGORY_COLORS: Record<Category, string> = {
-  'Greens & Superfoods': '#059669',
+  'Greens & Superfoods': '#d99a00',
   Herbal: '#d97706',
   'Vitamins & Minerals': '#0284c7',
   'Beauty & Skin': '#e11d48',
@@ -20,6 +20,6 @@ export const TERMS_COLORS: Record<OrderTerms, string> = {
   COD: '#0284c7',
 };
 
-export const REVENUE_COLOR = '#10b981';
-export const PROFIT_COLOR = '#f59e0b';
+export const REVENUE_COLOR = '#F5B800';
+export const PROFIT_COLOR = '#0f766e';
 export const TOP_UP_COLOR = '#7c3aed';

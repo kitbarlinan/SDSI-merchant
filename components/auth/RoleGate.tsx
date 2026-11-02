@@ -24,7 +24,7 @@ export function RoleGate({ allow, children }: { allow: Role[]; children: ReactNo
         </p>
         <Link
           href={homeFor(user.role)}
-          className="mt-5 inline-flex rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
+          className="mt-5 inline-flex rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-emerald-950 hover:bg-emerald-500"
         >
           Go to my home page
         </Link>

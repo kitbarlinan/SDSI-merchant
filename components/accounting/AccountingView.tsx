@@ -374,7 +374,7 @@ export function AccountingView() {
             aria-selected={tab === key}
             onClick={() => setTab(key)}
             className={`rounded-lg px-4 py-1.5 text-sm font-medium ${
-              tab === key ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+              tab === key ? 'bg-emerald-600 text-emerald-950 shadow-sm' : 'text-slate-600 hover:bg-slate-100'
             }`}
           >
             {label}

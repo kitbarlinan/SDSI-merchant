@@ -11,7 +11,7 @@ import { useAuth } from '@/lib/auth';
 import { isSellable, livePickup } from '@/lib/costing';
 import { formatDate, formatHkd, roundMoney } from '@/lib/format';
 import { MOCK_TODAY } from '@/lib/mock-data';
-import { availableOf, reservedByItem } from '@/lib/orders';
+import { availableAt, otherBranchStock, reservedByItem } from '@/lib/orders';
 import { useAppData } from '@/lib/store';
 import { PAYMENT_METHODS, type Order, type PaymentMethod } from '@/lib/types';
 import { useToday } from '@/lib/use-today';
@@ -50,16 +50,18 @@ export function PosView() {
   const [error, setError] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
 
-  const reserved = useMemo(() => reservedByItem(orders), [orders]);
+  const posBranch: BranchId = user?.role === 'cashier' ? (user.branchId ?? DEFAULT_BRANCH) : branch;
+  const reserved = useMemo(() => reservedByItem(orders, posBranch), [orders, posBranch]);
   const rows: ListRow[] = useMemo(
     () =>
       items.filter((item) => isSellable(item, costing)).map((item) => ({
         item,
-        available: availableOf(item, reserved),
+        available: availableAt(item, reserved, posBranch),
+          elsewhere: otherBranchStock(item, orders, posBranch),
         expired: item.expiryDate < today,
         pickupHkd: livePickup(costing, item.id) ?? 0,
       })),
-    [items, reserved, today, costing],
+    [items, reserved, today, costing, orders, posBranch],
   );
 
   const parsed = parseQuantities(rows, typed);

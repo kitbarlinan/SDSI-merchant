@@ -7,6 +7,7 @@ import { Icon } from '@/components/ui/Icon';
 import { BRAND } from '@/lib/brand';
 import { isSellable } from '@/lib/costing';
 import { formatCurrency, formatHkd } from '@/lib/format';
+import { availableAt, reservedByItem } from '@/lib/orders';
 import { useAppData } from '@/lib/store';
 import { BRANCHES, DEFAULT_BRANCH, type BranchId, type Order } from '@/lib/types';
 
@@ -18,7 +19,7 @@ const STEPS = [
 
 /** Public page: no sign-in. Someone who wants to become a reseller picks a package and leaves their details. */
 export function BecomeReseller() {
-  const { items, costing, applyForReseller } = useAppData();
+  const { items, costing, orders, applyForReseller } = useAppData();
   const { resellerDiscountPct, tierL1Pct, tierL2Pct, tierL3Pct } = costing.settings;
   const packages = useMemo(() => items.filter((item) => item.package && isSellable(item, costing)), [items, costing]);
 
@@ -40,12 +41,22 @@ export function BecomeReseller() {
     }
   }, []);
   const chosen = itemId || packages[0]?.id || '';
+  const chosenItem = packages.find((item) => item.id === chosen);
+  const left = (id: BranchId) => (chosenItem ? availableAt(chosenItem, reservedByItem(orders, id), id) : 0);
+
+  useEffect(() => {
+    if (!chosenItem) return;
+    if (left(branch) > 0) return;
+    const alternative = BRANCHES.find((option) => left(option.id) > 0);
+    if (alternative) setBranch(alternative.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chosen, orders, items]);
 
   const benefits = [
     { icon: 'check' as const, title: `${resellerDiscountPct}% off, every time`, text: 'Your discount applies to every reseller product you order after you join.' },
     { icon: 'wallet' as const, title: 'Earn when your team buys', text: `Share your code. You earn ${tierL1Pct}% on your direct referrals, ${tierL2Pct}% one level down and ${tierL3Pct}% on the third level.` },
     { icon: 'box' as const, title: 'A starter package with products', text: 'Your first package comes with products you can use or sell right away.' },
-    { icon: 'pos' as const, title: 'Pick up at your branch', text: 'Choose SDSI Shueng Wan or Central. Pay at the counter when you collect.' },
+    { icon: 'pos' as const, title: 'Pick up at your branch', text: 'Choose SDSI Sheung Wan or Central. Pay at the counter when you collect.' },
     { icon: 'dashboard' as const, title: 'Your own dashboard', text: 'Track your orders and your tier income in one place.' },
     { icon: 'user' as const, title: 'Your own referral link', text: 'Every reseller gets a personal code and link to invite people under them.' },
   ];
@@ -64,7 +75,7 @@ export function BecomeReseller() {
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4">
           <span className="flex items-center gap-2 font-semibold">
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-300 to-teal-400 text-emerald-950">
-              <Icon name="leaf" className="h-4 w-4" />
+              <Icon name="cart" className="h-4 w-4" />
             </span>
             {BRAND.name}
           </span>
@@ -101,6 +112,7 @@ export function BecomeReseller() {
               <span className="font-semibold">{formatHkd(done.amountHkd ?? 0)}</span> at{' '}
               <span className="font-semibold">{BRANCHES.find((candidate) => candidate.id === done.branch)?.name}</span> when you pick it up.
             </p>
+            <p className="mt-1 text-sm text-emerald-900">{BRANCHES.find((candidate) => candidate.id === done.branch)?.address}</p>
             <ol className="mt-4 list-decimal space-y-1 pl-5 text-sm text-emerald-900">
               <li>Show this reference to the cashier and pay.</li>
               <li>Once the cashier confirms, we email your temporary username and password to {done.applicant?.email}.</li>
@@ -131,7 +143,7 @@ export function BecomeReseller() {
               <ol className="mt-6 grid gap-4 sm:grid-cols-3">
                 {STEPS.map((step, index) => (
                   <li key={step.title} className="rounded-2xl bg-white p-5 shadow-sm">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 text-sm font-semibold text-white">{index + 1}</span>
+                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 text-sm font-semibold text-emerald-950">{index + 1}</span>
                     <h3 className="mt-3 font-semibold">{step.title}</h3>
                     <p className="mt-1 text-sm text-slate-600">{step.text}</p>
                   </li>
@@ -193,15 +205,22 @@ export function BecomeReseller() {
               <fieldset>
                 <legend className="text-sm font-medium text-slate-700">3. Where will you pick it up?</legend>
                 <div className="mt-2 grid gap-3 sm:grid-cols-2">
-                  {BRANCHES.map((option) => (
-                    <label
-                      key={option.id}
-                      className={`cursor-pointer rounded-2xl border p-4 ${branch === option.id ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-200' : 'border-slate-200 hover:border-emerald-300'}`}
-                    >
-                      <input type="radio" name="branch" value={option.id} checked={branch === option.id} onChange={() => setBranch(option.id)} className="sr-only" />
-                      <span className="font-semibold">{option.name}</span>
-                    </label>
-                  ))}
+                  {BRANCHES.map((option) => {
+                    const none = left(option.id) <= 0;
+                    return (
+                      <label
+                        key={option.id}
+                        className={`rounded-2xl border p-4 ${none ? 'cursor-not-allowed border-slate-200 bg-slate-50 opacity-70' : 'cursor-pointer'} ${!none && branch === option.id ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-200' : !none ? 'border-slate-200 hover:border-emerald-300' : ''}`}
+                      >
+                        <input type="radio" name="branch" value={option.id} checked={branch === option.id} disabled={none} onChange={() => setBranch(option.id)} className="sr-only" />
+                        <span className="block font-semibold">{option.name}</span>
+                        <span className="mt-1 block text-sm text-slate-600">{option.address}</span>
+                        <span className={`mt-2 block text-xs font-medium ${none ? 'text-rose-600' : 'text-emerald-800'}`}>
+                          {none ? 'No stocks left on this branch. Please pick the other branch.' : 'Package in stock'}
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
               </fieldset>
 
@@ -213,7 +232,7 @@ export function BecomeReseller() {
               <button
                 type="submit"
                 disabled={packages.length === 0}
-                className="w-full rounded-xl bg-emerald-600 px-6 py-3 text-base font-semibold text-white shadow hover:bg-emerald-500 disabled:opacity-50 sm:w-auto"
+                className="w-full rounded-xl bg-emerald-600 px-6 py-3 text-base font-semibold text-emerald-950 shadow hover:bg-emerald-500 disabled:opacity-50 sm:w-auto"
               >
                 Reserve my package
               </button>

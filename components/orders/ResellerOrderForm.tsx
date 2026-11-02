@@ -12,7 +12,7 @@ import { useAuth } from '@/lib/auth';
 import { inResellerProgram, isSellable, livePickup } from '@/lib/costing';
 import { formatHkd, roundMoney } from '@/lib/format';
 import { MOCK_TODAY } from '@/lib/mock-data';
-import { availableOf, reservedByItem } from '@/lib/orders';
+import { availableAt, otherBranchStock, reservedByItem } from '@/lib/orders';
 import { useAppData } from '@/lib/store';
 import type { Order } from '@/lib/types';
 import { useToday } from '@/lib/use-today';
@@ -33,7 +33,7 @@ export function ResellerOrderForm() {
   const pct = costing.settings.resellerDiscountPct;
   const fx = costing.settings.fxPhpPerHkd;
   const active = Boolean(user && packageSales.some((sale) => sale.resellerId === user.id));
-  const reserved = useMemo(() => reservedByItem(orders), [orders]);
+  const reserved = useMemo(() => reservedByItem(orders, branch), [orders, branch]);
   const rows: ListRow[] = useMemo(
     () =>
       items
@@ -41,12 +41,13 @@ export function ResellerOrderForm() {
         .filter((item) => isSellable(item, costing) && Boolean(item.package) === !active)
         .map((item) => ({
           item,
-          available: availableOf(item, reserved),
+          available: availableAt(item, reserved, branch),
+          elsewhere: otherBranchStock(item, orders, branch),
           expired: item.expiryDate < today,
           pickupHkd: livePickup(costing, item.id) ?? 0,
           unitDiscountHkd: inResellerProgram(item, costing) ? roundMoney((item.unitPrice * pct) / 100 / fx) : 0,
         })),
-    [items, reserved, today, costing, active, pct, fx],
+    [items, reserved, today, costing, active, pct, fx, orders, branch],
   );
 
   const parsed = parseQuantities(rows, typed);
@@ -169,7 +170,7 @@ export function ResellerOrderForm() {
           type="button"
           onClick={submit}
           disabled={!canSubmit}
-          className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-sm font-semibold text-emerald-950 shadow-sm hover:bg-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Icon name="check" className="h-4 w-4" />
           Place order

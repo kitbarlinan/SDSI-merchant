@@ -59,7 +59,7 @@ const CLERK_ID = 'usr-clerk';
  * Each merchant's stock held in SDSI's warehouse (on hand).
  * Mix of healthy, low, out-of-stock and soon-to-expire items on purpose.
  */
-export const MOCK_INVENTORY: InventoryItem[] = [
+const MOCK_INVENTORY_BASE: InventoryItem[] = [
   // Green Leaf Naturals
   {
     id: 'itm-001',
@@ -249,6 +249,12 @@ export const MOCK_INVENTORY: InventoryItem[] = [
     package: { inclusions: '10 × Organic Barley Grass Powder 200g + 2 × SDSI Immune Boost (30 sachets)', priceHkd: 700 },
   },
 ];
+
+/** Stock is kept per branch. Demo split: Central holds about a third of everything. */
+export const MOCK_INVENTORY: InventoryItem[] = MOCK_INVENTORY_BASE.map((item) => {
+  const central = Math.floor(item.stock * 0.35);
+  return { ...item, branchStock: { 'shueng-wan': item.stock - central, central } };
+});
 
 // ---------------------------------------------------------------------------
 // Order history generator

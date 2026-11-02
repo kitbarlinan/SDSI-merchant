@@ -94,7 +94,7 @@ function ReversalRow({ request }: { request: ReversalRequest }) {
               const result = approveReversal(user, request.id);
               if (!result.ok) setError(result.error);
             }}
-            className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
+            className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-emerald-950 hover:bg-emerald-500"
           >
             Approve undo
           </button>

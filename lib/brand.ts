@@ -1,5 +1,5 @@
 export const BRAND = {
-  name: 'SDSI Wellness',
+  name: 'TheYellowBasket',
   tagline: 'Fulfillment & merchant portal',
 } as const;
 

@@ -10,7 +10,9 @@ import { formatDate, formatDateTime, formatNumber } from '@/lib/format';
 import { MOCK_TODAY } from '@/lib/mock-data';
 import { canApprove } from '@/lib/roles';
 import { useAppData } from '@/lib/store';
-import type { StockReceipt } from '@/lib/types';
+import { DEFAULT_BRANCH, branchName, type BranchId, type StockReceipt } from '@/lib/types';
+import { stockAt } from '@/lib/inventory';
+import { BranchSelect } from '@/components/ui/BranchSelect';
 import { useToday } from '@/lib/use-today';
 
 export function ReceiptRow({ receipt, merchantFilter }: { receipt: StockReceipt; merchantFilter: string }) {
@@ -46,6 +48,7 @@ export function ReceiptRow({ receipt, merchantFilter }: { receipt: StockReceipt;
             </Badge>
           </p>
           <p className="flex items-center gap-1.5 text-xs text-slate-500">
+            <span className="font-medium text-slate-700">{branchName(receipt.branch)}</span> ·
             {merchantFilter === 'all' && merchant ? (
               <>
                 <span className="h-2 w-2 rounded-full" style={{ background: merchant.color }} />
@@ -113,7 +116,7 @@ export function ReceiptRow({ receipt, merchantFilter }: { receipt: StockReceipt;
               <button
                 type="button"
                 onClick={() => run(approveReceipt(user, receipt.id))}
-                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-emerald-950 hover:bg-emerald-500"
               >
                 <Icon name="check" className="h-4 w-4" />
                 {receipt.kind === 'stock-out' ? 'Approve · take out of stock' : 'Approve · add to stock'}
@@ -150,15 +153,18 @@ function ReceiveForm() {
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [date, setDate] = useState('');
   const [note, setNote] = useState('');
+  const [branchPick, setBranchPick] = useState<BranchId>(DEFAULT_BRANCH);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
 
   const catalog = useMemo(() => items.filter((item) => item.merchantId === merchantId), [items, merchantId]);
   if (!user) return null;
+  const branch: BranchId = user.role === 'cashier' ? (user.branchId ?? DEFAULT_BRANCH) : branchPick;
 
   const submit = () => {
     const result = receiveStock(user, {
       kind,
+      branch,
       merchantId,
       receivedDate: date || today,
       note,
@@ -198,7 +204,7 @@ function ReceiveForm() {
                 setDone(null);
               }}
               className={`rounded-lg px-4 py-1.5 text-sm font-medium ${
-                kind === option ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+                kind === option ? 'bg-emerald-600 text-emerald-950' : 'text-slate-600 hover:bg-slate-100'
               }`}
             >
               {option === 'stock-in' ? 'Stock in' : 'Stock out'}
@@ -223,6 +229,14 @@ function ReceiveForm() {
               ))}
             </select>
           </label>
+          {user.role === 'cashier' ? (
+            <p className="text-xs font-medium text-slate-500">
+              Branch
+              <span className="mt-1 block rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900">{branchName(branch)}</span>
+            </p>
+          ) : (
+            <BranchSelect id="receiveBranch" label="Branch" value={branch} onChange={setBranchPick} />
+          )}
           <label className="text-xs font-medium text-slate-500">
             {kind === 'stock-in' ? 'Date received' : 'Date taken out'}
             <input
@@ -241,7 +255,7 @@ function ReceiveForm() {
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium text-slate-900">{item.name}</p>
                 <p className="text-xs text-slate-500">
-                  <span className="font-mono">{item.sku}</span> · on hand {formatNumber(item.stock)}
+                  <span className="font-mono">{item.sku}</span> · on hand at {branchName(branch)} {formatNumber(stockAt(item, branch))}
                 </p>
               </div>
               <input
@@ -284,7 +298,7 @@ function ReceiveForm() {
         <button
           type="button"
           onClick={submit}
-          className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500"
+          className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-emerald-950 hover:bg-emerald-500"
         >
           <Icon name="box" className="h-4 w-4" />
           {user.role === 'cashier' ? 'Submit for approval' : kind === 'stock-in' ? 'Add to stock' : 'Take out of stock'}

@@ -11,7 +11,7 @@ import { formatCurrency, formatDateTime, formatHkd, formatNumber } from '@/lib/f
 import { TERMS_LABEL, orderAmountLabel, orderTotal } from '@/lib/orders';
 import { isStaff } from '@/lib/roles';
 import { useAppData, type ActionResult } from '@/lib/store';
-import { PAYMENT_METHODS, branchName, type Merchant, type Order, type PaymentMethod } from '@/lib/types';
+import { PAYMENT_METHODS, branchAddress, branchName, type Merchant, type Order, type PaymentMethod } from '@/lib/types';
 
 const CANCEL_REASONS = [
   'Customer unreachable',
@@ -166,6 +166,9 @@ export function OrderCard({
           <div className="flex items-baseline justify-between">
             <span className="text-xs text-slate-500">
               {order.status === 'delivered' ? 'Collected' : 'To collect'} · {TERMS_LABEL[order.terms]} · {branchName(order.branch)}
+              {order.status === 'delivered' || order.status === 'cancelled' ? null : (
+                <span className="mt-0.5 block text-slate-400">{branchAddress(order.branch)}</span>
+              )}
             </span>
             <span className="text-lg font-semibold text-slate-900">{orderAmountLabel(order)}</span>
           </div>
@@ -396,7 +399,7 @@ export function OrderCard({
                     <button
                       type="button"
                       onClick={() => finish(markDelivered(user, order.id, method))}
-                      className={`flex-1 bg-emerald-600 hover:bg-emerald-500 ${buttonBase}`}
+                      className={`flex-1 bg-emerald-500 hover:bg-emerald-400 !text-emerald-950 ${buttonBase}`}
                     >
                       Payment received · Delivered
                     </button>
@@ -485,7 +488,7 @@ export function OrderCard({
                     <button
                       type="button"
                       onClick={() => open('deliver')}
-                      className={`flex flex-1 items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 ${buttonBase}`}
+                      className={`flex flex-1 items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-400 !text-emerald-950 ${buttonBase}`}
                     >
                       <Icon name="check" className="h-4 w-4" />
                       Mark delivered

@@ -407,7 +407,7 @@ export function RemittancesView() {
                   <button
                     type="button"
                     onClick={() => close(weekStart)}
-                    className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500"
+                    className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-emerald-950 hover:bg-emerald-500"
                   >
                     Close week
                   </button>

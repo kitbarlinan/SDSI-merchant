@@ -14,6 +14,8 @@ export interface ListRow {
   pickupHkd: number;
   /** Reseller discount per unit, HKD. 0 or missing = full price. */
   unitDiscountHkd?: number;
+  /** Stock on the other branch, so a buyer who finds none here can switch. */
+  elsewhere?: { branch: string; quantity: number };
 }
 
 export interface ParsedQuantities {
@@ -128,7 +130,7 @@ export function ProductList({
         </div>
       </div>
 
-      <div className={`hidden bg-emerald-700 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-white ${COLUMNS}`}>
+      <div className={`hidden bg-emerald-700 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-emerald-950 ${COLUMNS}`}>
         <span>#</span>
         <span>Item code</span>
         <span>Item</span>
@@ -142,7 +144,7 @@ export function ProductList({
         {visible.length === 0 ? (
           <li className="px-4 py-10 text-center text-sm text-slate-500">No products match your search.</li>
         ) : (
-          visible.map(({ item, available, expired, number, pickupHkd, unitDiscountHkd = 0 }) => {
+          visible.map(({ item, available, expired, number, pickupHkd, unitDiscountHkd = 0, elsewhere }) => {
             const raw = typed[item.id] ?? '';
             const quantity = Number(raw);
             const error = errors[item.id];
@@ -199,7 +201,13 @@ export function ProductList({
                     disabled ? 'font-medium text-rose-600' : 'text-slate-600'
                   }`}
                 >
-                  {expired ? 'Expired' : available <= 0 ? 'Out of stock' : `${formatNumber(available)} available`}
+                  {expired
+                    ? 'Expired'
+                    : available <= 0
+                      ? elsewhere && elsewhere.quantity > 0
+                        ? `No stocks left on this branch · ${formatNumber(elsewhere.quantity)} at ${elsewhere.branch}`
+                        : 'No stocks left on this branch'
+                      : `${formatNumber(available)} available`}
                 </span>
 
                 <div className="mt-2 flex items-center justify-between gap-3 md:mt-0 md:block">

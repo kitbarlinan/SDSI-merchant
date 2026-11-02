@@ -54,7 +54,7 @@ export function DateFilter({
         aria-pressed={isToday}
         className={`rounded-xl border px-3 py-2 text-sm font-medium shadow-sm ${
           isToday
-            ? 'border-emerald-600 bg-emerald-600 text-white'
+            ? 'border-emerald-600 bg-emerald-600 text-emerald-950'
             : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
         }`}
       >

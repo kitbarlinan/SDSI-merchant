@@ -1,5 +1,6 @@
 import { formatCurrency, formatHkd, roundMoney } from './format';
-import { DEFAULT_BRANCH, type BranchId } from './types';
+import { stockAt } from './inventory';
+import { BRANCHES, DEFAULT_BRANCH, type BranchId } from './types';
 import type {
   InventoryItem,
   Order,
@@ -51,10 +52,11 @@ export function orderTopUp(order: Order): number {
 }
 
 /** Units promised to pending / packed orders. They are still physically on the shelf. */
-export function reservedByItem(orders: Order[]): Map<string, number> {
+export function reservedByItem(orders: Order[], branch?: BranchId): Map<string, number> {
   const reserved = new Map<string, number>();
   for (const order of orders) {
     if (!reservesStock(order)) continue;
+    if (branch && (order.branch ?? DEFAULT_BRANCH) !== branch) continue;
     for (const line of order.lines) {
       reserved.set(line.itemId, (reserved.get(line.itemId) ?? 0) + line.quantity);
     }
@@ -77,6 +79,10 @@ export function inTransitByItem(orders: Order[]): Map<string, number> {
 /** What can still be promised to new orders: on hand minus reserved. */
 export const availableOf = (item: InventoryItem, reserved: Map<string, number>): number =>
   Math.max(0, item.stock - (reserved.get(item.id) ?? 0));
+
+/** What can still be promised on one branch: its shelf minus what its pending / packed orders hold. */
+export const availableAt = (item: InventoryItem, reservedAtBranch: Map<string, number>, branch: BranchId): number =>
+  Math.max(0, stockAt(item, branch) - (reservedAtBranch.get(item.id) ?? 0));
 
 export function activeOrderDate(order: Order): string {
   return order.createdAt.slice(0, 10);
@@ -178,4 +184,18 @@ export function tierIncome(
 export function ordersForUser(orders: Order[], user: { role: string; branchId?: BranchId } | null): Order[] {
   if (!user || user.role !== 'cashier') return orders;
   return orders.filter((order) => (order.branch ?? DEFAULT_BRANCH) === (user.branchId ?? DEFAULT_BRANCH));
+}
+
+/** Stock a buyer could get by switching branch: the other branch's shelf minus what it already holds for orders. */
+export function otherBranchStock(
+  item: InventoryItem,
+  orders: Order[],
+  branch: BranchId,
+): { branch: string; quantity: number } | undefined {
+  const other = BRANCHES.find((candidate) => candidate.id !== branch);
+  if (!other) return undefined;
+  const held = orders
+    .filter((order) => reservesStock(order) && (order.branch ?? DEFAULT_BRANCH) === other.id)
+    .reduce((sum, order) => sum + order.lines.filter((line) => line.itemId === item.id).reduce((n, line) => n + line.quantity, 0), 0);
+  return { branch: other.name, quantity: Math.max(0, stockAt(item, other.id) - held) };
 }

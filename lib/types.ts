@@ -16,14 +16,16 @@ export type Category = (typeof CATEGORIES)[number];
 
 export type Role = 'admin' | 'cashier' | 'clerk' | 'merchant' | 'customer';
 
-/** The two counters. SDSI Shueng Wan is the default. Stock is shared; each branch has its own cashier. */
+/** The two counters. SDSI Sheung Wan is the default. Stock is shared; each branch has its own cashier. */
 export const BRANCHES = [
-  { id: 'shueng-wan', name: 'SDSI Shueng Wan' },
-  { id: 'central', name: 'Central' },
+  { id: 'shueng-wan', name: 'SDSI Sheung Wan', address: '7/F, Room 704, 60–66 Cheong Tai Building, Wing Lok Street, Sheung Wan, Hong Kong' },
+  { id: 'central', name: 'Central', address: '3/F, Shop 345, Worldwide Plaza, 19 Des Voeux Road Central, Hong Kong' },
 ] as const;
 export type BranchId = (typeof BRANCHES)[number]['id'];
 export const DEFAULT_BRANCH: BranchId = 'shueng-wan';
 export const branchName = (id: BranchId | undefined): string => BRANCHES.find((branch) => branch.id === (id ?? DEFAULT_BRANCH))!.name;
+
+export const branchAddress = (id: BranchId | undefined): string => BRANCHES.find((branch) => branch.id === (id ?? DEFAULT_BRANCH))!.address;
 
 /** A message the app sent by email. In the demo nothing leaves the app: it is only listed. */
 export interface SentEmail {
@@ -76,6 +78,8 @@ export interface InventoryItem {
   unitPrice: number;
   /** Physically on hand. Drops when goods leave: shipped (COD), handed over (COP) or sold at the counter. */
   stock: number;
+  /** Stock per branch. It always adds up to `stock`. Missing = everything is at SDSI Sheung Wan. */
+  branchStock?: Record<BranchId, number>;
   /** At or below this quantity the item is flagged as Low Stock. */
   reorderLevel: number;
   /** Product expiry, YYYY-MM-DD. */
@@ -173,7 +177,7 @@ export interface Order {
   tiers?: TierShare[];
   /** The reseller this order is for (counter sale of the package). */
   buyerId?: string;
-  /** Pickup / handling branch. Missing = SDSI Shueng Wan. */
+  /** Pickup / handling branch. Missing = SDSI Sheung Wan. */
   branch?: BranchId;
   /** Someone applying to become a reseller from the landing page. Their account is made when the cashier delivers. */
   applicant?: { name: string; email: string; mobile: string; sponsorId?: string };
@@ -229,6 +233,8 @@ export interface StockReceipt {
   note: string;
   receivedBy: string;
   createdAt: string;
+  /** The branch whose shelf the goods go to or come from. Missing = SDSI Sheung Wan. */
+  branch?: BranchId;
   status: ReceiptStatus;
   decidedBy?: string;
   decidedAt?: string;

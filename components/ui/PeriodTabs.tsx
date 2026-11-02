@@ -25,7 +25,7 @@ export function PeriodTabs({
             onClick={() => onChange(period.key)}
             className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors sm:text-sm ${
               active
-                ? 'bg-emerald-600 text-white shadow-sm'
+                ? 'bg-emerald-600 text-emerald-950 shadow-sm'
                 : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
             }`}
           >

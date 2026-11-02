@@ -25,7 +25,8 @@ import {
   type CostingState,
 } from './costing';
 import { provisionReseller, validateCredentials } from './accounts';
-import { availableOf, orderTotal, reservedByItem } from './orders';
+import { moveStock, stockAt } from './inventory';
+import { availableAt, availableOf, orderTotal, reservedByItem } from './orders';
 import { buildWeekRemittances, remittedOrderIds, weekEndOf, weekStartOf } from './remittance';
 import {
   PAYMENT_METHODS,
@@ -125,9 +126,10 @@ function buildLines(
   requested: { itemId: string; quantity: number }[],
   today: string,
   merchantId?: string,
+  branch?: BranchId,
 ): { ok: true; lines: OrderLine[] } | { ok: false; error: string } {
   if (requested.length === 0) return fail('Add at least one product.');
-  const reserved = reservedByItem(state.orders);
+  const reserved = reservedByItem(state.orders, branch);
   const lines: OrderLine[] = [];
 
   for (const [itemId, quantity] of mergeLines(requested)) {
@@ -138,8 +140,17 @@ function buildLines(
       return fail('Quantities must be whole numbers of at least 1.');
     }
     if (item.expiryDate < today) return fail(`"${item.name}" is past its expiry date.`);
-    const available = availableOf(item, reserved);
+    const available = branch ? availableAt(item, reserved, branch) : availableOf(item, reserved);
     if (quantity > available) {
+      if (branch) {
+        const other = BRANCHES.find((candidate) => candidate.id !== branch)!;
+        const elsewhere = availableAt(item, reservedByItem(state.orders, other.id), other.id);
+        const where = BRANCHES.find((candidate) => candidate.id === branch)!.name;
+        if (available === 0) {
+          return fail(`No stock left on this branch for "${item.name}" (${where}).${elsewhere > 0 ? ` ${other.name} has ${elsewhere}. Choose that branch instead.` : ''}`);
+        }
+        return fail(`Only ${available} of "${item.name}" available at ${where}.${elsewhere > 0 ? ` ${other.name} has ${elsewhere}.` : ''}`);
+      }
       return fail(`Only ${available} of "${item.name}" available.`);
     }
     lines.push({
@@ -163,7 +174,7 @@ export interface PlaceOrderInput {
   notes: string;
   terms: OrderTerms;
   lines: { itemId: string; quantity: number }[];
-  /** Which branch handles the order. Default SDSI Shueng Wan. */
+  /** Which branch handles the order. Default SDSI Sheung Wan. */
   branch?: BranchId;
 }
 
@@ -180,7 +191,8 @@ export function placeMerchantOrder(
     return fail('A delivery address is required for cash on delivery.');
   }
 
-  const built = buildLines(state, input.lines, dateOf(now), actor.merchantId);
+  const orderBranch: BranchId = branchOk(input.branch) ? input.branch : DEFAULT_BRANCH;
+  const built = buildLines(state, input.lines, dateOf(now), actor.merchantId, orderBranch);
   if (!built.ok) return fail(built.error);
 
   const { ids, poSeq } = nextPoids(state, 1);
@@ -197,7 +209,7 @@ export function placeMerchantOrder(
     terms: input.terms,
     lines: built.lines,
     status: 'pending',
-    branch: branchOk(input.branch) ? input.branch : DEFAULT_BRANCH,
+    branch: orderBranch,
   };
   const charges = orderCharges(
     built.lines.map((line) => ({ itemId: line.itemId, quantity: line.quantity })),
@@ -225,7 +237,7 @@ export interface ResellerOrderInput {
   contactNo: string;
   notes: string;
   lines: { itemId: string; quantity: number }[];
-  /** Which branch handles the pickup. Default SDSI Shueng Wan. */
+  /** Which branch handles the pickup. Default SDSI Sheung Wan. */
   branch?: BranchId;
 }
 
@@ -301,7 +313,8 @@ export function placeResellerOrder(
     return fail('You already have the reseller package.');
   }
 
-  const built = buildLines(state, input.lines, dateOf(now));
+  const resellerBranch: BranchId = branchOk(input.branch) ? input.branch : DEFAULT_BRANCH;
+  const built = buildLines(state, input.lines, dateOf(now), undefined, resellerBranch);
   if (!built.ok) return fail(built.error);
 
   const byMerchant = new Map<string, OrderLine[]>();
@@ -333,7 +346,7 @@ export function placeResellerOrder(
       pickupHkd: charges.pickupHkd,
       amountHkd: charges.amountHkd,
       buyerId: actor.id,
-      branch: branchOk(input.branch) ? input.branch : DEFAULT_BRANCH,
+      branch: resellerBranch,
     };
     if (charges.discountHkd > 0) {
       order.discountPct = resellerDiscountPct;
@@ -397,7 +410,8 @@ export function checkoutWalkIn(
     return fail('A reseller is only chosen when selling the package.');
   }
 
-  const built = buildLines(state, input.lines, dateOf(now));
+  const branch: BranchId = actor.role === 'cashier' ? actor.branchId ?? DEFAULT_BRANCH : branchOk(input.branch) ? input.branch : DEFAULT_BRANCH;
+  const built = buildLines(state, input.lines, dateOf(now), undefined, branch);
   if (!built.ok) return fail(built.error);
 
   const merchantOf = (itemId: string) =>
@@ -409,7 +423,6 @@ export function checkoutWalkIn(
   }
 
   const { ids, poSeq } = nextPoids(state, byMerchant.size);
-  const branch: BranchId = actor.role === 'cashier' ? actor.branchId ?? DEFAULT_BRANCH : branchOk(input.branch) ? input.branch : DEFAULT_BRANCH;
   const customerName = packageBuyer?.name ?? (input.customerName?.trim() || WALK_IN_DEFAULT_NAME);
   const created: Order[] = [...byMerchant.entries()].map(([merchantId, lines], index) => {
     const charges = orderCharges(
@@ -448,9 +461,7 @@ export function checkoutWalkIn(
   const next: AppState = {
     ...state,
     poSeq,
-    items: state.items.map((item) =>
-      sold.has(item.id) ? { ...item, stock: item.stock - sold.get(item.id)! } : item,
-    ),
+    items: moveStock(state.items, branch, sold, -1),
     orders: [...[...created].reverse(), ...state.orders],
   };
   const withUser: AppState = newUser
@@ -485,17 +496,12 @@ export function markPacked(
 function releaseStock(state: AppState, order: Order): { ok: true; items: InventoryItem[] } | { ok: false; error: string } {
   for (const line of order.lines) {
     const item = state.items.find((candidate) => candidate.id === line.itemId);
-    if (!item || item.stock < line.quantity) {
-      return fail(`Not enough "${line.name}" on hand. Receive stock first.`);
+    if (!item || stockAt(item, order.branch ?? DEFAULT_BRANCH) < line.quantity) {
+      return fail(`Not enough "${line.name}" on hand at this branch. Receive stock first.`);
     }
   }
   const out = new Map(order.lines.map((line) => [line.itemId, line.quantity] as const));
-  return {
-    ok: true,
-    items: state.items.map((item) =>
-      out.has(item.id) ? { ...item, stock: item.stock - out.get(item.id)! } : item,
-    ),
-  };
+  return { ok: true, items: moveStock(state.items, order.branch ?? DEFAULT_BRANCH, out, -1) };
 }
 
 /**
@@ -646,10 +652,13 @@ export function createStockInReceipt(
     receivedDate: string;
     note: string;
     lines: { itemId: string; quantity: number }[];
+    /** Admin and clerk choose the branch. A cashier always works on their own. */
+    branch?: BranchId;
   },
   now: string,
 ): Outcome<StockReceipt> {
   if (!(actor.role === 'cashier' || canApprove(actor))) return fail('Only SDSI staff can record stock movements.');
+  const branch: BranchId = actor.role === 'cashier' ? actor.branchId ?? DEFAULT_BRANCH : branchOk(input.branch) ? input.branch : DEFAULT_BRANCH;
   const kind = input.kind ?? 'stock-in';
   const dateError = validReceivedDate(input.receivedDate, now);
   if (dateError) return fail(dateError);
@@ -657,15 +666,15 @@ export function createStockInReceipt(
     return fail('Choose the merchant the stock belongs to.');
   }
   if (kind === 'stock-out' && input.note.trim().length < 3) return fail('Write the reason for the stock out.');
-  const reserved = reservedByItem(state.orders);
+  const reserved = reservedByItem(state.orders, branch);
   const lines: ReceiptLine[] = [];
   for (const [itemId, quantity] of mergeLines(input.lines)) {
     if (quantity === 0) continue;
     const item = state.items.find((candidate) => candidate.id === itemId);
     if (!item || item.merchantId !== input.merchantId) return fail('Product not found for this merchant.');
     if (!Number.isInteger(quantity) || quantity < 1) return fail('Quantities must be whole numbers.');
-    if (kind === 'stock-out' && quantity > availableOf(item, reserved)) {
-      return fail(`Only ${availableOf(item, reserved)} of "${item.name}" are available to take out.`);
+    if (kind === 'stock-out' && quantity > availableAt(item, reserved, branch)) {
+      return fail(`Only ${availableAt(item, reserved, branch)} of "${item.name}" are available to take out at this branch.`);
     }
     lines.push({ itemId, sku: item.sku, name: item.name, quantity });
   }
@@ -683,13 +692,14 @@ export function createStockInReceipt(
     note: input.note.trim(),
     receivedBy: actor.id,
     createdAt: now,
+    branch,
     status: selfApproved ? 'approved' : 'pending',
     ...(selfApproved ? { decidedBy: actor.id, decidedAt: now } : {}),
   };
   const sign = kind === 'stock-in' ? 1 : -1;
   const qty = new Map(lines.map((line) => [line.itemId, line.quantity] as const));
   const items = selfApproved
-    ? state.items.map((item) => (qty.has(item.id) ? { ...item, stock: item.stock + sign * qty.get(item.id)! } : item))
+    ? moveStock(state.items, branch, qty, sign)
     : state.items;
   return { ok: true, state: { ...state, items, receipts: [receipt, ...state.receipts] }, value: receipt };
 }
@@ -725,6 +735,7 @@ export function createReturnReceipt(
     note: input.note.trim(),
     receivedBy: actor.id,
     createdAt: now,
+    branch: order.branch ?? DEFAULT_BRANCH,
     status: 'pending',
   };
   return {
@@ -763,18 +774,16 @@ function decide(
   if (status === 'approved') {
     const sign = receipt.kind === 'stock-out' ? -1 : 1;
     if (sign === -1) {
-      const reserved = reservedByItem(state.orders);
+      const reserved = reservedByItem(state.orders, receipt.branch ?? DEFAULT_BRANCH);
       for (const line of receipt.lines) {
         const item = state.items.find((candidate) => candidate.id === line.itemId);
-        if (!item || line.quantity > availableOf(item, reserved)) {
-          return fail(`Not enough "${line.name}" available to take out anymore.`);
+        if (!item || line.quantity > availableAt(item, reserved, receipt.branch ?? DEFAULT_BRANCH)) {
+          return fail(`Not enough "${line.name}" available at this branch to take out anymore.`);
         }
       }
     }
     const add = new Map(receipt.lines.map((line) => [line.itemId, line.quantity] as const));
-    items = state.items.map((item) =>
-      add.has(item.id) ? { ...item, stock: item.stock + sign * add.get(item.id)! } : item,
-    );
+    items = moveStock(state.items, receipt.branch ?? DEFAULT_BRANCH, add, sign);
   }
 
   let next: AppState = {
@@ -1111,6 +1120,7 @@ export function addSku(state: AppState, actor: Actor, input: NewSkuInput, now: s
     unitCost: 0,
     unitPrice: roundMoney(input.unitPrice),
     stock: 0,
+    branchStock: { 'shueng-wan': 0, central: 0 },
     reorderLevel: 10,
     expiryDate: '2099-12-31',
   };
@@ -1236,7 +1246,7 @@ export function approveReversal(
   let items = state.items;
   const give = (sign: 1 | -1) => {
     const qty = new Map(order.lines.map((line) => [line.itemId, line.quantity] as const));
-    items = state.items.map((item) => (qty.has(item.id) ? { ...item, stock: item.stock + sign * qty.get(item.id)! } : item));
+    items = moveStock(state.items, order.branch ?? DEFAULT_BRANCH, qty, sign);
   };
 
   if (order.status === 'delivered') {
@@ -1254,11 +1264,11 @@ export function approveReversal(
     change = { ...change, rtsAt: undefined, rtsReason: undefined };
   } else {
     // "Not delivered" before shipping: the stock is reserved again, so there must be enough of it.
-    const reserved = reservedByItem(state.orders);
+    const reserved = reservedByItem(state.orders, order.branch ?? DEFAULT_BRANCH);
     for (const line of order.lines) {
       const item = state.items.find((candidate) => candidate.id === line.itemId);
-      if (!item || line.quantity > availableOf(item, reserved)) {
-        return fail(`Not enough "${line.name}" available to reserve this order again.`);
+      if (!item || line.quantity > availableAt(item, reserved, order.branch ?? DEFAULT_BRANCH)) {
+        return fail(`Not enough "${line.name}" available at this branch to reserve this order again.`);
       }
     }
     change = { ...change, cancelledAt: undefined, cancelReason: undefined };
@@ -1471,7 +1481,7 @@ export function applyForReseller(state: AppState, input: ResellerApplication, no
     if (!sponsor) return fail('We could not find that referral code. Check it or leave it empty.');
     sponsorId = sponsor.id;
   }
-  const built = buildLines(state, [{ itemId: item.id, quantity: 1 }], dateOf(now));
+  const built = buildLines(state, [{ itemId: item.id, quantity: 1 }], dateOf(now), undefined, input.branch);
   if (!built.ok) return fail(built.error);
   const charges = orderCharges([{ itemId: item.id, quantity: 1 }], state.costing);
   if (!charges) return fail('This package has no live price.');

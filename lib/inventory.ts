@@ -1,10 +1,36 @@
 import { COVER_WARNING_DAYS, EXPIRY_WARNING_DAYS } from './brand';
 import { addDays, diffDays } from './period';
-import type { InventoryItem, SaleLine, StockStatus } from './types';
+import { DEFAULT_BRANCH, type BranchId, type InventoryItem, type SaleLine, type StockStatus } from './types';
 
 export function getStockStatus(item: InventoryItem): StockStatus {
   if (item.stock <= 0) return 'out';
   if (item.stock <= item.reorderLevel) return 'low';
+  return 'ok';
+}
+
+/** Units of an item on one branch's shelf. */
+export const stockAt = (item: InventoryItem, branch: BranchId): number =>
+  item.branchStock?.[branch] ?? (branch === DEFAULT_BRANCH ? item.stock : 0);
+
+/** Moves stock on one branch (sign +1 in, -1 out), keeping the total in step. */
+export function moveStock(items: InventoryItem[], branch: BranchId, qty: Map<string, number>, sign: 1 | -1): InventoryItem[] {
+  return items.map((item) => {
+    const amount = qty.get(item.id);
+    if (amount === undefined) return item;
+    const delta = sign * amount;
+    const split = {
+      'shueng-wan': stockAt(item, 'shueng-wan'),
+      central: stockAt(item, 'central'),
+    } as Record<BranchId, number>;
+    split[branch] += delta;
+    return { ...item, stock: item.stock + delta, branchStock: split };
+  });
+}
+
+export function getBranchStockStatus(item: InventoryItem, branch: BranchId): StockStatus {
+  const onHand = stockAt(item, branch);
+  if (onHand <= 0) return 'out';
+  if (onHand <= item.reorderLevel) return 'low';
   return 'ok';
 }
 

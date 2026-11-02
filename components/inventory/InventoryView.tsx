@@ -12,12 +12,12 @@ import { StatCard } from '@/components/ui/StatCard';
 import { useAuth } from '@/lib/auth';
 import { COVER_WARNING_DAYS } from '@/lib/brand';
 import { formatCurrency, formatDate, formatNumber } from '@/lib/format';
-import { coverDays, getExpiry, getStockStatus, recentUnitsByItem } from '@/lib/inventory';
+import { coverDays, getExpiry, getStockStatus, recentUnitsByItem, stockAt } from '@/lib/inventory';
 import { availableOf, flattenDelivered, inTransitByItem, reservedByItem } from '@/lib/orders';
 import { isSdsiTeam } from '@/lib/roles';
 import { useAppData } from '@/lib/store';
 import { CATEGORY_COLORS } from '@/lib/theme';
-import { CATEGORIES, type Category } from '@/lib/types';
+import { BRANCHES, CATEGORIES, DEFAULT_BRANCH, type BranchId, type Category } from '@/lib/types';
 import { useToday } from '@/lib/use-today';
 
 export function InventoryView() {
@@ -33,14 +33,23 @@ export function InventoryView() {
   const [category, setCategory] = useState<Category | 'all'>('all');
   const [merchantId, setMerchantId] = useState('all');
   const [alertsOnly, setAlertsOnly] = useState(false);
+  const [branchView, setBranchView] = useState<BranchId | 'all' | null>(null);
+  // A cashier starts on their own branch; everyone else on the total.
+  const branchSel: BranchId | 'all' = branchView ?? (user?.role === 'cashier' ? (user.branchId ?? DEFAULT_BRANCH) : 'all');
 
   const scopedItems = useMemo(() => {
     if (!user) return [];
-    if (user.role === 'merchant') return items.filter((item) => item.merchantId === user.merchantId);
-    return merchantId === 'all' ? items : items.filter((item) => item.merchantId === merchantId);
-  }, [items, user, merchantId]);
+    const mine =
+      user.role === 'merchant'
+        ? items.filter((item) => item.merchantId === user.merchantId)
+        : merchantId === 'all'
+          ? items
+          : items.filter((item) => item.merchantId === merchantId);
+    // On one branch's page the stock shown is that branch's shelf.
+    return branchSel === 'all' ? mine : mine.map((item) => ({ ...item, stock: stockAt(item, branchSel) }));
+  }, [items, user, merchantId, branchSel]);
 
-  const reserved = useMemo(() => reservedByItem(orders), [orders]);
+  const reserved = useMemo(() => reservedByItem(orders, branchSel === 'all' ? undefined : branchSel), [orders, branchSel]);
   const inTransit = useMemo(() => inTransitByItem(orders), [orders]);
   const recentUnits = useMemo(
     () => (today ? recentUnitsByItem(flattenDelivered(orders), today) : new Map<string, number>()),
@@ -105,7 +114,7 @@ export function InventoryView() {
                 aria-pressed={active}
                 onClick={() => setTab(option.key)}
                 className={`flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-sm font-medium transition-colors ${
-                  active ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  active ? 'bg-emerald-600 text-emerald-950 shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
               >
                 {option.label}
@@ -118,6 +127,22 @@ export function InventoryView() {
             );
           })}
         </div>
+        <label className="text-xs font-medium text-slate-500">
+          <span className="sr-only">Branch</span>
+          <select
+            aria-label="Branch"
+            value={branchSel}
+            onChange={(event) => setBranchView(event.target.value as BranchId | 'all')}
+            className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+          >
+            <option value="all">All branches</option>
+            {BRANCHES.map((branch) => (
+              <option key={branch.id} value={branch.id}>
+                {branch.name}
+              </option>
+            ))}
+          </select>
+        </label>
         {isStaff ? (
           <label className="text-xs font-medium text-slate-500">
             <span className="sr-only">Filter by merchant</span>
@@ -147,7 +172,7 @@ export function InventoryView() {
           <button
             type="button"
             onClick={() => setTab('receiving')}
-            className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
+            className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-emerald-950 hover:bg-emerald-500"
           >
             + Stock in
           </button>
@@ -297,7 +322,14 @@ export function InventoryView() {
                           ) : null}
                         </p>
                       </td>
-                      <td className="px-4 py-4 text-right font-semibold">{formatNumber(item.stock)}</td>
+                      <td className="px-4 py-4 text-right font-semibold">
+                        {formatNumber(item.stock)}
+                        {branchSel === 'all' ? (
+                          <span className="block text-xs font-normal text-slate-500">
+                            {BRANCHES.map((branch) => `${branch.id === DEFAULT_BRANCH ? 'Sheung Wan' : branch.name} ${formatNumber(stockAt(item, branch.id))}`).join(' · ')}
+                          </span>
+                        ) : null}
+                      </td>
                       <td className="px-4 py-4 text-right text-slate-600">
                         {held > 0 ? formatNumber(held) : '—'}
                       </td>

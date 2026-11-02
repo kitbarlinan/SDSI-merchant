@@ -12,7 +12,7 @@ import { useAuth } from '@/lib/auth';
 import { isSellable, livePickup, orderCharges } from '@/lib/costing';
 import { formatDate, formatHkd } from '@/lib/format';
 import { MOCK_TODAY } from '@/lib/mock-data';
-import { TERMS_LABEL, availableOf, reservedByItem } from '@/lib/orders';
+import { TERMS_LABEL, availableAt, otherBranchStock, reservedByItem } from '@/lib/orders';
 import { useAppData } from '@/lib/store';
 import { ORDER_TERMS, type Order } from '@/lib/types';
 import { useToday } from '@/lib/use-today';
@@ -41,18 +41,19 @@ export function NewOrderForm() {
   const [serverError, setServerError] = useState<string | null>(null);
   const [placed, setPlaced] = useState<Order | null>(null);
 
-  const reserved = useMemo(() => reservedByItem(orders), [orders]);
+  const reserved = useMemo(() => reservedByItem(orders, branch), [orders, branch]);
   const rows: ListRow[] = useMemo(
     () =>
       items
         .filter((item) => item.merchantId === user?.merchantId && isSellable(item, costing))
         .map((item) => ({
           item,
-          available: availableOf(item, reserved),
+          available: availableAt(item, reserved, branch),
+          elsewhere: otherBranchStock(item, orders, branch),
           expired: item.expiryDate < today,
           pickupHkd: livePickup(costing, item.id) ?? 0,
         })),
-    [items, reserved, user, today, costing],
+    [items, reserved, user, today, costing, orders, branch],
   );
 
   const parsed = parseQuantities(rows, typed);

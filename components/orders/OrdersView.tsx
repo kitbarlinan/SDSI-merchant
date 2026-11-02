@@ -113,7 +113,7 @@ export function OrdersView() {
           isMerchant ? (
             <Link
               href="/orders/new"
-              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500"
+              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-emerald-950 shadow-sm hover:bg-emerald-500"
             >
               <Icon name="plus" className="h-4 w-4" />
               New order
@@ -168,7 +168,7 @@ export function OrdersView() {
                 onClick={() => setTab(option.key)}
                 className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
                   active
-                    ? 'bg-emerald-600 text-white shadow-sm'
+                    ? 'bg-emerald-600 text-emerald-950 shadow-sm'
                     : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
               >

@@ -115,4 +115,21 @@ await db.exec(`update profiles set branch_id = 'shueng-wan' where id = '${U.cash
 check('the other branch cashier does not', n(await as(U.cashier, 'select * from applications_staff')) === 0);
 check('browser cannot read the applications table directly', typeof (await as(U.admin, 'select * from reseller_applications')) === 'string');
 check('same email cannot apply twice', await bad("insert into reseller_applications (order_id,name,email,mobile) values ('POID-2','Maria','M@X.com','1')"));
+
+// ---- stock per branch (0006)
+const sqlf = new URL('../0006_branch_stock.sql', import.meta.url);
+await db.exec(fs.readFileSync(sqlf, 'utf8'));
+await db.exec(fs.readFileSync(sqlf, 'utf8')); // safe to run twice
+const ibs = await as(U.admin, "select branch_id, sum(stock)::int as s from item_branch_stock group by branch_id order by branch_id");
+const tot = await as(U.admin, 'select sum(stock)::int as s from items');
+check('every existing item starts fully on the default branch', Array.isArray(ibs) && ibs.find((r) => r.branch_id === 'shueng-wan').s === tot[0].s && ibs.find((r) => r.branch_id === 'central').s === 0);
+await db.exec("update item_branch_stock set stock = 3 where branch_id = 'central' and item_id = (select id from items limit 1)");
+const one = await as(U.admin, "select i.stock, (select sum(stock) from item_branch_stock where item_id = i.id)::int as s from items i order by id limit 1");
+check('item total follows the branch shelves', one[0].stock === one[0].s);
+check('branch stock cannot go negative', await bad("update item_branch_stock set stock = -1 where branch_id = 'central'"));
+check('browser cannot write branch stock', typeof (await as(U.admin, "update item_branch_stock set stock = 9")) === 'string');
+check('branch addresses are set', (await as(U.c1, "select address from branches where id = 'central'"))[0].address.includes('Worldwide Plaza'));
+check('buyers see availability only', Array.isArray(await as(U.c1, 'select * from branch_availability')) && typeof (await as(U.c1, 'select stock from branch_availability')) === 'string');
+check('receipts carry a branch', (await as(U.admin, "select column_name from information_schema.columns where table_name = 'receipts' and column_name = 'branch_id'")).length === 1);
+
 console.log(fails ? fails + ' FAILED' : 'ALL DB CHECKS PASSED');

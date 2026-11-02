@@ -83,6 +83,7 @@ interface AppDataValue {
       receivedDate: string;
       note: string;
       lines: { itemId: string; quantity: number }[];
+      branch?: BranchId;
     },
   ) => ActionResult<StockReceipt>;
   receiveReturn: (

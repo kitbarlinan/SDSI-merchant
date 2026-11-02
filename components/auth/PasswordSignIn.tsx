@@ -33,7 +33,7 @@ export function PasswordSignIn() {
           {error}
         </p>
       ) : null}
-      <button type="submit" className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500">
+      <button type="submit" className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-emerald-950 hover:bg-emerald-500">
         Sign in
       </button>
     </form>

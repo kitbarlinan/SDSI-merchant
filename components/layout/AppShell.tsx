@@ -57,7 +57,7 @@ function Logo({ small = false }: { small?: boolean }) {
           small ? 'h-8 w-8' : 'h-10 w-10'
         }`}
       >
-        <Icon name="leaf" className={small ? 'h-4 w-4' : 'h-5 w-5'} />
+        <Icon name="cart" className={small ? 'h-4 w-4' : 'h-5 w-5'} />
       </span>
       <div className="leading-tight">
         <p className={`font-semibold tracking-tight text-white ${small ? 'text-sm' : 'text-base'}`}>

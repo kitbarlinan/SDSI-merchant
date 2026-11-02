@@ -101,7 +101,7 @@ function ReviewDialog({
             type="button"
             onClick={submit}
             disabled={busy}
-            className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-emerald-950 hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busy ? 'Working…' : confirmLabel}
           </button>
@@ -254,7 +254,7 @@ function NewSkuCard({ onAdded }: { onAdded: (message: string) => void }) {
         type="button"
         onClick={submit}
         disabled={!merchantId || !sku || !name || !srp}
-        className="mt-3 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+        className="mt-3 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-emerald-950 hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
       >
         Add SKU as draft
       </button>
@@ -770,7 +770,7 @@ function CostingEditor() {
               type="button"
               onClick={openSaveReview}
               disabled={changeCount === 0 || errorCount > 0}
-              className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-emerald-950 hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Review and save
             </button>
