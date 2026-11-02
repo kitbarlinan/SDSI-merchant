@@ -6,6 +6,7 @@
 import { DEFAULT_COSTING_SETTINGS } from '../costing';
 import type { AppState } from '../engine';
 import { normalizeCategory, type Merchant } from '../types';
+import { normalizeProduct } from '../stock';
 import type { Db } from './db';
 
 type Rec = Record<string, unknown> & { id: string };
@@ -65,6 +66,7 @@ export async function loadAll(q: Db): Promise<Loaded> {
     const { key, order } = LISTS[kind];
     (state as unknown as Record<string, unknown>)[key] = (buckets.get(kind) ?? []).sort(byId(order));
   }
+  state.products = state.products.map(normalizeProduct);
   // Data saved before there were two categories.
   state.items = state.items.map((item) => ({ ...item, category: normalizeCategory(item.category) }));
   state.orders = state.orders.map((order) => ({ ...order, lines: order.lines.map((line) => ({ ...line, category: normalizeCategory(line.category) })) }));

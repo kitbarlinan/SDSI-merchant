@@ -131,7 +131,7 @@ export function RemoteProviders({ children }: { children: ReactNode }) {
           setData(json.data);
           if (json.me) setMe(json.me);
         }
-        return { ok: true, value: json.value as T };
+        return { ok: true, value: json.value as T, ...(Array.isArray(json.warnings) && json.warnings.length > 0 ? { warnings: json.warnings as string[] } : {}) };
       } catch {
         return { ok: false, error: OFFLINE };
       }

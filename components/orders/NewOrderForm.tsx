@@ -12,7 +12,8 @@ import { useAuth } from '@/lib/auth';
 import { isSellable, livePickup, orderCharges } from '@/lib/costing';
 import { formatDate, formatHkd } from '@/lib/format';
 import { MOCK_TODAY } from '@/lib/mock-data';
-import { TERMS_LABEL, availableAt, otherBranchStock, reservedByItem } from '@/lib/orders';
+import { TERMS_LABEL } from '@/lib/orders';
+import { expiryOf, makeStockBook } from '@/lib/stock';
 import { useAppData } from '@/lib/store';
 import { ORDER_TERMS, type Order } from '@/lib/types';
 import { useToday } from '@/lib/use-today';
@@ -29,7 +30,7 @@ const EMPTY_FORM: RawOrderForm = {
 export function NewOrderForm() {
   const { user } = useAuth();
   const [branch, setBranch] = useState<BranchId>(DEFAULT_BRANCH);
-  const { items, orders, merchants, costing, placeOrder } = useAppData();
+  const { items, products, orders, merchants, costing, placeOrder } = useAppData();
   const today = useToday() || MOCK_TODAY;
 
   const [typed, setTyped] = useState<Record<string, string>>({});
@@ -41,19 +42,19 @@ export function NewOrderForm() {
   const [serverError, setServerError] = useState<string | null>(null);
   const [placed, setPlaced] = useState<Order | null>(null);
 
-  const reserved = useMemo(() => reservedByItem(orders, branch), [orders, branch]);
+  const book = useMemo(() => makeStockBook(items, products, orders), [items, products, orders]);
   const rows: ListRow[] = useMemo(
     () =>
       items
         .filter((item) => item.merchantId === user?.merchantId && isSellable(item, costing))
         .map((item) => ({
           item,
-          available: availableAt(item, reserved, branch),
-          elsewhere: otherBranchStock(item, orders, branch),
-          expired: item.expiryDate < today,
+          available: book.available(item, branch),
+          elsewhere: book.elsewhere(item, branch),
+          expired: expiryOf(item, products) < today,
           pickupHkd: livePickup(costing, item.id) ?? 0,
         })),
-    [items, reserved, user, today, costing, orders, branch],
+    [items, products, book, user, today, costing, branch],
   );
 
   const parsed = parseQuantities(rows, typed);

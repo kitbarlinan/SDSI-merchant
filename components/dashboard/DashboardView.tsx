@@ -22,12 +22,12 @@ import {
   isOpen,
   orderAmountLabel,
   toCollectHkd,
-  reservedByItem,
   sortNewestFirst,
 } from '@/lib/orders';
 import { previousOf, trendWindow, type DayRange } from '@/lib/period';
 import { buildTrend, filterByRange, groupSales, pctChange, summarize } from '@/lib/reports';
 import { useAppData } from '@/lib/store';
+import { reservedUnits, stockUnits } from '@/lib/stock';
 import { useDayRange } from '@/lib/use-day-range';
 import type { InventoryItem, Merchant, Order, SaleLine } from '@/lib/types';
 
@@ -167,7 +167,8 @@ function AdminDashboard({
   merchantFilter: string;
   today: string;
 }) {
-  const { merchants: allMerchants, items: allItems, orders: allOrders } = useAppData();
+  const { merchants: allMerchants, items: allSkus, products, orders: allOrders } = useAppData();
+  const allItems = useMemo(() => stockUnits(allSkus, products), [allSkus, products]);
   const merchants = useMemo(
     () => (merchantFilter === 'all' ? allMerchants : allMerchants.filter((m) => m.id === merchantFilter)),
     [allMerchants, merchantFilter],
@@ -181,7 +182,7 @@ function AdminDashboard({
     [allOrders, merchantFilter],
   );
   const sales = useMemo(() => flattenDelivered(orders), [orders]);
-  const reserved = useMemo(() => reservedByItem(orders), [orders]);
+  const reserved = useMemo(() => reservedUnits(orders, allSkus), [orders, allSkus]);
 
   const current = useMemo(() => filterByRange(sales, range), [sales, range]);
   const summary = summarize(current);
@@ -312,11 +313,12 @@ function MerchantDashboard({
   today: string;
   merchantId: string;
 }) {
-  const { merchants, items: allItems, orders: allOrders } = useAppData();
+  const { merchants, items: allSkus, products, orders: allOrders } = useAppData();
+  const allItems = useMemo(() => stockUnits(allSkus, products), [allSkus, products]);
   const items = useMemo(() => allItems.filter((i) => i.merchantId === merchantId), [allItems, merchantId]);
   const orders = useMemo(() => allOrders.filter((o) => o.merchantId === merchantId), [allOrders, merchantId]);
   const sales: SaleLine[] = useMemo(() => flattenDelivered(orders), [orders]);
-  const reserved = useMemo(() => reservedByItem(orders), [orders]);
+  const reserved = useMemo(() => reservedUnits(orders, allSkus), [orders, allSkus]);
 
   const current = useMemo(() => filterByRange(sales, range), [sales, range]);
   const summary = summarize(current);

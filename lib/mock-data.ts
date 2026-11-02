@@ -373,7 +373,7 @@ export const MOCK_PRODUCTS: MasterProduct[] = (() => {
     const key = `${item.merchantId}|${item.name.toLowerCase()}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    list.push({ id: `prd-${String(list.length + 1).padStart(4, '0')}`, merchantId: item.merchantId, code: `INV-${String(list.length + 1).padStart(3, '0')}`, name: item.name, srp: item.unitPrice, expiryDate: item.expiryDate });
+    list.push({ id: `prd-${String(list.length + 1).padStart(4, '0')}`, merchantId: item.merchantId, code: `INV-${String(list.length + 1).padStart(3, '0')}`, name: item.name, srp: item.unitPrice, expiryDate: item.expiryDate, stock: 0, branchStock: { 'shueng-wan': 0, central: 0 }, reorderLevel: 10 });
   }
   return list;
 })();

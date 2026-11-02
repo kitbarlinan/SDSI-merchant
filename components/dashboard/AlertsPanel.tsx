@@ -6,7 +6,10 @@ import { Card } from '@/components/ui/Card';
 import { Icon } from '@/components/ui/Icon';
 import { COVER_WARNING_DAYS } from '@/lib/brand';
 import { formatShortDate } from '@/lib/format';
-import { coverDays, getExpiry, getStockStatus, needsReorder, recentUnitsByItem } from '@/lib/inventory';
+import { coverDays, getExpiry, getStockStatus, needsReorder } from '@/lib/inventory';
+import { addDays } from '@/lib/period';
+import { recentUnitsByUnit } from '@/lib/stock';
+import { useAppData } from '@/lib/store';
 import type { InventoryItem, Merchant, SaleLine } from '@/lib/types';
 
 interface Row {
@@ -59,8 +62,9 @@ export function AlertsPanel({
   /** Pass for staff views so each alert shows which merchant owns the product. */
   merchants?: Merchant[];
 }) {
+  const { items: skus } = useAppData();
   const groups = useMemo(() => {
-    const units = recentUnitsByItem(sales, today);
+    const units = recentUnitsByUnit(sales, skus, today, 30, addDays);
 
     const stock = items
       .filter((item) => getStockStatus(item) !== 'ok')
@@ -81,7 +85,7 @@ export function AlertsPanel({
       : [];
 
     return { stock, expiring, reorder };
-  }, [items, sales, today]);
+  }, [items, skus, sales, today]);
 
   const ownerOf = (item: InventoryItem) => merchants?.find((m) => m.id === item.merchantId)?.name;
   const total = groups.stock.length + groups.expiring.length + groups.reorder.length;

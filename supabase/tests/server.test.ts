@@ -107,7 +107,7 @@ const A = (id: string) => ({ authId: 'auth-' + id });
   const dump = JSON.stringify((await pg.query("select data from public.app_records")).rows);
   check('no temporary password anywhere in the database', !/Sdsi-/.test(dump) && !/Temporary password/.test(dump));
   const noInvite = await act(db, { ...deps, invite: async () => { throw new Error('smtp down'); } }, A('usr-admin'), 'addUser', { name: 'Ben Two', role: 'cashier', email: 'ben2@example.com', branchId: 'central' }, 'https://x') as any;
-  check('if the email service is down the account is still made and the admin is warned', noInvite.ok && noInvite.warnings.length === 1 && /resend/i.test(noInvite.warnings[0]));
+  check('if the email service is down the account is still made and the admin is warned', noInvite.ok && noInvite.warnings.length === 1 && /invitation again/i.test(noInvite.warnings[0]));
 
   // ---- admin accounts
   const asCashier = await act(db, deps, A('usr-cashier'), 'addUser', { name: 'Evil', role: 'admin', email: 'e@x.com' }, 'https://x') as any;
@@ -164,11 +164,25 @@ const A = (id: string) => ({ authId: 'auth-' + id });
   const gl = afterP.state.items.find((i: any) => i.sku === 'GL-BUNDLE');
   check('products and the bundle come back from the database', afterP.state.products.length === 2 && gl && gl.unitPrice === 1250 && gl.parts.length === 2 && gl.expiryDate === '2027-01-31', gl);
   const adminP = await dataFor(db, A('usr-admin')) as any, m1P = await dataFor(db, A('usr-m1')) as any, m2P = await dataFor(db, A('usr-m2')) as any, c1P = await dataFor(db, A('usr-c1')) as any, cashP2 = await dataFor(db, A('usr-cashier')) as any;
-  check('master list is scoped: admin and cashier all, merchant own only, resellers none', adminP.data.state.products.length === 2 && cashP2.data.state.products.length === 2 && m1P.data.state.products.length === 2 && m2P.data.state.products.length === 0 && c1P.data.state.products.length === 0);
+  check('master list is scoped: admin and cashier all, merchant own only, resellers only stock counts', adminP.data.state.products.length === 2 && cashP2.data.state.products.length === 2 && m1P.data.state.products.length === 2 && m2P.data.state.products.length === 0 && c1P.data.state.products.every((p: any) => p.name === '' && p.srp === 0));
   await pg.exec("update public.app_records set data = jsonb_set(data, '{category}', '\"Beauty & Skin\"') where kind = 'item' and id = 'itm-001'");
   await pg.exec("update public.app_records set data = jsonb_set(data, '{category}', '\"Herbal\"') where kind = 'item' and id = 'itm-002'");
   const legacy = await db.tx((q) => loadAll(q));
   check('older five-category data loads as the two new categories', legacy.state.items.find((i: any) => i.id === 'itm-001')!.category === 'Beauty Products' && legacy.state.items.find((i: any) => i.id === 'itm-002')!.category === 'Food Supplements');
+
+  const smtpFail = await act(db, { ...deps, invite: async () => { throw new Error('Error sending invite email'); } }, A('usr-admin'), 'addUser', { name: 'Smtp Test', role: 'cashier', email: 'smtp@example.com', branchId: 'central' }, 'https://x') as any;
+  check('a failed invitation is reported with the reason and what to check', smtpFail.ok && smtpFail.warnings?.length === 1 && /Error sending invite email/.test(smtpFail.warnings[0]) && /SMTP/.test(smtpFail.warnings[0]) && /Send invitation again/.test(smtpFail.warnings[0]), smtpFail.warnings);
+  const rateFail = await act(db, { ...deps, invite: async () => { throw new Error('email rate limit exceeded'); } }, A('usr-admin'), 'addUser', { name: 'Rate Test', role: 'cashier', email: 'rate@example.com', branchId: 'central' }, 'https://x') as any;
+  check('the hourly email limit is explained', /per hour/.test(rateFail.warnings?.[0] ?? ''), rateFail.warnings);
+  // stock per product through the server
+  const sIn = await act(db, deps, A('usr-clerk'), 'receiveStock', { input: { merchantId: 'mrc-1', receivedDate: '2026-10-29', note: '', lines: [{ productId: 'prd-0001', quantity: 9 }], branch: 'central' } }, 'https://x') as any;
+  const afterS = await db.tx((q) => loadAll(q));
+  check('stock in by product is saved per branch', sIn.ok && afterS.state.products.find((p: any) => p.id === 'prd-0001')!.branchStock!.central === 9 && afterS.state.products.find((p: any) => p.id === 'prd-0001')!.stock === 9, sIn);
+  const cust = await dataFor(db, A('usr-c1')) as any;
+  check('a reseller gets product stock counts but not names or SRP', cust.data.state.products.length === 2 && cust.data.state.products.every((p: any) => p.name === '' && p.srp === 0) && cust.data.state.products.find((p: any) => p.id === 'prd-0001').stock === 9);
+  await pg.exec("update public.app_records set data = data - 'stock' - 'branchStock' - 'reorderLevel' where kind = 'product' and id = 'prd-0002'");
+  const old = await db.tx((q) => loadAll(q));
+  check('products saved before per-product stock load with zero stock', old.state.products.find((p: any) => p.id === 'prd-0002')!.stock === 0 && old.state.products.find((p: any) => p.id === 'prd-0002')!.reorderLevel === 10);
 
   // ---- first admin bootstrap on an empty database
   const fresh = await newDb();

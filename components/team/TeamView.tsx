@@ -43,6 +43,7 @@ export function TeamView() {
     if (!result.ok) return show('bad', result.error);
     setName('');
     setEmail('');
+    if (result.warnings?.length) return show('bad', `${result.value.email} was added, but the invitation email was not sent.`, result.warnings);
     show('ok', `Invitation sent to ${result.value.email}. They choose their password from the email.`);
   }
 
@@ -50,6 +51,7 @@ export function TeamView() {
     setBusy(true);
     const result = await team!.resendInvite(userId);
     setBusy(false);
+    if (result.ok && result.warnings?.length) return show('bad', 'The invitation email was not sent.', result.warnings);
     show(result.ok ? 'ok' : 'bad', result.ok ? `Invitation sent again to ${to}.` : result.error);
   }
 

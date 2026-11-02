@@ -13,8 +13,10 @@ import { StatCard } from '@/components/ui/StatCard';
 import { useAuth } from '@/lib/auth';
 import { COVER_WARNING_DAYS } from '@/lib/brand';
 import { formatCurrency, formatDate, formatNumber } from '@/lib/format';
-import { coverDays, describeParts, getExpiry, getStockStatus, recentUnitsByItem, stockAt } from '@/lib/inventory';
-import { availableOf, flattenDelivered, inTransitByItem, reservedByItem } from '@/lib/orders';
+import { coverDays, describeParts, getExpiry, getStockStatus, stockAt } from '@/lib/inventory';
+import { addDays } from '@/lib/period';
+import { inTransitUnits, makeStockBook, recentUnitsByUnit, reservedUnits, stockUnits } from '@/lib/stock';
+import { availableOf, flattenDelivered } from '@/lib/orders';
 import { isSdsiTeam } from '@/lib/roles';
 import { useAppData } from '@/lib/store';
 import { CATEGORY_COLORS } from '@/lib/theme';
@@ -23,7 +25,9 @@ import { useToday } from '@/lib/use-today';
 
 export function InventoryView() {
   const { user } = useAuth();
-  const { items, orders, receipts, merchants, products } = useAppData();
+  const { items: skus, orders, receipts, merchants, products } = useAppData();
+  // Stock is counted per product from the master list (plus any older SKU that keeps its own stock).
+  const items = useMemo(() => stockUnits(skus, products), [skus, products]);
   const today = useToday();
 
   const isMerchant = user?.role === 'merchant';
@@ -50,11 +54,11 @@ export function InventoryView() {
     return branchSel === 'all' ? mine : mine.map((item) => ({ ...item, stock: stockAt(item, branchSel) }));
   }, [items, user, merchantId, branchSel]);
 
-  const reserved = useMemo(() => reservedByItem(orders, branchSel === 'all' ? undefined : branchSel), [orders, branchSel]);
-  const inTransit = useMemo(() => inTransitByItem(orders), [orders]);
+  const reserved = useMemo(() => reservedUnits(orders, skus, branchSel === 'all' ? undefined : branchSel), [orders, skus, branchSel]);
+  const inTransit = useMemo(() => inTransitUnits(orders, skus), [orders, skus]);
   const recentUnits = useMemo(
-    () => (today ? recentUnitsByItem(flattenDelivered(orders), today) : new Map<string, number>()),
-    [orders, today],
+    () => (today ? recentUnitsByUnit(flattenDelivered(orders), skus, today, 30, addDays) : new Map<string, number>()),
+    [orders, skus, today],
   );
 
   const stats = useMemo(() => {
@@ -370,8 +374,47 @@ export function InventoryView() {
           is under 14 days, amber is under {COVER_WARNING_DAYS}.
         </p>
       </Card>
+      <SellableSkus merchantId={isMerchant ? 'all' : merchantId} branch={branchSel} />
       </>
       ) : null}
     </div>
+  );
+}
+
+/** How many of each SKU or bundle can be sold right now, worked out from the product stock inside it. */
+function SellableSkus({ merchantId, branch }: { merchantId: string; branch: BranchId | 'all' }) {
+  const { items, products, orders, merchants } = useAppData();
+  const book = useMemo(() => makeStockBook(items, products, orders), [items, products, orders]);
+  const rows = items.filter((item) => item.parts?.length && !item.disabled && (merchantId === 'all' || item.merchantId === merchantId));
+  if (rows.length === 0) return null;
+  const at = branch === 'all' ? undefined : branch;
+  return (
+    <Card flush title="SKUs you can sell" subtitle="A SKU has no stock of its own: it is as many as the products inside allow, after open orders. Stock in and out is recorded on the products above.">
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-sm">
+          <thead className="border-y border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="px-5 py-2.5">SKU</th>
+              <th className="px-3 py-2.5">Name</th>
+              <th className="px-3 py-2.5">Made of</th>
+              <th className="px-3 py-2.5 text-right">Can sell</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {rows.map((item) => (
+              <tr key={item.id} data-testid="sellable-row">
+                <td className="px-5 py-3 font-mono text-xs text-slate-600">{item.sku}</td>
+                <td className="px-3 py-3 font-medium text-slate-900">
+                  {item.name}
+                  <span className="block text-xs font-normal text-slate-500">{merchants.find((m) => m.id === item.merchantId)?.name}</span>
+                </td>
+                <td className="px-3 py-3 text-xs text-slate-600">{describeParts(item, products)}</td>
+                <td className="px-3 py-3 text-right font-semibold tabular-nums">{formatNumber(book.available(item, at))}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
   );
 }

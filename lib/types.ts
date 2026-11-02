@@ -93,6 +93,12 @@ export interface MasterProduct {
   srp: number;
   /** Optional, YYYY-MM-DD. */
   expiryDate?: string;
+  /** On hand. Stock in and out happens here, per product; SKUs and bundles draw from it. */
+  stock: number;
+  /** Stock per branch. It always adds up to `stock`. */
+  branchStock?: Record<BranchId, number>;
+  /** At or below this quantity the product is flagged as Low Stock. */
+  reorderLevel: number;
 }
 
 /** One product inside a SKU. `qty` is paid for, `free` is given for nothing (it counts as a piece for the SF, not for the SRP). */
@@ -253,7 +259,10 @@ export type ReceiptKind = 'stock-in' | 'stock-out' | 'rts';
 export type ReceiptStatus = 'pending' | 'approved' | 'rejected';
 
 export interface ReceiptLine {
+  /** The SKU (returned goods) or, for a product line, the same as productId. */
   itemId: string;
+  /** Stock in / out is recorded per master-list product. */
+  productId?: string;
   sku: string;
   name: string;
   quantity: number;

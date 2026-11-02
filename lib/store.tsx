@@ -42,8 +42,10 @@ import type {
   User,
 } from './types';
 import { normalizeCategory } from './types';
+import { normalizeProduct } from './stock';
 
-export type ActionResult<T> = { ok: true; value: T } | { ok: false; error: string };
+/** `warnings`: the action worked but something around it did not (e.g. an invitation email could not be sent). */
+export type ActionResult<T> = { ok: true; value: T; warnings?: string[] } | { ok: false; error: string };
 
 /** Name plus the optional owner and bank details. */
 export interface MerchantInput {
@@ -104,7 +106,7 @@ export interface AppDataValue {
       merchantId: string;
       receivedDate: string;
       note: string;
-      lines: { itemId: string; quantity: number }[];
+      lines: { productId?: string; itemId?: string; quantity: number }[];
       branch?: BranchId;
     },
   ) => Promise<ActionResult<StockReceipt>>;
@@ -225,7 +227,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         if (isSavedState(parsed)) {
           commit({
             ...parsed,
-            products: Array.isArray(parsed.products) ? parsed.products : [],
+            products: Array.isArray(parsed.products) ? parsed.products.map(normalizeProduct) : [],
             items: parsed.items.map((item) => ({ ...item, category: normalizeCategory(item.category) })),
           });
         }

@@ -7,7 +7,7 @@ import { Icon } from '@/components/ui/Icon';
 import { BRAND } from '@/lib/brand';
 import { isSellable } from '@/lib/costing';
 import { formatCurrency, formatHkd } from '@/lib/format';
-import { availableAt, reservedByItem } from '@/lib/orders';
+import { makeStockBook } from '@/lib/stock';
 import { useAppData } from '@/lib/store';
 import { BRANCHES, DEFAULT_BRANCH, type BranchId, type Order } from '@/lib/types';
 
@@ -19,7 +19,7 @@ const STEPS = [
 
 /** Public page: no sign-in. Someone who wants to become a reseller picks a package and leaves their details. */
 export function BecomeReseller() {
-  const { items, costing, orders, applyForReseller } = useAppData();
+  const { items, products, costing, orders, applyForReseller } = useAppData();
   const { resellerDiscountPct, tierL1Pct, tierL2Pct, tierL3Pct } = costing.settings;
   const packages = useMemo(() => items.filter((item) => item.package && isSellable(item, costing)), [items, costing]);
 
@@ -42,7 +42,7 @@ export function BecomeReseller() {
   }, []);
   const chosen = itemId || packages[0]?.id || '';
   const chosenItem = packages.find((item) => item.id === chosen);
-  const left = (id: BranchId) => (chosenItem ? availableAt(chosenItem, reservedByItem(orders, id), id) : 0);
+  const left = (id: BranchId) => (chosenItem ? makeStockBook(items, products, orders).available(chosenItem, id) : 0);
 
   useEffect(() => {
     if (!chosenItem) return;

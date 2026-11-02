@@ -4,7 +4,7 @@
  * Server only.
  */
 import type { AppState } from '../engine';
-import { DEFAULT_BRANCH, type InventoryItem, type Merchant, type Order, type PackageSale, type User } from '../types';
+import { DEFAULT_BRANCH, type InventoryItem, type MasterProduct, type Merchant, type Order, type PackageSale, type User } from '../types';
 
 export interface Scoped {
   state: AppState;
@@ -59,6 +59,9 @@ function chainOf(users: User[], meId: string): Set<string> {
 }
 
 const stripCost = (item: InventoryItem): InventoryItem => ({ ...item, unitCost: 0 });
+
+/** A reseller needs the stock count to see what is available, not the product's name or the merchant's SRP. */
+export const stockOnly = (product: MasterProduct): MasterProduct => ({ id: product.id, merchantId: '', code: '', name: '', srp: 0, stock: product.stock, branchStock: product.branchStock, reorderLevel: product.reorderLevel });
 
 /** Who may read a merchant's owner and bank details: the admin, the cashier who releases payouts, and that merchant. */
 const merchantsFor = (me: User, merchants: Merchant[]): Merchant[] =>
@@ -119,7 +122,7 @@ export function scopeFor(me: User, state: AppState, merchantList: Merchant[]): S
         ...base,
         costing,
         items: state.items.map(stripCost),
-        products: [],
+        products: state.products.map(stockOnly),
         orders,
         receipts: [],
         reversals: [],

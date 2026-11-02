@@ -12,6 +12,7 @@ import { canApprove } from '@/lib/roles';
 import { useAppData } from '@/lib/store';
 import { DEFAULT_BRANCH, branchName, type BranchId, type StockReceipt } from '@/lib/types';
 import { stockAt } from '@/lib/inventory';
+import { stockUnits } from '@/lib/stock';
 import { BranchSelect } from '@/components/ui/BranchSelect';
 import { useToday } from '@/lib/use-today';
 
@@ -146,7 +147,7 @@ export function ReceiptRow({ receipt, merchantFilter }: { receipt: StockReceipt;
 
 function ReceiveForm() {
   const { user } = useAuth();
-  const { items, merchants, receiveStock } = useAppData();
+  const { items, products, merchants, receiveStock } = useAppData();
   const today = useToday() || MOCK_TODAY;
 
   const [kind, setKind] = useState<'stock-in' | 'stock-out'>('stock-in');
@@ -158,7 +159,8 @@ function ReceiveForm() {
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
 
-  const catalog = useMemo(() => items.filter((item) => item.merchantId === merchantId), [items, merchantId]);
+  // Stock is kept per product from the master list (older hand-typed SKUs that keep their own stock are listed too).
+  const catalog = useMemo(() => stockUnits(items, products).filter((unit) => unit.merchantId === merchantId), [items, products, merchantId]);
   if (!user) return null;
   const branch: BranchId = user.role === 'cashier' ? (user.branchId ?? DEFAULT_BRANCH) : branchPick;
 
@@ -169,7 +171,7 @@ function ReceiveForm() {
       merchantId,
       receivedDate: date || today,
       note,
-      lines: catalog.map((item) => ({ itemId: item.id, quantity: Number(quantities[item.id] || 0) })),
+      lines: catalog.map((item) => ({ ...(products.some((product) => product.id === item.id) ? { productId: item.id } : { itemId: item.id }), quantity: Number(quantities[item.id] || 0) })),
     });
     if (!result.ok) {
       setError(result.error);
@@ -250,6 +252,9 @@ function ReceiveForm() {
           </label>
         </div>
 
+        {catalog.length === 0 ? (
+          <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800">This merchant has no products yet. Add them in Inventory → Master list first.</p>
+        ) : null}
         <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200">
           {catalog.map((item) => (
             <li key={item.id} className="flex items-center justify-between gap-3 px-3 py-2.5">

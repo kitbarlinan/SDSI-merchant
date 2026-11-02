@@ -11,7 +11,7 @@ import { useAuth } from '@/lib/auth';
 import { isSellable, livePickup } from '@/lib/costing';
 import { formatDate, formatHkd, roundMoney } from '@/lib/format';
 import { MOCK_TODAY } from '@/lib/mock-data';
-import { availableAt, otherBranchStock, reservedByItem } from '@/lib/orders';
+import { expiryOf, makeStockBook } from '@/lib/stock';
 import { useAppData } from '@/lib/store';
 import { PAYMENT_METHODS, type Order, type PaymentMethod } from '@/lib/types';
 import { useToday } from '@/lib/use-today';
@@ -35,7 +35,7 @@ function quickAmounts(total: number): number[] {
 
 export function PosView() {
   const { user } = useAuth();
-  const { items, orders, merchants, costing, users, packageSales, checkoutWalkIn } = useAppData();
+  const { items, products, orders, merchants, costing, users, packageSales, checkoutWalkIn } = useAppData();
   const today = useToday() || MOCK_TODAY;
 
   const [typed, setTyped] = useState<Record<string, string>>({});
@@ -51,17 +51,17 @@ export function PosView() {
   const [receipt, setReceipt] = useState<Receipt | null>(null);
 
   const posBranch: BranchId = user?.role === 'cashier' ? (user.branchId ?? DEFAULT_BRANCH) : branch;
-  const reserved = useMemo(() => reservedByItem(orders, posBranch), [orders, posBranch]);
+  const book = useMemo(() => makeStockBook(items, products, orders), [items, products, orders]);
   const rows: ListRow[] = useMemo(
     () =>
       items.filter((item) => isSellable(item, costing)).map((item) => ({
         item,
-        available: availableAt(item, reserved, posBranch),
-          elsewhere: otherBranchStock(item, orders, posBranch),
-        expired: item.expiryDate < today,
+        available: book.available(item, posBranch),
+          elsewhere: book.elsewhere(item, posBranch),
+        expired: expiryOf(item, products) < today,
         pickupHkd: livePickup(costing, item.id) ?? 0,
       })),
-    [items, reserved, today, costing, orders, posBranch],
+    [items, products, book, today, costing, posBranch],
   );
 
   const parsed = parseQuantities(rows, typed);

@@ -7,7 +7,7 @@ import type { Merchant, MerchantProfile, Role, User } from '../types';
 import { ACTIONS, PUBLIC_ACTIONS, actorOf } from './actions';
 import type { TxDb } from './db';
 import { loadAll, lockWriters, saveDiff, type Loaded } from './repo';
-import { scopeFor, redactOrder, type Scoped } from './scope';
+import { scopeFor, redactOrder, stockOnly, type Scoped } from './scope';
 
 export interface Deps {
   /** Supabase: send the invite email and return the new auth user's id. */
@@ -90,6 +90,7 @@ export async function publicCatalog(db: TxDb): Promise<Scoped> {
     state: {
       ...state,
       items: state.items.filter((item) => item.package && !item.disabled).map((item) => ({ ...item, unitCost: 0 })),
+      products: state.products.map(stockOnly),
       orders: state.orders.filter((order) => ['pending', 'packed', 'shipped'].includes(order.status)).map(redactOrder),
       receipts: [],
       reversals: [],
@@ -267,6 +268,15 @@ async function adminAction(q: Parameters<Parameters<TxDb['tx']>[0]>[0], before: 
   return { done: true as const, after: before, invites: [target], value: true };
 }
 
+/** What to check for the usual reasons an invitation fails. */
+export function inviteHint(reason: string): string {
+  if (/rate limit|too many|exceeded/i.test(reason)) return 'Supabase limits how many emails it sends per hour (very few without your own SMTP). Wait an hour, or set up SMTP in Supabase → Authentication → Emails → SMTP Settings.';
+  if (/sending|smtp|mail|confirmation|535|authentication/i.test(reason)) return 'Supabase could not send the email through your SMTP. Check Supabase → Authentication → Emails → SMTP Settings (host, port 587, the SMTP login and key, and a verified sender address).';
+  if (/service_role|SUPABASE_SERVICE_ROLE_KEY|api key|jwt|invalid/i.test(reason)) return 'Check the SUPABASE_SERVICE_ROLE_KEY in Vercel (Environment Variables), then redeploy.';
+  if (/redirect|url/i.test(reason)) return 'Add your site address under Supabase → Authentication → URL Configuration (Site URL and Redirect URLs).';
+  return 'Check the Supabase project settings under Authentication → Emails.';
+}
+
 /** After the records are saved: ask the sign-in service to email each new account. Never blocks the action. */
 async function sendInvites(db: TxDb, deps: Deps, users: User[], origin: string): Promise<string[]> {
   const warnings: string[] = [];
@@ -284,7 +294,8 @@ async function sendInvites(db: TxDb, deps: Deps, users: User[], origin: string):
         await saveDiff(q, loaded, next);
       });
     } catch (error) {
-      warnings.push(`Could not email ${user.email}: ${error instanceof Error ? error.message : 'unknown error'}. The admin can resend the invitation.`);
+      const reason = error instanceof Error ? error.message : 'unknown error';
+      warnings.push(`Could not email ${user.email}: ${reason}. ${inviteHint(reason)} After fixing it, press "Send invitation again".`);
     }
   }
   return warnings;

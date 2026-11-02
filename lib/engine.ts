@@ -25,8 +25,8 @@ import {
   type CostingState,
 } from './costing';
 import { provisionReseller, validateCredentials } from './accounts';
-import { moveStock, stockAt } from './inventory';
-import { availableAt, availableOf, orderTotal, reservedByItem } from './orders';
+import { demandOfLines, emptySplit, expiryOf, holderAt, makeStockBook, moveUnits, reservedUnits } from './stock';
+import { orderTotal } from './orders';
 import { buildWeekRemittances, remittedOrderIds, weekEndOf, weekStartOf } from './remittance';
 import {
   PAYMENT_METHODS,
@@ -134,7 +134,9 @@ function buildLines(
   branch?: BranchId,
 ): { ok: true; lines: OrderLine[] } | { ok: false; error: string } {
   if (requested.length === 0) return fail('Add at least one product.');
-  const reserved = reservedByItem(state.orders, branch);
+  const book = makeStockBook(state.items, state.products, state.orders);
+  // Products already taken by earlier lines of this same order (two SKUs can share a product).
+  const taken = new Map<string, number>();
   const lines: OrderLine[] = [];
 
   for (const [itemId, quantity] of mergeLines(requested)) {
@@ -144,12 +146,12 @@ function buildLines(
     if (!Number.isInteger(quantity) || quantity < 1) {
       return fail('Quantities must be whole numbers of at least 1.');
     }
-    if (item.expiryDate < today) return fail(`"${item.name}" is past its expiry date.`);
-    const available = branch ? availableAt(item, reserved, branch) : availableOf(item, reserved);
+    if (expiryOf(item, state.products) < today) return fail(`"${item.name}" is past its expiry date.`);
+    const available = book.available(item, branch, taken);
     if (quantity > available) {
       if (branch) {
         const other = BRANCHES.find((candidate) => candidate.id !== branch)!;
-        const elsewhere = availableAt(item, reservedByItem(state.orders, other.id), other.id);
+        const elsewhere = book.available(item, other.id);
         const where = BRANCHES.find((candidate) => candidate.id === branch)!.name;
         if (available === 0) {
           return fail(`No stock left on this branch for "${item.name}" (${where}).${elsewhere > 0 ? ` ${other.name} has ${elsewhere}. Choose that branch instead.` : ''}`);
@@ -158,6 +160,7 @@ function buildLines(
       }
       return fail(`Only ${available} of "${item.name}" available.`);
     }
+    for (const [unitId, qty] of demandOfLines(state.items, [{ itemId, quantity }])) taken.set(unitId, (taken.get(unitId) ?? 0) + qty);
     lines.push({
       itemId: item.id,
       sku: item.sku,
@@ -459,14 +462,14 @@ export function checkoutWalkIn(
     };
   });
 
-  const sold = new Map<string, number>();
-  for (const line of built.lines) sold.set(line.itemId, line.quantity);
+  const moved = moveUnits(state.items, state.products, branch, demandOfLines(state.items, built.lines), -1);
 
   const first = created[0];
   const next: AppState = {
     ...state,
     poSeq,
-    items: moveStock(state.items, branch, sold, -1),
+    items: moved.items,
+    products: moved.products,
     orders: [...[...created].reverse(), ...state.orders],
   };
   const withUser: AppState = newUser
@@ -498,15 +501,17 @@ export function markPacked(
 }
 
 /** Takes the goods of an order off the shelf. Fails if the shelf does not have enough. */
-function releaseStock(state: AppState, order: Order): { ok: true; items: InventoryItem[] } | { ok: false; error: string } {
-  for (const line of order.lines) {
-    const item = state.items.find((candidate) => candidate.id === line.itemId);
-    if (!item || stockAt(item, order.branch ?? DEFAULT_BRANCH) < line.quantity) {
-      return fail(`Not enough "${line.name}" on hand at this branch. Receive stock first.`);
+function releaseStock(state: AppState, order: Order): { ok: true; items: InventoryItem[]; products: MasterProduct[] } | { ok: false; error: string } {
+  const branch = order.branch ?? DEFAULT_BRANCH;
+  const need = demandOfLines(state.items, order.lines);
+  const names = (id: string) => state.products.find((product) => product.id === id)?.name ?? state.items.find((item) => item.id === id)?.name ?? 'a product';
+  for (const [unitId, qty] of need) {
+    const holder = state.products.find((product) => product.id === unitId) ?? state.items.find((item) => item.id === unitId);
+    if (!holder || holderAt(holder, branch) < qty) {
+      return fail(`Not enough "${names(unitId)}" on hand at this branch. Receive stock first.`);
     }
   }
-  const out = new Map(order.lines.map((line) => [line.itemId, line.quantity] as const));
-  return { ok: true, items: moveStock(state.items, order.branch ?? DEFAULT_BRANCH, out, -1) };
+  return { ok: true, ...moveUnits(state.items, state.products, branch, need, -1) };
 }
 
 /**
@@ -534,7 +539,7 @@ export function shipOrder(
   const released = releaseStock(state, order);
   if (!released.ok) return fail(released.error);
 
-  const next = updateOrder({ ...state, items: released.items }, orderId, {
+  const next = updateOrder({ ...state, items: released.items, products: released.products }, orderId, {
     status: 'shipped',
     shippedAt: now,
     waybill: code,
@@ -568,7 +573,7 @@ export function markDelivered(
     if (order.status !== 'packed') return fail('Pack the order before marking it as delivered.');
     const released = releaseStock(state, order);
     if (!released.ok) return fail(released.error);
-    base = { ...state, items: released.items };
+    base = { ...state, items: released.items, products: released.products };
   }
 
   const next = updateOrder(base, orderId, {
@@ -656,7 +661,8 @@ export function createStockInReceipt(
     merchantId: string;
     receivedDate: string;
     note: string;
-    lines: { itemId: string; quantity: number }[];
+    /** Stock is recorded per master-list product (productId). Older hand-typed SKUs that keep their own stock use itemId. */
+    lines: { productId?: string; itemId?: string; quantity: number }[];
     /** Admin and clerk choose the branch. A cashier always works on their own. */
     branch?: BranchId;
   },
@@ -667,21 +673,30 @@ export function createStockInReceipt(
   const kind = input.kind ?? 'stock-in';
   const dateError = validReceivedDate(input.receivedDate, now);
   if (dateError) return fail(dateError);
-  if (!state.items.some((item) => item.merchantId === input.merchantId)) {
+  if (!state.products.some((product) => product.merchantId === input.merchantId) && !state.items.some((item) => item.merchantId === input.merchantId)) {
     return fail('Choose the merchant the stock belongs to.');
   }
   if (kind === 'stock-out' && input.note.trim().length < 3) return fail('Write the reason for the stock out.');
-  const reserved = reservedByItem(state.orders, branch);
+  const held = reservedUnits(state.orders, state.items, branch);
   const lines: ReceiptLine[] = [];
-  for (const [itemId, quantity] of mergeLines(input.lines)) {
+  const merged = new Map<string, { productId?: string; itemId?: string; quantity: number }>();
+  for (const line of input.lines) {
+    const key = line.productId ?? line.itemId ?? '';
+    merged.set(key, { ...line, quantity: (merged.get(key)?.quantity ?? 0) + line.quantity });
+  }
+  for (const [key, line] of merged) {
+    const quantity = line.quantity;
     if (quantity === 0) continue;
-    const item = state.items.find((candidate) => candidate.id === itemId);
-    if (!item || item.merchantId !== input.merchantId) return fail('Product not found for this merchant.');
+    const product = line.productId ? state.products.find((candidate) => candidate.id === key) : undefined;
+    const legacy = !line.productId ? state.items.find((candidate) => candidate.id === key) : undefined;
+    if (legacy?.parts?.length) return fail(`Stock is kept per product, not per SKU. Record "${legacy.name}" by the products inside it.`);
+    const holder = product ?? legacy;
+    if (!holder || holder.merchantId !== input.merchantId) return fail('Product not found for this merchant.');
     if (!Number.isInteger(quantity) || quantity < 1) return fail('Quantities must be whole numbers.');
-    if (kind === 'stock-out' && quantity > availableAt(item, reserved, branch)) {
-      return fail(`Only ${availableAt(item, reserved, branch)} of "${item.name}" are available to take out at this branch.`);
+    if (kind === 'stock-out' && quantity > Math.max(0, holderAt(holder, branch) - (held.get(holder.id) ?? 0))) {
+      return fail(`Only ${Math.max(0, holderAt(holder, branch) - (held.get(holder.id) ?? 0))} of "${holder.name}" are available to take out at this branch.`);
     }
-    lines.push({ itemId, sku: item.sku, name: item.name, quantity });
+    lines.push({ itemId: holder.id, ...(product ? { productId: product.id } : {}), sku: product ? product.code : (holder as InventoryItem).sku, name: holder.name, quantity });
   }
   if (lines.length === 0) {
     return fail(`Enter the quantity ${kind === 'stock-in' ? 'received' : 'to take out'} for at least one product.`);
@@ -702,11 +717,10 @@ export function createStockInReceipt(
     ...(selfApproved ? { decidedBy: actor.id, decidedAt: now } : {}),
   };
   const sign = kind === 'stock-in' ? 1 : -1;
-  const qty = new Map(lines.map((line) => [line.itemId, line.quantity] as const));
-  const items = selfApproved
-    ? moveStock(state.items, branch, qty, sign)
-    : state.items;
-  return { ok: true, state: { ...state, items, receipts: [receipt, ...state.receipts] }, value: receipt };
+  const moved = selfApproved
+    ? moveUnits(state.items, state.products, branch, demandOfLines(state.items, lines), sign)
+    : { items: state.items, products: state.products };
+  return { ok: true, state: { ...state, ...moved, receipts: [receipt, ...state.receipts] }, value: receipt };
 }
 
 /** The courier brought an RTS order back. The cashier logs it; approval puts it back on the shelf. */
@@ -776,24 +790,27 @@ function decide(
   };
 
   let items = state.items;
+  let products = state.products;
   if (status === 'approved') {
     const sign = receipt.kind === 'stock-out' ? -1 : 1;
+    const branch = receipt.branch ?? DEFAULT_BRANCH;
+    const add = demandOfLines(state.items, receipt.lines);
     if (sign === -1) {
-      const reserved = reservedByItem(state.orders, receipt.branch ?? DEFAULT_BRANCH);
-      for (const line of receipt.lines) {
-        const item = state.items.find((candidate) => candidate.id === line.itemId);
-        if (!item || line.quantity > availableAt(item, reserved, receipt.branch ?? DEFAULT_BRANCH)) {
-          return fail(`Not enough "${line.name}" available at this branch to take out anymore.`);
+      const held = reservedUnits(state.orders, state.items, branch);
+      for (const [unitId, qty] of add) {
+        const holder = state.products.find((product) => product.id === unitId) ?? state.items.find((item) => item.id === unitId);
+        if (!holder || qty > Math.max(0, holderAt(holder, branch) - (held.get(unitId) ?? 0))) {
+          return fail(`Not enough "${holder?.name ?? 'product'}" available at this branch to take out anymore.`);
         }
       }
     }
-    const add = new Map(receipt.lines.map((line) => [line.itemId, line.quantity] as const));
-    items = moveStock(state.items, receipt.branch ?? DEFAULT_BRANCH, add, sign);
+    ({ items, products } = moveUnits(state.items, state.products, branch, add, sign));
   }
 
   let next: AppState = {
     ...state,
     items,
+    products,
     receipts: state.receipts.map((candidate) => (candidate.id === receiptId ? decided : candidate)),
   };
   // A rejected return can be received again.
@@ -1139,6 +1156,9 @@ export function addProduct(state: AppState, actor: Actor, input: ProductInput, n
     name: input.name.trim().replace(/\s+/g, ' '),
     srp: roundMoney(input.srp),
     ...(input.expiryDate ? { expiryDate: input.expiryDate } : {}),
+    stock: 0,
+    branchStock: emptySplit(),
+    reorderLevel: 10,
   };
   return {
     ok: true,
@@ -1170,7 +1190,7 @@ export function updateProduct(state: AppState, actor: Actor, id: string, patch: 
   const { expiryDate: _old, ...rest } = product;
   void _old;
   const next: MasterProduct = { ...rest, code, name, srp: roundMoney(srp), ...(expiry ? { expiryDate: expiry } : {}) };
-  if (JSON.stringify(next) === JSON.stringify(product)) return fail('Nothing was changed.');
+  if (next.code === product.code && next.name === product.name && next.srp === product.srp && next.expiryDate === product.expiryDate) return fail('Nothing was changed.');
   return {
     ok: true,
     state: {
@@ -1292,6 +1312,9 @@ export function importProducts(
       name: create.input.name,
       srp: roundMoney(create.input.srp),
       ...(create.input.expiryDate ? { expiryDate: create.input.expiryDate } : {}),
+      stock: 0,
+      branchStock: emptySplit(),
+      reorderLevel: 10,
     });
   }
   products = products.map((product) => {
@@ -1674,9 +1697,9 @@ export function approveReversal(
   const target = undoTarget(order);
   let change: Partial<Order> = { status: target };
   let items = state.items;
+  let products = state.products;
   const give = (sign: 1 | -1) => {
-    const qty = new Map(order.lines.map((line) => [line.itemId, line.quantity] as const));
-    items = moveStock(state.items, order.branch ?? DEFAULT_BRANCH, qty, sign);
+    ({ items, products } = moveUnits(state.items, state.products, order.branch ?? DEFAULT_BRANCH, demandOfLines(state.items, order.lines), sign));
   };
 
   if (order.status === 'delivered') {
@@ -1694,12 +1717,14 @@ export function approveReversal(
     change = { ...change, rtsAt: undefined, rtsReason: undefined };
   } else {
     // "Not delivered" before shipping: the stock is reserved again, so there must be enough of it.
-    const reserved = reservedByItem(state.orders, order.branch ?? DEFAULT_BRANCH);
+    const book = makeStockBook(state.items, state.products, state.orders);
+    const taken = new Map<string, number>();
     for (const line of order.lines) {
       const item = state.items.find((candidate) => candidate.id === line.itemId);
-      if (!item || line.quantity > availableAt(item, reserved, order.branch ?? DEFAULT_BRANCH)) {
+      if (!item || line.quantity > book.available(item, order.branch ?? DEFAULT_BRANCH, taken)) {
         return fail(`Not enough "${line.name}" available at this branch to reserve this order again.`);
       }
+      for (const [unitId, qty] of demandOfLines(state.items, [line])) taken.set(unitId, (taken.get(unitId) ?? 0) + qty);
     }
     change = { ...change, cancelledAt: undefined, cancelReason: undefined };
   }
@@ -1710,6 +1735,7 @@ export function approveReversal(
     state: {
       ...state,
       items,
+      products,
       orders: state.orders.map((candidate) => (candidate.id === order.id ? { ...candidate, ...change } : candidate)),
       reversals: state.reversals.map((candidate) => (candidate.id === requestId ? next : candidate)),
     },
