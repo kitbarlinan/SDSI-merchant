@@ -11,7 +11,7 @@ import { formatCurrency, formatDateTime, formatHkd, formatNumber } from '@/lib/f
 import { TERMS_LABEL, orderAmountLabel, orderTotal } from '@/lib/orders';
 import { isStaff } from '@/lib/roles';
 import { useAppData, type ActionResult } from '@/lib/store';
-import { PAYMENT_METHODS, type Merchant, type Order, type PaymentMethod } from '@/lib/types';
+import { PAYMENT_METHODS, branchName, type Merchant, type Order, type PaymentMethod } from '@/lib/types';
 
 const CANCEL_REASONS = [
   'Customer unreachable',
@@ -165,7 +165,7 @@ export function OrderCard({
         <div className="space-y-3 border-t border-slate-100 p-4 lg:border-l lg:border-t-0">
           <div className="flex items-baseline justify-between">
             <span className="text-xs text-slate-500">
-              {order.status === 'delivered' ? 'Collected' : 'To collect'} · {TERMS_LABEL[order.terms]}
+              {order.status === 'delivered' ? 'Collected' : 'To collect'} · {TERMS_LABEL[order.terms]} · {branchName(order.branch)}
             </span>
             <span className="text-lg font-semibold text-slate-900">{orderAmountLabel(order)}</span>
           </div>

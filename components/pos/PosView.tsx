@@ -1,5 +1,7 @@
 'use client';
 
+import { BranchSelect } from '@/components/ui/BranchSelect';
+import { DEFAULT_BRANCH, branchName, type BranchId } from '@/lib/types';
 import { useMemo, useState } from 'react';
 import { ProductList, parseQuantities, type ListRow } from '@/components/orders/ProductList';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -40,6 +42,7 @@ export function PosView() {
   const [customerName, setCustomerName] = useState(DEFAULT_NAME);
   const [method, setMethod] = useState<PaymentMethod>('Cash');
   const [resellerId, setResellerId] = useState('');
+  const [branch, setBranch] = useState<BranchId>(DEFAULT_BRANCH);
   const [newName, setNewName] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [sponsorId, setSponsorId] = useState('');
@@ -83,6 +86,7 @@ export function PosView() {
       lines: parsed.lines.map((line) => ({ itemId: line.item.id, quantity: line.quantity })),
       paymentMethod: method,
       customerName,
+      branch: user.role === 'admin' ? branch : undefined,
       ...(sellingPackage
         ? resellerId
           ? { resellerId }
@@ -146,6 +150,7 @@ export function PosView() {
           <div className="text-sm">
             <p className="text-xs font-medium text-slate-500">Date</p>
             <p className="mt-1 font-semibold text-slate-900">{formatDate(today)}</p>
+            {user.role === 'cashier' ? <p className="mt-1 text-xs text-slate-500">Branch: {branchName(user.branchId)}</p> : null}
           </div>
           {sellingPackage ? (
             <Field label="Customer buying the package" htmlFor="walkInNewName">
@@ -171,6 +176,7 @@ export function PosView() {
               />
             </Field>
           )}
+          {user.role === 'admin' ? <BranchSelect id="posBranch" label="Counter (branch)" value={branch} onChange={setBranch} /> : null}
           <Field label="Payment option" htmlFor="walkInPayment">
             <select
               id="walkInPayment"

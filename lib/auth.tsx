@@ -25,6 +25,8 @@ interface AuthValue {
   /** false until the saved session has been read, to avoid flashing the login screen. */
   ready: boolean;
   login: (userId: string) => void;
+  /** Sign in with a username and password. false when they do not match. */
+  loginWithPassword: (username: string, password: string) => boolean;
   logout: () => void;
 }
 
@@ -55,6 +57,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [accounts]);
 
+  const loginWithPassword = useCallback(
+    (username: string, password: string): boolean => {
+      const match = accounts.find((candidate) => candidate.username && candidate.username === username.trim().toLowerCase() && candidate.password === password);
+      if (!match) return false;
+      setUserId(match.id);
+      try {
+        window.localStorage.setItem(SESSION_KEY, match.id);
+      } catch {
+        // Ignore.
+      }
+      return true;
+    },
+    [accounts],
+  );
+
   const logout = useCallback(() => {
     setUserId(null);
     try {
@@ -70,9 +87,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       users: accounts,
       ready,
       login,
+      loginWithPassword,
       logout,
     }),
-    [userId, ready, login, logout, accounts],
+    [userId, ready, login, loginWithPassword, logout, accounts],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

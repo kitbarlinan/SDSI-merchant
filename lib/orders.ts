@@ -1,4 +1,5 @@
 import { formatCurrency, formatHkd, roundMoney } from './format';
+import { DEFAULT_BRANCH, type BranchId } from './types';
 import type {
   InventoryItem,
   Order,
@@ -171,4 +172,10 @@ export function tierIncome(
     pending: sum(rows.filter((row) => !row.earned)),
     rows: rows.sort((a, b) => b.date.localeCompare(a.date)),
   };
+}
+
+/** What a user sees: a cashier only the orders of their own branch, everyone else all (their own filter applies elsewhere). */
+export function ordersForUser(orders: Order[], user: { role: string; branchId?: BranchId } | null): Order[] {
+  if (!user || user.role !== 'cashier') return orders;
+  return orders.filter((order) => (order.branch ?? DEFAULT_BRANCH) === (user.branchId ?? DEFAULT_BRANCH));
 }

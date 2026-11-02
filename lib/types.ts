@@ -16,6 +16,24 @@ export type Category = (typeof CATEGORIES)[number];
 
 export type Role = 'admin' | 'cashier' | 'clerk' | 'merchant' | 'customer';
 
+/** The two counters. SDSI Shueng Wan is the default. Stock is shared; each branch has its own cashier. */
+export const BRANCHES = [
+  { id: 'shueng-wan', name: 'SDSI Shueng Wan' },
+  { id: 'central', name: 'Central' },
+] as const;
+export type BranchId = (typeof BRANCHES)[number]['id'];
+export const DEFAULT_BRANCH: BranchId = 'shueng-wan';
+export const branchName = (id: BranchId | undefined): string => BRANCHES.find((branch) => branch.id === (id ?? DEFAULT_BRANCH))!.name;
+
+/** A message the app sent by email. In the demo nothing leaves the app: it is only listed. */
+export interface SentEmail {
+  id: string;
+  to: string;
+  subject: string;
+  body: string;
+  createdAt: string;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -26,6 +44,15 @@ export interface User {
   sponsorId?: string;
   /** Where the login invite goes. Resellers created at the counter. */
   email?: string;
+  /** Cashiers: the branch they work at. */
+  branchId?: BranchId;
+  /** Resellers: sign-in name and password. DEMO ONLY: real sign-in keeps no password in the app (Supabase Auth). */
+  username?: string;
+  password?: string;
+  /** True until the reseller replaces the temporary username and password. */
+  mustChange?: boolean;
+  /** Resellers: shared on the landing page link so new resellers land under them. */
+  refCode?: string;
 }
 
 export interface Merchant {
@@ -58,7 +85,7 @@ export interface InventoryItem {
   /** Switched off for the reseller program by the admin. Only matters if the merchant is in the program. */
   resellerOff?: boolean;
   /** A reseller package: a product that bundles other goods. Buying it makes the buyer a reseller. */
-  package?: { inclusions: string };
+  package?: { inclusions: string; priceHkd: number };
 }
 
 export type StockStatus = 'ok' | 'low' | 'out';
@@ -146,6 +173,10 @@ export interface Order {
   tiers?: TierShare[];
   /** The reseller this order is for (counter sale of the package). */
   buyerId?: string;
+  /** Pickup / handling branch. Missing = SDSI Shueng Wan. */
+  branch?: BranchId;
+  /** Someone applying to become a reseller from the landing page. Their account is made when the cashier delivers. */
+  applicant?: { name: string; email: string; mobile: string; sponsorId?: string };
 }
 
 /** One delivered order line, flattened for reporting. Dated by the day payment was collected. */

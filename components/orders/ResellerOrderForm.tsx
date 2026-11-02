@@ -1,5 +1,7 @@
 'use client';
 
+import { BranchSelect } from '@/components/ui/BranchSelect';
+import { DEFAULT_BRANCH, type BranchId } from '@/lib/types';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -23,6 +25,7 @@ export function ResellerOrderForm() {
 
   const [typed, setTyped] = useState<Record<string, string>>({});
   const [contactNo, setContactNo] = useState('');
+  const [branch, setBranch] = useState<BranchId>(DEFAULT_BRANCH);
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [placed, setPlaced] = useState<Order[] | null>(null);
@@ -62,6 +65,7 @@ export function ResellerOrderForm() {
       customerName: user.name,
       contactNo,
       notes,
+      branch,
       lines: parsed.lines.map((line) => ({ itemId: line.item.id, quantity: line.quantity })),
     });
     if (!result.ok) return setError(result.error);
@@ -114,6 +118,7 @@ export function ResellerOrderForm() {
         footer={
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="grid max-w-md flex-1 gap-3 sm:grid-cols-2">
+              <BranchSelect id="resellerBranch" label="Pick up at" value={branch} onChange={setBranch} />
               <Field label="Mobile # (optional)" htmlFor="resellerContact">
                 <input
                   id="resellerContact"

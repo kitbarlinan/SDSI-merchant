@@ -1,5 +1,7 @@
 'use client';
 
+import Link from 'next/link';
+import { PasswordSignIn } from '@/components/auth/PasswordSignIn';
 import { Icon } from '@/components/ui/Icon';
 import { useAuth } from '@/lib/auth';
 import { BRAND } from '@/lib/brand';
@@ -40,11 +42,19 @@ export function LoginScreen() {
 
         <div className="rounded-2xl bg-white p-6 shadow-xl">
           <h1 className="text-lg font-semibold text-slate-900">Sign in</h1>
-          <p className="mt-1 text-sm text-slate-500">Choose an account to continue.</p>
+          <p className="mt-1 text-sm text-slate-500">Choose an account to continue, or sign in as a reseller.</p>
+
+          <PasswordSignIn />
+          <p className="mt-3 text-sm text-slate-600">
+            Want to become a reseller and get a discount?{' '}
+            <Link href="/become-a-reseller" className="font-semibold text-emerald-700 hover:underline">
+              Click here
+            </Link>
+          </p>
 
           <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-            <span className="font-semibold">Demo mode.</span> There is no password yet, so anyone can pick
-            any account. Real sign-in comes with the database.
+            <span className="font-semibold">Demo mode.</span> Staff, merchants and the sample resellers below have no password, so anyone can
+            pick them. Real sign-in comes with the database.
           </p>
 
           <div className="mt-5 space-y-5">

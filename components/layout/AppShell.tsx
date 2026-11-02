@@ -4,14 +4,15 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useMemo, type ReactNode } from 'react';
 import { LoginScreen } from '@/components/auth/LoginScreen';
+import { SetCredentialsScreen } from '@/components/auth/SetCredentialsScreen';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { useAuth } from '@/lib/auth';
 import { BRAND } from '@/lib/brand';
 import { getStockStatus } from '@/lib/inventory';
-import { isOpen } from '@/lib/orders';
+import { isOpen, ordersForUser } from '@/lib/orders';
 import { ROLE_LABEL, canApprove } from '@/lib/roles';
 import { useAppData } from '@/lib/store';
-import type { Role } from '@/lib/types';
+import { branchName, type Role } from '@/lib/types';
 
 interface NavItem {
   href: string;
@@ -91,7 +92,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (!user) return { orders: 0, inventory: 0, approvals: 0 };
     const mine = <T extends { merchantId: string }>(rows: T[]) =>
       user.role === 'merchant' ? rows.filter((row) => row.merchantId === user.merchantId) : rows;
-    const myOrders = user.role === 'customer' ? orders.filter((order) => order.createdBy === user.id) : mine(orders);
+    const myOrders = user.role === 'customer' ? orders.filter((order) => (order.buyerId ?? order.createdBy) === user.id) : mine(ordersForUser(orders, user));
     return {
       orders: myOrders.filter(isOpen).length,
       inventory: mine(items).filter((item) => getStockStatus(item) !== 'ok').length,
@@ -103,6 +104,9 @@ export function AppShell({ children }: { children: ReactNode }) {
     };
   }, [user, orders, items, receipts, reversals, remittances]);
 
+  // The reseller landing page is public: no sign-in needed.
+  if (pathname.startsWith('/become-a-reseller')) return <>{children}</>;
+
   if (!ready) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-emerald-950 text-emerald-100">
@@ -112,12 +116,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   if (!user) return <LoginScreen />;
+  if (user.mustChange) return <SetCredentialsScreen />;
 
   const merchantName =
     user.role === 'merchant'
       ? merchants.find((merchant) => merchant.id === user.merchantId)?.name
       : undefined;
-  const subtitle = merchantName ?? ROLE_LABEL[user.role];
+  const subtitle = merchantName ?? (user.branchId ? `${ROLE_LABEL[user.role]} · ${branchName(user.branchId)}` : ROLE_LABEL[user.role]);
 
   const handleReset = () => {
     if (window.confirm('Reset everything back to the demo data? Your changes will be lost.')) {

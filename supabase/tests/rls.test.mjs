@@ -103,4 +103,16 @@ check('upline sees own tier income only', Array.isArray(ti) && ti.length === 1 &
 check('one package per reseller', await bad("insert into package_sales values ('PKG-0009','" + U.c1 + "','" + U.cashier + "','2026-10-21 10:00',350,990,495,148.5,1)"));
 check('tier level only 1-3', await bad("insert into package_tiers values ('PKG-0001',4,'" + U.c1 + "',1,1)"));
 check('pricing_settings shows package price, still no markup', (await as(U.c2, 'select * from pricing_settings'))[0].package_hkd == 350 && !('markup_pct' in (await as(U.c2, 'select * from pricing_settings'))[0]));
+
+// ---- branches and applications (0005)
+await db.exec(fs.readFileSync(new URL('../0005_branches_applications.sql', import.meta.url), 'utf8'));
+await db.exec(fs.readFileSync(new URL('../0005_branches_applications.sql', import.meta.url), 'utf8')); // safe to run twice
+await db.exec(`update profiles set branch_id = 'central' where id = '${U.cashier}'; update orders set branch_id = 'central' where id = 'POID-1';
+ insert into reseller_applications (order_id,name,email,mobile) values ('POID-1','Maria','m@x.com','123');`);
+check('central cashier sees the central application', n(await as(U.cashier, 'select * from applications_staff')) === 1);
+check('admin sees it, merchants and resellers do not', n(await as(U.admin, 'select * from applications_staff')) === 1 && n(await as(U.m1, 'select * from applications_staff')) === 0 && n(await as(U.c1, 'select * from applications_staff')) === 0);
+await db.exec(`update profiles set branch_id = 'shueng-wan' where id = '${U.cashier}';`);
+check('the other branch cashier does not', n(await as(U.cashier, 'select * from applications_staff')) === 0);
+check('browser cannot read the applications table directly', typeof (await as(U.admin, 'select * from reseller_applications')) === 'string');
+check('same email cannot apply twice', await bad("insert into reseller_applications (order_id,name,email,mobile) values ('POID-2','Maria','M@X.com','1')"));
 console.log(fails ? fails + ' FAILED' : 'ALL DB CHECKS PASSED');

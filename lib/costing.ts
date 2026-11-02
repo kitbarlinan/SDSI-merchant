@@ -367,7 +367,7 @@ export function buildDemoCosting(items: InventoryItem[], settings = DEFAULT_COST
     id: `cst-${item.id.replace('itm-', '')}`,
     itemId: item.id,
     qty: 1,
-    pickupPriceHkd: item.package ? settings.packageHkd : computeCosting(item.unitPrice, 1, null, settings).suggestedPickupHkd,
+    pickupPriceHkd: item.package ? item.package.priceHkd : computeCosting(item.unitPrice, 1, null, settings).suggestedPickupHkd,
     status: 'live',
     live: null,
   }));

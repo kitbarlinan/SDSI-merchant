@@ -1,3 +1,4 @@
+import { makeRefCode } from './accounts';
 import { roundMoney } from './format';
 import { buildDemoCosting, DEFAULT_COSTING_SETTINGS, makePackageSale, orderCharges, orderTiers, resellerCharges, uplineOf, type CostingState } from './costing';
 import { formatPoid } from './engine';
@@ -32,9 +33,10 @@ export const MOCK_MERCHANTS: Merchant[] = [
   { id: 'mrc-4', name: 'LSM', color: '#7c3aed' },
 ];
 
-export const MOCK_USERS: User[] = [
+const MOCK_USER_LIST: User[] = [
   { id: 'usr-admin', name: 'Kit', role: 'admin' },
-  { id: 'usr-cashier', name: 'Ana Cruz', role: 'cashier' },
+  { id: 'usr-cashier', name: 'Ana Cruz', role: 'cashier', branchId: 'shueng-wan' },
+  { id: 'usr-cashier2', name: 'Ben Lau', role: 'cashier', branchId: 'central' },
   { id: 'usr-clerk', name: 'Rey Santos', role: 'clerk' },
   { id: 'usr-m1', name: 'Liza Fernandez', role: 'merchant', merchantId: 'mrc-1' },
   { id: 'usr-m2', name: 'Bea Ramirez', role: 'merchant', merchantId: 'mrc-2' },
@@ -44,6 +46,10 @@ export const MOCK_USERS: User[] = [
   // Has not bought the package yet, so cannot order
   { id: 'usr-c3', name: 'Lee Siu Ming', role: 'customer', sponsorId: 'usr-c2' },
 ];
+
+export const MOCK_USERS: User[] = MOCK_USER_LIST.map((user) =>
+  user.role === 'customer' ? { ...user, refCode: makeRefCode(user.name, user.id) } : user,
+);
 
 const CASHIER_ID = 'usr-cashier';
 const ADMIN_ID = 'usr-admin';
@@ -227,7 +233,20 @@ export const MOCK_INVENTORY: InventoryItem[] = [
     stock: 40,
     reorderLevel: 10,
     expiryDate: '2027-08-31',
-    package: { inclusions: '5 × Organic Barley Grass Powder 200g' },
+    package: { inclusions: '5 × Organic Barley Grass Powder 200g', priceHkd: 350 },
+  },
+  {
+    id: 'itm-015',
+    merchantId: 'mrc-4',
+    sku: 'RSL-PKG-2',
+    name: 'Reseller Package 2',
+    category: 'Greens & Superfoods',
+    unitCost: 1000,
+    unitPrice: 1980,
+    stock: 20,
+    reorderLevel: 5,
+    expiryDate: '2027-08-31',
+    package: { inclusions: '10 × Organic Barley Grass Powder 200g + 2 × SDSI Immune Boost (30 sachets)', priceHkd: 700 },
   },
 ];
 
@@ -570,6 +589,7 @@ function generateOrders(): Order[] {
       MOCK_INVENTORY.filter((item) => item.merchantId === merchantId)[nth].id;
     resellerOrder('usr-c1', 'Wong Mei Ling', 'mrc-4', [[firstOf('mrc-4', 0), 2], [firstOf('mrc-4', 1), 1]], 'pending', MOCK_TODAY, 10);
     resellerOrder('usr-c1', 'Wong Mei Ling', 'mrc-2', [[firstOf('mrc-2', 0), 1], [firstOf('mrc-2', 1), 1]], 'packed', MOCK_TODAY, 9);
+    orders[orders.length - 1].branch = 'central'; // handled by the Central cashier
     resellerOrder('usr-c2', 'Chan Ka Ho', 'mrc-4', [[firstOf('mrc-4', 0), 1], [firstOf('mrc-4', 2), 1]], 'delivered', addDays(MOCK_TODAY, -1), 11);
     resellerOrder('usr-c2', 'Chan Ka Ho', 'mrc-4', [[firstOf('mrc-4', 1), 2]], 'delivered', addDays(MOCK_TODAY, -2), 14);
     resellerOrder('usr-c1', 'Wong Mei Ling', 'mrc-3', [[firstOf('mrc-3', 0), 3]], 'delivered', addDays(MOCK_TODAY, -2), 14);

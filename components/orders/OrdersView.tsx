@@ -9,7 +9,8 @@ import { Icon } from '@/components/ui/Icon';
 import { StatCard } from '@/components/ui/StatCard';
 import { useAuth } from '@/lib/auth';
 import { formatHkd, formatNumber } from '@/lib/format';
-import { isOpen, sortNewestFirst, sortOldestFirst, toCollectHkd } from '@/lib/orders';
+import { BRANCHES, DEFAULT_BRANCH, type BranchId } from '@/lib/types';
+import { isOpen, ordersForUser, sortNewestFirst, sortOldestFirst, toCollectHkd } from '@/lib/orders';
 import { useAppData } from '@/lib/store';
 
 type Tab = 'open' | 'pending' | 'packed' | 'shipped' | 'delivered' | 'rts' | 'cancelled' | 'all';
@@ -35,18 +36,21 @@ export function OrdersView() {
   const isMerchant = user?.role === 'merchant' || isReseller;
   const [tab, setTab] = useState<Tab>('open');
   const [merchantId, setMerchantId] = useState('all');
+  const [branchFilter, setBranchFilter] = useState<'all' | BranchId>('all');
   const [query, setQuery] = useState('');
   const [limit, setLimit] = useState(PAGE_SIZE);
 
-  useEffect(() => setLimit(PAGE_SIZE), [tab, merchantId, query]);
+  useEffect(() => setLimit(PAGE_SIZE), [tab, merchantId, query, branchFilter]);
 
   // Merchants only ever see their own orders; staff can narrow down by merchant.
   const scoped = useMemo(() => {
     if (!user) return [];
     if (user.role === 'merchant') return orders.filter((order) => order.merchantId === user.merchantId);
-    if (user.role === 'customer') return orders.filter((order) => order.createdBy === user.id);
-    return merchantId === 'all' ? orders : orders.filter((order) => order.merchantId === merchantId);
-  }, [orders, user, merchantId]);
+    if (user.role === 'customer') return orders.filter((order) => (order.buyerId ?? order.createdBy) === user.id);
+    // A cashier only sees the orders of their own branch. The admin can narrow down by branch.
+    const mineHere = ordersForUser(orders, user).filter((order) => branchFilter === 'all' || (order.branch ?? DEFAULT_BRANCH) === branchFilter);
+    return merchantId === 'all' ? mineHere : mineHere.filter((order) => order.merchantId === merchantId);
+  }, [orders, user, merchantId, branchFilter]);
 
   const stats = useMemo(() => {
     const open = scoped.filter(isOpen);
@@ -118,7 +122,7 @@ export function OrdersView() {
         }
       />
 
-      {isReseller && user ? <TierIncomeCard userId={user.id} sales={packageSales} orders={orders} /> : null}
+      {isReseller && user ? <TierIncomeCard userId={user.id} sales={packageSales} orders={orders} refCode={user.refCode} /> : null}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
@@ -182,6 +186,23 @@ export function OrdersView() {
         </div>
 
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          {user?.role === 'admin' ? (
+            <label>
+              <span className="sr-only">Filter by branch</span>
+              <select
+                value={branchFilter}
+                onChange={(event) => setBranchFilter(event.target.value as 'all' | BranchId)}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+              >
+                <option value="all">All branches</option>
+                {BRANCHES.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           {!isMerchant ? (
             <label>
               <span className="sr-only">Filter by merchant</span>

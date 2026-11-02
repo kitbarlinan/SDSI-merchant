@@ -24,6 +24,7 @@ import {
   type CostingSettings,
   type CostingState,
 } from './costing';
+import { provisionReseller, validateCredentials } from './accounts';
 import { availableOf, orderTotal, reservedByItem } from './orders';
 import { buildWeekRemittances, remittedOrderIds, weekEndOf, weekStartOf } from './remittance';
 import {
@@ -38,6 +39,10 @@ import {
   type ReceiptLine,
   type Remittance,
   type ReversalRequest,
+  type SentEmail,
+  BRANCHES,
+  DEFAULT_BRANCH,
+  type BranchId,
   type Role,
   type StockReceipt,
   type User,
@@ -57,6 +62,8 @@ export interface AppState {
   packageSales: PackageSale[];
   /** Everyone who can sign in. The reseller chain (sponsors) is read from here. */
   users: User[];
+  /** Emails the app sent (demo: only listed). */
+  outbox: SentEmail[];
   /** Last PO number handed out. Only ever goes up, so a POID is never reused. */
   poSeq: number;
 }
@@ -65,6 +72,8 @@ export interface Actor {
   id: string;
   role: Role;
   merchantId?: string;
+  /** Cashiers: the branch they work at. */
+  branchId?: BranchId;
   /** Resellers: who brought them in. */
   sponsorId?: string;
 }
@@ -72,6 +81,15 @@ export interface Actor {
 export type Outcome<T> = { ok: true; state: AppState; value: T } | { ok: false; error: string };
 
 const fail = (error: string) => ({ ok: false as const, error });
+
+const branchOk = (value: unknown): value is BranchId => BRANCHES.some((branch) => branch.id === value);
+
+/** The admin handles every order; a cashier only the orders of their own branch. */
+export function canHandle(actor: Actor, order: Pick<Order, 'branch'>): boolean {
+  if (actor.role !== 'cashier') return true;
+  return (order.branch ?? DEFAULT_BRANCH) === (actor.branchId ?? DEFAULT_BRANCH);
+}
+const wrongBranch = 'This order belongs to the other branch. Their cashier handles it.';
 
 /** Handles orders and the counter. */
 const isStaff = (actor: Actor): boolean => actor.role === 'admin' || actor.role === 'cashier';
@@ -145,6 +163,8 @@ export interface PlaceOrderInput {
   notes: string;
   terms: OrderTerms;
   lines: { itemId: string; quantity: number }[];
+  /** Which branch handles the order. Default SDSI Shueng Wan. */
+  branch?: BranchId;
 }
 
 /** A merchant places an order for their own customer. It starts Pending and waits for the cashier. */
@@ -177,6 +197,7 @@ export function placeMerchantOrder(
     terms: input.terms,
     lines: built.lines,
     status: 'pending',
+    branch: branchOk(input.branch) ? input.branch : DEFAULT_BRANCH,
   };
   const charges = orderCharges(
     built.lines.map((line) => ({ itemId: line.itemId, quantity: line.quantity })),
@@ -204,6 +225,8 @@ export interface ResellerOrderInput {
   contactNo: string;
   notes: string;
   lines: { itemId: string; quantity: number }[];
+  /** Which branch handles the pickup. Default SDSI Shueng Wan. */
+  branch?: BranchId;
 }
 
 export const isActiveReseller = (state: AppState, userId: string): boolean =>
@@ -219,7 +242,25 @@ export const hasPackage = (state: AppState, order: Order): boolean =>
  * A delivered package order makes its buyer a reseller. The sale is recorded with the split of the package
  * (top-up, reseller share, tier income to the 3 sponsors above) worked out on what was paid.
  */
-function addPackageSale(state: AppState, order: Order, recordedBy: string, now: string): AppState {
+function addPackageSale(initial: AppState, initialOrder: Order, recordedBy: string, now: string): AppState {
+  let state = initial;
+  let order = initialOrder;
+  // An applicant from the landing page gets their account now that the cashier confirmed the payment.
+  if (order.applicant && !order.buyerId) {
+    const made = provisionReseller(
+      state.users,
+      { name: order.applicant.name, email: order.applicant.email, sponsorId: order.applicant.sponsorId },
+      now,
+      state.outbox.length + 1,
+    );
+    order = { ...order, buyerId: made.user.id };
+    state = {
+      ...state,
+      users: [...state.users, made.user],
+      outbox: made.email ? [made.email, ...state.outbox] : state.outbox,
+      orders: state.orders.map((candidate) => (candidate.id === order.id ? order : candidate)),
+    };
+  }
   const buyerId = order.buyerId ?? order.createdBy;
   const buyer = state.users.find((user) => user.id === buyerId && user.role === 'customer');
   if (!buyer || isActiveReseller(state, buyer.id)) return state;
@@ -292,6 +333,7 @@ export function placeResellerOrder(
       pickupHkd: charges.pickupHkd,
       amountHkd: charges.amountHkd,
       buyerId: actor.id,
+      branch: branchOk(input.branch) ? input.branch : DEFAULT_BRANCH,
     };
     if (charges.discountHkd > 0) {
       order.discountPct = resellerDiscountPct;
@@ -318,6 +360,8 @@ export function checkoutWalkIn(
     paymentMethod: PaymentMethod;
     /** Optional. Defaults to "Walk-in client". */
     customerName?: string;
+    /** Admin only: which branch's counter. A cashier always sells at their own branch. */
+    branch?: BranchId;
     /** Required when the cart has the reseller package: the reseller who is buying it. */
     resellerId?: string;
     /** Or a new customer who buys the package: they become a reseller account (the login invite comes later). */
@@ -330,6 +374,7 @@ export function checkoutWalkIn(
   const packageLines = input.lines.filter((line) => isPackageLine(state, line.itemId));
   let packageBuyer: User | undefined;
   let newUser: User | undefined;
+  let newEmail: SentEmail | undefined;
   if (packageLines.length > 0) {
     if (input.lines.length !== 1 || packageLines[0].quantity !== 1) return fail('Sell the reseller package on its own, one at a time.');
     if (input.newReseller) {
@@ -339,8 +384,9 @@ export function checkoutWalkIn(
       if (email && !/^\S+@\S+\.\S+$/.test(email)) return fail('That email does not look right.');
       const sponsorId = input.newReseller.sponsorId || undefined;
       if (sponsorId && !isActiveReseller(state, sponsorId)) return fail('The sponsor must be a reseller who already has the package.');
-      const nextNo = state.users.reduce((max, user) => Math.max(max, Number(/^usr-c(\d+)$/.exec(user.id)?.[1] ?? 0)), 0) + 1;
-      newUser = { id: `usr-c${nextNo}`, name, role: 'customer', ...(sponsorId ? { sponsorId } : {}), ...(email ? { email } : {}) };
+      const made = provisionReseller(state.users, { name, email, sponsorId }, now, state.outbox.length + 1);
+      newUser = made.user;
+      newEmail = made.email;
       packageBuyer = newUser;
     } else {
       packageBuyer = state.users.find((user) => user.id === input.resellerId && user.role === 'customer');
@@ -363,6 +409,7 @@ export function checkoutWalkIn(
   }
 
   const { ids, poSeq } = nextPoids(state, byMerchant.size);
+  const branch: BranchId = actor.role === 'cashier' ? actor.branchId ?? DEFAULT_BRANCH : branchOk(input.branch) ? input.branch : DEFAULT_BRANCH;
   const customerName = packageBuyer?.name ?? (input.customerName?.trim() || WALK_IN_DEFAULT_NAME);
   const created: Order[] = [...byMerchant.entries()].map(([merchantId, lines], index) => {
     const charges = orderCharges(
@@ -389,6 +436,7 @@ export function checkoutWalkIn(
     topUpRate: state.costing.settings.markupPct,
     pickupHkd: charges.pickupHkd,
     amountHkd: charges.pickupHkd,
+    branch,
     ...(packageBuyer ? { buyerId: packageBuyer.id } : {}),
     };
   });
@@ -405,7 +453,9 @@ export function checkoutWalkIn(
     ),
     orders: [...[...created].reverse(), ...state.orders],
   };
-  const withUser: AppState = newUser ? { ...next, users: [...next.users, newUser] } : next;
+  const withUser: AppState = newUser
+    ? { ...next, users: [...next.users, newUser], outbox: newEmail ? [newEmail, ...next.outbox] : next.outbox }
+    : next;
   return { ok: true, state: packageBuyer ? addPackageSale(withUser, first, actor.id, now) : withUser, value: created };
 }
 
@@ -425,6 +475,7 @@ export function markPacked(
   if (!isStaff(actor)) return fail('Only the cashier or admin can pack orders.');
   const order = state.orders.find((candidate) => candidate.id === orderId);
   if (!order) return fail('Order not found.');
+  if (!canHandle(actor, order)) return fail(wrongBranch);
   if (order.status !== 'pending') return fail('Only pending orders can be marked as packed.');
   const next = updateOrder(state, orderId, { status: 'packed', packedAt: now, handledBy: actor.id });
   return { ok: true, state: next, value: next.orders.find((o) => o.id === orderId)! };
@@ -461,6 +512,7 @@ export function shipOrder(
   if (!isStaff(actor)) return fail('Only the cashier or admin can ship orders.');
   const order = state.orders.find((candidate) => candidate.id === orderId);
   if (!order) return fail('Order not found.');
+  if (!canHandle(actor, order)) return fail(wrongBranch);
   if (order.terms !== 'COD') return fail('Only cash on delivery orders are shipped.');
   if (order.status !== 'packed') return fail('Pack the order before shipping it.');
   const code = waybill.trim();
@@ -495,6 +547,7 @@ export function markDelivered(
   if (!PAYMENT_METHODS.includes(paymentMethod)) return fail('Choose how the payment was collected.');
   const order = state.orders.find((candidate) => candidate.id === orderId);
   if (!order) return fail('Order not found.');
+  if (!canHandle(actor, order)) return fail(wrongBranch);
   if (hasPendingUndo(state, orderId)) return fail('An undo request for this order is waiting for approval.');
 
   let base = state;
@@ -531,6 +584,7 @@ export function markRts(
   if (reason.trim().length < 2) return fail('Select or enter a reason.');
   const order = state.orders.find((candidate) => candidate.id === orderId);
   if (!order) return fail('Order not found.');
+  if (!canHandle(actor, order)) return fail(wrongBranch);
   if (order.status !== 'shipped') return fail('Only shipped orders can be returned to sender.');
   if (hasPendingUndo(state, orderId)) return fail('An undo request for this order is waiting for approval.');
   const next = updateOrder(state, orderId, {
@@ -554,6 +608,7 @@ export function cancelOrder(
   if (reason.trim().length < 2) return fail('Select or enter a reason.');
   const order = state.orders.find((candidate) => candidate.id === orderId);
   if (!order) return fail('Order not found.');
+  if (!canHandle(actor, order)) return fail(wrongBranch);
   if (order.status !== 'pending' && order.status !== 'packed') {
     return fail('Only orders that have not shipped can be closed. Use RTS for shipped orders.');
   }
@@ -1110,6 +1165,7 @@ export function requestReversal(
   if (note.trim().length < 5) return fail('Write a note: why is this being undone?');
   const order = state.orders.find((candidate) => candidate.id === orderId);
   if (!order) return fail('Order not found.');
+  if (!canHandle(actor, order)) return fail(wrongBranch);
   if (!UNDOABLE.includes(order.status)) return fail('This order has nothing to undo.');
   if (order.status === 'delivered' && hasPackage(state, order)) {
     return fail('A delivered reseller package cannot be undone here: the buyer is already a reseller.');
@@ -1376,4 +1432,83 @@ export function rejectRelease(
     state: { ...state, remittances: state.remittances.map((candidate) => (candidate.id === remittanceId ? next : candidate)) },
     value: next,
   };
+}
+
+
+export interface ResellerApplication {
+  name: string;
+  email: string;
+  mobile: string;
+  /** A referral code of an active reseller. */
+  refCode?: string;
+  branch: BranchId;
+  /** The package SKU chosen. */
+  itemId: string;
+}
+
+/**
+ * Someone applies to become a reseller from the landing page: they pick a package and a branch and leave their
+ * details. This is a pickup order that waits for the cashier. Their account is made when the cashier delivers it.
+ */
+export function applyForReseller(state: AppState, input: ResellerApplication, now: string): Outcome<Order> {
+  const name = input.name.trim();
+  const email = input.email.trim().toLowerCase();
+  const mobile = input.mobile.trim();
+  if (name.length < 2) return fail('Enter your full name.');
+  if (!/^\S+@\S+\.\S+$/.test(email)) return fail('Enter a valid email. Your sign-in details are sent there.');
+  if (mobile.replace(/\D/g, '').length < 6) return fail('Enter your mobile number.');
+  if (!branchOk(input.branch)) return fail('Choose where you will pick it up.');
+  const item = state.items.find((candidate) => candidate.id === input.itemId);
+  if (!item?.package) return fail('Choose a reseller package.');
+  if (state.users.some((user) => user.email?.toLowerCase() === email)) return fail('That email already has an account. Sign in instead.');
+  if (state.orders.some((order) => order.applicant?.email === email && order.status !== 'cancelled' && order.status !== 'rts')) {
+    return fail('You already applied with this email. Pay at the counter to finish.');
+  }
+  let sponsorId: string | undefined;
+  const code = input.refCode?.trim().toUpperCase();
+  if (code) {
+    const sponsor = state.users.find((user) => user.refCode === code && isActiveReseller(state, user.id));
+    if (!sponsor) return fail('We could not find that referral code. Check it or leave it empty.');
+    sponsorId = sponsor.id;
+  }
+  const built = buildLines(state, [{ itemId: item.id, quantity: 1 }], dateOf(now));
+  if (!built.ok) return fail(built.error);
+  const charges = orderCharges([{ itemId: item.id, quantity: 1 }], state.costing);
+  if (!charges) return fail('This package has no live price.');
+  const { ids, poSeq } = nextPoids(state, 1);
+  const order: Order = {
+    id: ids[0],
+    merchantId: item.merchantId,
+    source: 'reseller',
+    createdBy: 'public',
+    createdAt: now,
+    customerName: name,
+    contactNo: mobile,
+    address: '',
+    notes: '',
+    terms: 'COP',
+    lines: built.lines,
+    status: 'pending',
+    pickupHkd: charges.pickupHkd,
+    amountHkd: charges.pickupHkd,
+    branch: input.branch,
+    applicant: { name, email, mobile, ...(sponsorId ? { sponsorId } : {}) },
+  };
+  return { ok: true, state: { ...state, poSeq, orders: [order, ...state.orders] }, value: order };
+}
+
+/** A reseller replaces the temporary username and password from the email. DEMO: stored as typed. */
+export function changeCredentials(
+  state: AppState,
+  userId: string,
+  username: string,
+  password: string,
+): Outcome<User> {
+  const user = state.users.find((candidate) => candidate.id === userId);
+  if (!user) return fail('Account not found.');
+  const name = username.trim().toLowerCase();
+  const problem = validateCredentials(state.users, userId, name, password);
+  if (problem) return fail(problem);
+  const updated: User = { ...user, username: name, password, mustChange: false };
+  return { ok: true, state: { ...state, users: state.users.map((candidate) => (candidate.id === userId ? updated : candidate)) }, value: updated };
 }

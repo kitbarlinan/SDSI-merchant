@@ -7,11 +7,17 @@ import { tierIncome } from '@/lib/orders';
 import type { Order, PackageSale } from '@/lib/types';
 
 /** A reseller sees the tier income earned on the purchases of the resellers up to 3 levels below them. */
-export function TierIncomeCard({ userId, sales, orders }: { userId: string; sales: PackageSale[]; orders: Order[] }) {
+export function TierIncomeCard({ userId, sales, orders, refCode }: { userId: string; sales: PackageSale[]; orders: Order[]; refCode?: string }) {
   const { total, pending, rows } = useMemo(() => tierIncome(sales, orders, userId), [sales, orders, userId]);
 
   return (
     <Card title="Tier income" subtitle="You earn on every purchase of the resellers up to 3 levels below you: the package and their orders. Orders count once delivered.">
+      {refCode ? (
+        <p className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+          Your referral code: <span className="font-mono font-semibold">{refCode}</span>. Share{' '}
+          <span className="font-mono">/become-a-reseller?ref={refCode}</span> so new resellers land under you.
+        </p>
+      ) : null}
       <div className="mt-3 grid grid-cols-2 gap-4 text-sm">
         <div>
           <p className="text-xs text-slate-500">Earned so far</p>

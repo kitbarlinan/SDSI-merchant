@@ -12,7 +12,7 @@ import { useAppData } from '@/lib/store';
 /** Admin and cashier: every reseller, what they got in discount and tier income, and the split of each purchase. */
 export function ResellersView() {
   const { user } = useAuth();
-  const { users, items, orders, packageSales, costing } = useAppData();
+  const { users, items, orders, packageSales, costing, outbox } = useAppData();
   const { settings } = costing;
   const nameOf = (id: string) => users.find((candidate) => candidate.id === id)?.name ?? id;
   const ledger = useMemo(() => resellerLedger(orders, packageSales, items, settings.markupPct), [orders, packageSales, items, settings.markupPct]);
@@ -91,6 +91,25 @@ export function ResellersView() {
           </table>
         </div>
       </Card>
+
+      {showPeso ? (
+        <Card title="Emails sent (demo)" subtitle="When the cashier delivers a package, the buyer gets their temporary username and password by email. In the demo nothing is really sent, so you can read it here. Real sending comes with the database.">
+          {outbox.length === 0 ? (
+            <p className="mt-3 text-sm text-slate-500">Nothing sent yet. Apply on /become-a-reseller, then deliver the order as the cashier.</p>
+          ) : (
+            <ul className="mt-3 space-y-3">
+              {outbox.map((mail) => (
+                <li key={mail.id} className="rounded-xl border border-slate-200 p-3 text-sm">
+                  <p className="font-medium text-slate-900">
+                    To {mail.to} · {mail.subject}
+                  </p>
+                  <pre className="mt-2 whitespace-pre-wrap font-sans text-xs text-slate-600">{mail.body}</pre>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      ) : null}
 
       {showPeso ? (
         <Card title="Breakdown per purchase" subtitle="Where the top-up goes on each purchase. Pending orders are shown but not counted.">

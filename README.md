@@ -109,5 +109,13 @@ Open http://localhost:3000 and pick an account (demo sign-in, no password).
 - **Resellers page** (admin sees pesos, cashier sees only the list): every reseller with discount received and tier income per level, summary tiles, and a breakdown per purchase. **Accounting** shows the sample split and the real totals.
 - **Program:** per merchant (Accounting → Costing → *Reseller program*) with an on/off per SKU. The package is never discounted.
 - Settings in Costing: reseller discount %, package price and SRP, tier % per level.
-- Database: run `supabase/0003_reseller_program.sql`, then `0004_reseller_package.sql`.
+- Database: run `supabase/0003_reseller_program.sql`, `0004_reseller_package.sql`, then `0005_branches_applications.sql`.
 - Not built yet: paying out tier income, a screen to assign sponsors and create new resellers, deducting the package's inclusions from the barley stock.
+
+## Landing page, accounts and branches
+
+- **/become-a-reseller** is public (no sign-in). A visitor picks a package, leaves name, email, mobile, an optional referral code (a reseller's code like `WML-01`, or `?ref=` in the link) and the branch where they will pick it up. It creates a pickup order that waits for the cashier. They pay at the counter.
+- **When the cashier marks it delivered**, the app creates the reseller account (sponsor from the referral code), records the package sale and sends an email with a temporary username and password. In the demo nothing leaves the app: the email is listed under *Resellers → Emails sent (demo)*. The same happens when a new customer buys the package at the POS with an email.
+- **First sign-in** with the temporary details forces the reseller to choose their own username and password. Demo only: the password is stored as typed in the browser. Real sign-in uses Supabase Auth (hashed) with the invite sent through your SMTP.
+- **Branches:** SDSI Shueng Wan (default) and Central. Orders, POS sales and applications carry a branch. Merchants and resellers choose the branch on a new order. Each branch has its own cashier (Ana Cruz at Shueng Wan, Ben Lau at Central) who only sees and handles that branch's orders. The admin sees all with a branch filter and chooses the counter in the POS. Stock is shared between branches.
+- Every reseller has a referral code and link, shown in their Tier income card.

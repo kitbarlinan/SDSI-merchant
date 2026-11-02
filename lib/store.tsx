@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from 'react';
 import * as engine from './engine';
-import type { Actor, AppState, PlaceOrderInput, ResellerOrderInput } from './engine';
+import type { Actor, AppState, PlaceOrderInput, ResellerOrderInput, ResellerApplication } from './engine';
 import { nowISO } from './format';
 import {
   MOCK_COSTING,
@@ -33,7 +33,9 @@ import type {
   Merchant,
   Order,
   PaymentMethod,
+  BranchId,
   PackageSale,
+  SentEmail,
   StockReceipt,
   User,
 } from './types';
@@ -49,6 +51,9 @@ interface AppDataValue {
   reversals: ReversalRequest[];
   remittances: Remittance[];
   packageSales: PackageSale[];
+  outbox: SentEmail[];
+  applyForReseller: (input: ResellerApplication) => ActionResult<Order>;
+  changeCredentials: (userId: string, username: string, password: string) => ActionResult<User>;
   /** Costing table, settings and change log. Show it only to the admin. */
   costing: CostingState;
   hydrated: boolean;
@@ -60,6 +65,7 @@ interface AppDataValue {
       lines: { itemId: string; quantity: number }[];
       paymentMethod: PaymentMethod;
       customerName?: string;
+      branch?: BranchId;
       resellerId?: string;
       newReseller?: { name: string; email?: string; sponsorId?: string };
     },
@@ -120,7 +126,7 @@ interface AppDataValue {
 }
 
 // Bumped whenever the saved data shape changes.
-const STORAGE_KEY = 'sdsi-wellness:v16';
+const STORAGE_KEY = 'sdsi-wellness:v17';
 
 const createInitialState = (): AppState => ({
   items: MOCK_INVENTORY.map((item) => ({ ...item })),
@@ -135,6 +141,7 @@ const createInitialState = (): AppState => ({
     programMerchantIds: [...MOCK_COSTING.programMerchantIds],
   },
   users: MOCK_USERS.map((user) => ({ ...user })),
+  outbox: [],
   packageSales: MOCK_PACKAGE_SALES.map((sale) => ({ ...sale, tiers: sale.tiers.map((tier) => ({ ...tier })) })),
   poSeq: MOCK_PO_SEQ,
 });
@@ -150,6 +157,7 @@ const isSavedState = (value: unknown): value is AppState => {
     Array.isArray(candidate.remittances) &&
     Array.isArray(candidate.packageSales) &&
     Array.isArray(candidate.users) &&
+    Array.isArray(candidate.outbox) &&
     !!candidate.costing &&
     Array.isArray(candidate.costing.rows) &&
     typeof candidate.poSeq === 'number'
@@ -213,6 +221,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       reversals: state.reversals,
       remittances: state.remittances,
       packageSales: state.packageSales,
+      outbox: state.outbox,
+      applyForReseller: (input) => run((s) => engine.applyForReseller(s, input, nowISO())),
+      changeCredentials: (userId, username, password) => run((s) => engine.changeCredentials(s, userId, username, password)),
       costing: state.costing,
       hydrated,
       placeOrder: (actor, input) => run((s) => engine.placeMerchantOrder(s, actor, input, nowISO())),

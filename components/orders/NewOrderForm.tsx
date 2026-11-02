@@ -1,5 +1,7 @@
 'use client';
 
+import { BranchSelect } from '@/components/ui/BranchSelect';
+import { DEFAULT_BRANCH, type BranchId } from '@/lib/types';
 import Link from 'next/link';
 import { useMemo, useState, type FormEvent } from 'react';
 import { ProductList, parseQuantities, type ListRow } from '@/components/orders/ProductList';
@@ -26,6 +28,7 @@ const EMPTY_FORM: RawOrderForm = {
 
 export function NewOrderForm() {
   const { user } = useAuth();
+  const [branch, setBranch] = useState<BranchId>(DEFAULT_BRANCH);
   const { items, orders, merchants, costing, placeOrder } = useAppData();
   const today = useToday() || MOCK_TODAY;
 
@@ -90,6 +93,7 @@ export function NewOrderForm() {
       address,
       notes: noteParts.join(' · '),
       terms: form.terms,
+      branch,
       lines: parsed.lines.map((line) => ({ itemId: line.item.id, quantity: line.quantity })),
     });
 
@@ -181,6 +185,8 @@ export function NewOrderForm() {
                 })}
               </div>
             </fieldset>
+
+            <BranchSelect id="orderBranch" label="Handled by branch" value={branch} onChange={setBranch} />
 
             <Field label="Customer" htmlFor="customerName" error={showError('customerName')}>
               <input
