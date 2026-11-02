@@ -150,3 +150,5 @@ The app runs in two modes. **Demo** (default) keeps sample data in your browser.
 - The browser refreshes every 20 seconds and when you return to the tab, not instantly.
 - Cashier and clerk accounts still receive product peso prices (the screens hide them). Tightening that is a later step.
 - `app_records` stores whole records as JSON. It is simple and safe for this size; if orders grow into the tens of thousands, move orders to their own columns.
+
+Server tests: `supabase/tests/server.test.ts` (needs @electric-sql/pglite and tsx, like rls.test.mjs).
