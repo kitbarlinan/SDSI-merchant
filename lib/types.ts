@@ -1,14 +1,12 @@
 export const PAYMENT_METHODS = ['Cash', 'Bank Transfer', 'Debit / Credit Card'] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
-export const CATEGORIES = [
-  'Greens & Superfoods',
-  'Herbal',
-  'Vitamins & Minerals',
-  'Beauty & Skin',
-  'Heart & Wellness',
-] as const;
+export const CATEGORIES = ['Food Supplements', 'Beauty Products'] as const;
 export type Category = (typeof CATEGORIES)[number];
+
+/** Older data used five categories. Anything beauty or skin related maps to Beauty Products, the rest to Food Supplements. */
+export const normalizeCategory = (value: unknown): Category =>
+  CATEGORIES.find((category) => category === value) ?? (/beaut|skin|cosmetic/i.test(String(value ?? '')) ? 'Beauty Products' : 'Food Supplements');
 
 // ---------------------------------------------------------------------------
 // People
@@ -81,6 +79,29 @@ export interface Merchant {
 // Inventory (each product belongs to one merchant, stored in SDSI's warehouse)
 // ---------------------------------------------------------------------------
 
+/**
+ * The inventory master list: one row per product a merchant keeps with SDSI. The SRP here is what the
+ * costing starts from. A SKU is made out of these products.
+ */
+export interface MasterProduct {
+  id: string;
+  merchantId: string;
+  /** INV CODE. Unique across the app, never shared by two products. */
+  code: string;
+  name: string;
+  /** Merchant net SRP per piece, PHP. */
+  srp: number;
+  /** Optional, YYYY-MM-DD. */
+  expiryDate?: string;
+}
+
+/** One product inside a SKU. `qty` is paid for, `free` is given for nothing (it counts as a piece for the SF, not for the SRP). */
+export interface SkuPart {
+  productId: string;
+  qty: number;
+  free: number;
+}
+
 export interface InventoryItem {
   id: string;
   merchantId: string;
@@ -101,6 +122,8 @@ export interface InventoryItem {
   disabled?: boolean;
   /** Switched off for the reseller program by the admin. Only matters if the merchant is in the program. */
   resellerOff?: boolean;
+  /** What the SKU is made of, from the master list. Missing on older SKUs that were typed in by hand. */
+  parts?: SkuPart[];
   /** A reseller package: a product that bundles other goods. Buying it makes the buyer a reseller. */
   package?: { inclusions: string; priceHkd: number };
 }

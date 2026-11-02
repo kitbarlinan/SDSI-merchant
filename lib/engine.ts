@@ -31,6 +31,9 @@ import { buildWeekRemittances, remittedOrderIds, weekEndOf, weekStartOf } from '
 import {
   PAYMENT_METHODS,
   type InventoryItem,
+  type MasterProduct,
+  type SkuPart,
+  normalizeCategory,
   type Order,
   type OrderLine,
   type OrderStatus,
@@ -51,6 +54,8 @@ import {
 
 export interface AppState {
   items: InventoryItem[];
+  /** The inventory master list (INV code, name, SRP, expiry per merchant). */
+  products: MasterProduct[];
   orders: Order[];
   receipts: StockReceipt[];
   /** Cashier requests to undo a delivered order. */
@@ -1079,20 +1084,256 @@ export function setSkuReseller(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Inventory master list: the products each merchant keeps with SDSI (INV CODE, name, SRP, optional expiry).
+// SKUs and bundles are built from these.
+// ---------------------------------------------------------------------------
+
+const inventoryGuard = (actor: Actor) =>
+  actor.role === 'admin' || actor.role === 'clerk' ? null : fail('Only the admin or the inventory clerk can change the master list.');
+
+const PRODUCT_CODE = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,29}$/;
+const normName = (value: string) => value.trim().replace(/\s+/g, ' ').toLowerCase();
+
+/** A real calendar date written YYYY-MM-DD. */
+export const isRealDate = (value: string): boolean => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+};
+
+export interface ProductInput {
+  merchantId: string;
+  code: string;
+  name: string;
+  srp: number;
+  expiryDate?: string;
+}
+
+function checkProduct(code: string, name: string, srp: number, expiry: string | undefined): string | null {
+  if (!PRODUCT_CODE.test(code.trim())) return 'INV code: 1 to 30 letters, numbers, dots, dashes, slashes or underscores.';
+  if (name.trim().length < 2) return 'Enter the product name.';
+  if (!Number.isFinite(srp) || srp <= 0 || srp > 1_000_000) return 'Enter the SRP above 0.';
+  if (expiry && !isRealDate(expiry)) return 'Expiry must be a real date, YYYY-MM-DD.';
+  return null;
+}
+
+const nextProductNo = (products: MasterProduct[]) =>
+  products.reduce((max, product) => Math.max(max, Number(product.id.replace('prd-', '')) || 0), 0) + 1;
+const productId = (no: number) => `prd-${String(no).padStart(4, '0')}`;
+const codeTaken = (products: MasterProduct[], code: string, exceptId?: string) =>
+  products.find((product) => product.id !== exceptId && product.code.toLowerCase() === code.trim().toLowerCase());
+
+export function addProduct(state: AppState, actor: Actor, input: ProductInput, now: string): Outcome<MasterProduct> {
+  const denied = inventoryGuard(actor);
+  if (denied) return denied;
+  if (!input.merchantId) return fail('Choose a merchant.');
+  const code = input.code.trim().toUpperCase();
+  const problem = checkProduct(code, input.name, input.srp, input.expiryDate || undefined);
+  if (problem) return fail(problem);
+  if (codeTaken(state.products, code)) return fail(`INV code ${code} is already in the master list.`);
+  const product: MasterProduct = {
+    id: productId(nextProductNo(state.products)),
+    merchantId: input.merchantId,
+    code,
+    name: input.name.trim().replace(/\s+/g, ' '),
+    srp: roundMoney(input.srp),
+    ...(input.expiryDate ? { expiryDate: input.expiryDate } : {}),
+  };
+  return {
+    ok: true,
+    state: { ...logged(state, actor, now, 'Master list: product added', [`${code} ${product.name}, SRP ${product.srp}`], {}), products: [...state.products, product] },
+    value: product,
+  };
+}
+
+export interface ProductPatch {
+  code?: string;
+  name?: string;
+  srp?: number;
+  /** null clears the expiry. */
+  expiryDate?: string | null;
+}
+
+export function updateProduct(state: AppState, actor: Actor, id: string, patch: ProductPatch, now: string): Outcome<MasterProduct> {
+  const denied = inventoryGuard(actor);
+  if (denied) return denied;
+  const product = state.products.find((candidate) => candidate.id === id);
+  if (!product) return fail('Product not found.');
+  const code = (patch.code ?? product.code).trim().toUpperCase();
+  const name = (patch.name ?? product.name).trim().replace(/\s+/g, ' ');
+  const srp = patch.srp ?? product.srp;
+  const expiry = patch.expiryDate === undefined ? product.expiryDate : patch.expiryDate || undefined;
+  const problem = checkProduct(code, name, srp, expiry);
+  if (problem) return fail(problem);
+  if (codeTaken(state.products, code, id)) return fail(`INV code ${code} is already in the master list.`);
+  const { expiryDate: _old, ...rest } = product;
+  void _old;
+  const next: MasterProduct = { ...rest, code, name, srp: roundMoney(srp), ...(expiry ? { expiryDate: expiry } : {}) };
+  if (JSON.stringify(next) === JSON.stringify(product)) return fail('Nothing was changed.');
+  return {
+    ok: true,
+    state: {
+      ...logged(state, actor, now, 'Master list: product changed', [`${product.code} ${product.name} (SRP ${product.srp}) -> ${next.code} ${next.name} (SRP ${next.srp})`], {}),
+      products: state.products.map((candidate) => (candidate.id === id ? next : candidate)),
+    },
+    value: next,
+  };
+}
+
+export function deleteProduct(state: AppState, actor: Actor, id: string, now: string): Outcome<MasterProduct> {
+  const denied = inventoryGuard(actor);
+  if (denied) return denied;
+  const product = state.products.find((candidate) => candidate.id === id);
+  if (!product) return fail('Product not found.');
+  const used = state.items.filter((item) => item.parts?.some((part) => part.productId === id));
+  if (used.length > 0) {
+    return fail(`${product.name} cannot be deleted: it is part of ${used.length} SKU${used.length === 1 ? '' : 's'} (${used.slice(0, 3).map((item) => item.sku).join(', ')}${used.length > 3 ? ', …' : ''}).`);
+  }
+  return {
+    ok: true,
+    state: { ...logged(state, actor, now, 'Master list: product deleted', [`${product.code} ${product.name}`], {}), products: state.products.filter((candidate) => candidate.id !== id) },
+    value: product,
+  };
+}
+
+/** One line of an uploaded sheet. Everything arrives as text, exactly as typed in the cell. */
+export interface ProductRow {
+  row: number;
+  code: string;
+  name: string;
+  srp: string | number;
+  expiry?: string;
+}
+
+export interface ProductImportPlan {
+  /** Rows that add a product. */
+  creates: { row: number; input: ProductInput }[];
+  /** Rows that change a product with the same INV code (same merchant). */
+  updates: { row: number; id: string; before: MasterProduct; patch: ProductPatch }[];
+  unchanged: number;
+  errors: string[];
+}
+
+const MAX_IMPORT_ROWS = 2000;
+
+/** Reads a number typed in a cell: "1,490.00" and "₱990" are fine. */
+export const readNumber = (value: string | number | undefined): number => {
+  if (typeof value === 'number') return value;
+  const text = String(value ?? '').replace(/[₱,\s]/g, '').replace(/^php/i, '');
+  return text === '' ? NaN : Number(text);
+};
+
+/** Checks a whole sheet for one merchant without changing anything. A known INV code updates that product. */
+export function planProductImport(state: AppState, merchantId: string, rows: ProductRow[]): ProductImportPlan {
+  const plan: ProductImportPlan = { creates: [], updates: [], unchanged: 0, errors: [] };
+  if (!merchantId) return { ...plan, errors: ['Choose the merchant first.'] };
+  if (rows.length === 0) return { ...plan, errors: ['The file has no product rows.'] };
+  if (rows.length > MAX_IMPORT_ROWS) return { ...plan, errors: [`Too many rows (${rows.length}). Upload up to ${MAX_IMPORT_ROWS} at a time.`] };
+  const seen = new Map<string, number>();
+  for (const line of rows) {
+    const code = String(line.code ?? '').trim().toUpperCase();
+    const name = String(line.name ?? '').trim().replace(/\s+/g, ' ');
+    const srp = readNumber(line.srp);
+    const expiry = String(line.expiry ?? '').trim();
+    const fail_ = (message: string) => plan.errors.push(`Row ${line.row}: ${message}`);
+    const problem = checkProduct(code, name, srp, expiry || undefined);
+    if (problem) {
+      fail_(problem);
+      continue;
+    }
+    if (seen.has(code.toLowerCase())) {
+      fail_(`INV code ${code} is also on row ${seen.get(code.toLowerCase())}.`);
+      continue;
+    }
+    seen.set(code.toLowerCase(), line.row);
+    const existing = codeTaken(state.products, code);
+    if (!existing) {
+      plan.creates.push({ row: line.row, input: { merchantId, code, name, srp, ...(expiry ? { expiryDate: expiry } : {}) } });
+      continue;
+    }
+    if (existing.merchantId !== merchantId) {
+      fail_(`INV code ${code} already belongs to another merchant.`);
+      continue;
+    }
+    const patch: ProductPatch = {};
+    if (existing.name !== name) patch.name = name;
+    if (existing.srp !== roundMoney(srp)) patch.srp = srp;
+    // An empty expiry cell leaves the saved expiry alone. A date replaces it.
+    if (expiry && existing.expiryDate !== expiry) patch.expiryDate = expiry;
+    if (Object.keys(patch).length === 0) plan.unchanged += 1;
+    else plan.updates.push({ row: line.row, id: existing.id, before: existing, patch });
+  }
+  return plan;
+}
+
+const joinErrors = (errors: string[]) => `${errors.slice(0, 8).join('\n')}${errors.length > 8 ? `\n…and ${errors.length - 8} more.` : ''}`;
+
+/** Adds new products and updates known ones, all or nothing: one bad row and nothing is saved. */
+export function importProducts(
+  state: AppState,
+  actor: Actor,
+  merchantId: string,
+  rows: ProductRow[],
+  now: string,
+): Outcome<{ created: number; updated: number; unchanged: number }> {
+  const denied = inventoryGuard(actor);
+  if (denied) return denied;
+  const plan = planProductImport(state, merchantId, rows);
+  if (plan.errors.length > 0) return fail(joinErrors(plan.errors));
+  if (plan.creates.length + plan.updates.length === 0) return fail('Nothing to import: every row is already in the master list.');
+  let products = [...state.products];
+  let no = nextProductNo(products);
+  for (const create of plan.creates) {
+    products.push({
+      id: productId(no++),
+      merchantId,
+      code: create.input.code,
+      name: create.input.name,
+      srp: roundMoney(create.input.srp),
+      ...(create.input.expiryDate ? { expiryDate: create.input.expiryDate } : {}),
+    });
+  }
+  products = products.map((product) => {
+    const update = plan.updates.find((candidate) => candidate.id === product.id);
+    if (!update) return product;
+    return {
+      ...product,
+      ...(update.patch.name ? { name: update.patch.name } : {}),
+      ...(update.patch.srp ? { srp: roundMoney(update.patch.srp) } : {}),
+      ...(update.patch.expiryDate ? { expiryDate: update.patch.expiryDate } : {}),
+    };
+  });
+  return {
+    ok: true,
+    state: {
+      ...logged(state, actor, now, 'Master list imported', [`${plan.creates.length} added, ${plan.updates.length} updated, ${plan.unchanged} unchanged`], {}),
+      products,
+    },
+    value: { created: plan.creates.length, updated: plan.updates.length, unchanged: plan.unchanged },
+  };
+}
+
 export interface NewSkuInput {
   merchantId: string;
   sku: string;
+  /** Bundle name. Optional when the SKU is one product with nothing free: it takes the product's name. */
   name: string;
   category: InventoryItem['category'];
-  /** Merchant SRP per unit, PHP. */
-  unitPrice: number;
-  /** Pieces inside the SKU: 1 for solo, 2 for a twin pack. Each piece adds the +5 HKD SF. */
-  qty: number;
+  /** What is inside, from the master list. The SRP and the piece count are worked out from it. */
+  parts?: SkuPart[];
+  /** Older way, used only when `parts` is not given: merchant SRP per unit, PHP. */
+  unitPrice?: number;
+  /** Older way: pieces inside the SKU. */
+  qty?: number;
 }
 
 /**
  * Adds a new SKU. It exists in Inventory (so stock can be received) but cannot be sold until
  * one of its packages is approved and goes live. The SKU code must be new.
+ *
+ * Built from master-list products: net SRP = sum of SRP x qty (free pieces cost nothing), pieces inside =
+ * qty + free of every product (each piece adds the +5 HKD SF). Expiry is the earliest expiry among the products.
  */
 export function addSku(state: AppState, actor: Actor, input: NewSkuInput, now: string): Outcome<InventoryItem> {
   const denied = costingGuard(actor);
@@ -1100,12 +1341,48 @@ export function addSku(state: AppState, actor: Actor, input: NewSkuInput, now: s
   const sku = input.sku.trim().toUpperCase();
   const problem = validateSkuCode(sku, state.items);
   if (problem) return fail(problem);
-  if (input.name.trim().length < 2) return fail('Enter the product name.');
   if (!input.merchantId) return fail('Choose a merchant.');
-  if (!Number.isFinite(input.unitPrice) || input.unitPrice <= 0 || input.unitPrice > 1_000_000) {
-    return fail('Enter the merchant SRP (PHP) above 0.');
+
+  let name = input.name.trim();
+  let unitPrice = input.unitPrice ?? NaN;
+  let pieces = input.qty ?? NaN;
+  let expiry = '2099-12-31';
+  let parts: SkuPart[] | undefined;
+
+  if (input.parts) {
+    if (input.parts.length === 0) return fail('Add at least one product.');
+    if (input.parts.length > 30) return fail('A SKU can hold up to 30 products.');
+    unitPrice = 0;
+    pieces = 0;
+    const used = new Set<string>();
+    const expiries: string[] = [];
+    for (const part of input.parts) {
+      const product = state.products.find((candidate) => candidate.id === part.productId);
+      if (!product) return fail('A product in this SKU is not in the master list.');
+      if (product.merchantId !== input.merchantId) return fail(`${product.name} belongs to another merchant.`);
+      if (used.has(product.id)) return fail(`${product.name} is listed twice. Put the full qty on one line.`);
+      used.add(product.id);
+      if (!Number.isInteger(part.qty) || part.qty < 0 || part.qty > 99 || !Number.isInteger(part.free) || part.free < 0 || part.free > 99) {
+        return fail(`${product.name}: qty and free must be whole numbers from 0 to 99.`);
+      }
+      if (part.qty + part.free < 1) return fail(`${product.name}: enter a qty or a free piece.`);
+      unitPrice += product.srp * part.qty;
+      pieces += part.qty + part.free;
+      if (product.expiryDate) expiries.push(product.expiryDate);
+    }
+    if (expiries.length > 0) expiry = expiries.sort()[0];
+    if (!name) {
+      const only = state.products.find((candidate) => candidate.id === input.parts![0].productId)!;
+      if (input.parts.length === 1) name = only.name;
+    }
+    parts = input.parts.map((part) => ({ productId: part.productId, qty: part.qty, free: part.free }));
   }
-  if (!Number.isInteger(input.qty) || input.qty < 1 || input.qty > 99) {
+
+  if (name.length < 2) return fail(input.parts && input.parts.length > 1 ? 'Enter the bundle name.' : 'Enter the product name.');
+  if (!Number.isFinite(unitPrice) || unitPrice <= 0 || unitPrice > 1_000_000) {
+    return fail(input.parts ? 'A SKU needs at least one paid product: free pieces alone have no SRP.' : 'Enter the merchant SRP (PHP) above 0.');
+  }
+  if (!Number.isInteger(pieces) || pieces < 1 || pieces > 99) {
     return fail('Pieces in the SKU must be a whole number from 1 to 99.');
   }
 
@@ -1115,33 +1392,158 @@ export function addSku(state: AppState, actor: Actor, input: NewSkuInput, now: s
     id,
     merchantId: input.merchantId,
     sku,
-    name: input.name.trim(),
+    name,
     category: input.category,
     unitCost: 0,
-    unitPrice: roundMoney(input.unitPrice),
+    unitPrice: roundMoney(unitPrice),
     stock: 0,
     branchStock: { 'shueng-wan': 0, central: 0 },
     reorderLevel: 10,
-    expiryDate: '2099-12-31',
+    expiryDate: expiry,
+    ...(parts ? { parts } : {}),
   };
   const row: CostingRow = {
     id: `cst-${String(next).padStart(3, '0')}`,
     itemId: id,
-    qty: input.qty,
+    qty: pieces,
     pickupPriceHkd: null,
     status: 'draft',
     live: null,
   };
+  const inside = parts
+    ? ` = ${parts.map((part) => `${state.products.find((p) => p.id === part.productId)!.code} x${part.qty}${part.free ? ` +${part.free} free` : ''}`).join(', ')}`
+    : '';
   return {
     ok: true,
     state: {
-      ...logged(state, actor, now, 'New SKU added', [`${sku} ${item.name}, SRP ${item.unitPrice}, ${input.qty} pc${input.qty === 1 ? '' : 's'}`], {
+      ...logged(state, actor, now, 'New SKU added', [`${sku} ${item.name}, SRP ${item.unitPrice}, ${pieces} pc${pieces === 1 ? '' : 's'}${inside}`], {
         rows: [...state.costing.rows, row],
       }),
       items: [...state.items, item],
     },
     value: item,
   };
+}
+
+/** One line of an uploaded SKU sheet: SKU CODE, BUNDLE NAME, PRODUCT, QTY, FREE (and CATEGORY if present). */
+export interface SkuRow {
+  row: number;
+  sku: string;
+  bundleName?: string;
+  /** INV code or product name from the master list. */
+  product: string;
+  qty?: string | number;
+  free?: string | number;
+  category?: string;
+}
+
+export interface SkuImportPlan {
+  state: AppState;
+  created: InventoryItem[];
+  errors: string[];
+}
+
+const FREE_WORDS = /^(y|yes|free|x|true|1\s*free)$/i;
+
+/**
+ * Checks a SKU sheet without saving. Rows with the same SKU code are one bundle. PRODUCT is matched to the
+ * master list by INV code or by name, so the merchant is found from the product. FREE is the number of free
+ * pieces of that product; the word "yes" (or "free") means this line's qty is all free.
+ */
+export function planSkuImport(state: AppState, actor: Actor, rows: SkuRow[], now: string): SkuImportPlan {
+  const plan: SkuImportPlan = { state, created: [], errors: [] };
+  if (rows.length === 0) return { ...plan, errors: ['The file has no SKU rows.'] };
+  if (rows.length > MAX_IMPORT_ROWS) return { ...plan, errors: [`Too many rows (${rows.length}). Upload up to ${MAX_IMPORT_ROWS} at a time.`] };
+
+  const groups = new Map<string, SkuRow[]>();
+  for (const line of rows) {
+    const key = String(line.sku ?? '').trim().toUpperCase();
+    if (!key) {
+      plan.errors.push(`Row ${line.row}: SKU code is empty.`);
+      continue;
+    }
+    groups.set(key, [...(groups.get(key) ?? []), line]);
+  }
+
+  for (const [sku, lines] of groups) {
+    const first = lines[0].row;
+    const where = (message: string) => plan.errors.push(`SKU ${sku} (row ${first}): ${message}`);
+    const parts: SkuPart[] = [];
+    let merchantId = '';
+    let bad = false;
+    for (const line of lines) {
+      const text = String(line.product ?? '').trim();
+      if (!text) {
+        plan.errors.push(`Row ${line.row}: product is empty.`);
+        bad = true;
+        continue;
+      }
+      const byCode = state.products.filter((product) => product.code.toLowerCase() === text.toLowerCase());
+      const matches = byCode.length > 0 ? byCode : state.products.filter((product) => normName(product.name) === normName(text));
+      if (matches.length === 0) {
+        plan.errors.push(`Row ${line.row}: "${text}" is not in the master list. Add it in Inventory → Master list first.`);
+        bad = true;
+        continue;
+      }
+      if (matches.length > 1) {
+        plan.errors.push(`Row ${line.row}: "${text}" matches products of more than one merchant. Use the INV code.`);
+        bad = true;
+        continue;
+      }
+      const product = matches[0];
+      if (merchantId && merchantId !== product.merchantId) {
+        plan.errors.push(`Row ${line.row}: "${product.name}" belongs to another merchant than the other products of ${sku}.`);
+        bad = true;
+        continue;
+      }
+      merchantId = product.merchantId;
+      const freeText = String(line.free ?? '').trim();
+      const qtyText = String(line.qty ?? '').trim();
+      let qty = qtyText === '' ? NaN : readNumber(qtyText);
+      let free = 0;
+      if (FREE_WORDS.test(freeText)) {
+        free = Number.isFinite(qty) ? qty : NaN;
+        qty = 0;
+      } else if (freeText !== '' && freeText !== '0') {
+        free = readNumber(freeText);
+        if (qtyText === '') qty = 0;
+      } else if (qtyText === '') {
+        plan.errors.push(`Row ${line.row}: enter the qty.`);
+        bad = true;
+        continue;
+      }
+      if (!Number.isInteger(qty) || !Number.isInteger(free)) {
+        plan.errors.push(`Row ${line.row}: qty and free must be whole numbers.`);
+        bad = true;
+        continue;
+      }
+      const same = parts.find((part) => part.productId === product.id);
+      if (same) {
+        same.qty += qty;
+        same.free += free;
+      } else parts.push({ productId: product.id, qty, free });
+    }
+    if (bad) continue;
+    const bundleName = lines.map((line) => String(line.bundleName ?? '').trim()).find(Boolean) ?? '';
+    const categoryText = lines.map((line) => String(line.category ?? '').trim()).find(Boolean);
+    const result = addSku(plan.state, actor, { merchantId, sku, name: bundleName, category: normalizeCategory(categoryText), parts }, now);
+    if (!result.ok) {
+      where(result.error);
+      continue;
+    }
+    plan.state = result.state;
+    plan.created.push(result.value);
+  }
+  return plan;
+}
+
+/** Makes every SKU in the sheet as a draft, all or nothing. */
+export function importSkus(state: AppState, actor: Actor, rows: SkuRow[], now: string): Outcome<{ created: number }> {
+  const denied = costingGuard(actor);
+  if (denied) return denied;
+  const plan = planSkuImport(state, actor, rows, now);
+  if (plan.errors.length > 0) return fail(joinErrors(plan.errors));
+  return { ok: true, state: plan.state, value: { created: plan.created.length } };
 }
 
 /** Convenience for the UI: the full computed line for one costing row. */

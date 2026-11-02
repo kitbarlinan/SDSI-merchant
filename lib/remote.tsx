@@ -16,6 +16,7 @@ interface Scoped {
 
 const EMPTY: AppState = {
   items: [],
+  products: [],
   orders: [],
   receipts: [],
   reversals: [],
@@ -145,6 +146,7 @@ export function RemoteProviders({ children }: { children: ReactNode }) {
       merchants: data?.merchants ?? [],
       users: state.users,
       items: state.items,
+      products: state.products ?? [],
       orders: state.orders,
       receipts: state.receipts,
       reversals: state.reversals,
@@ -193,6 +195,11 @@ export function RemoteProviders({ children }: { children: ReactNode }) {
       setProgramMerchant: (_a, merchantId, on) => call('setProgramMerchant', { merchantId, on }),
       setSkuReseller: (_a, itemId, inProgram) => call('setSkuReseller', { itemId, inProgram }),
       addSku: (_a, input) => call('addSku', { input }),
+      addProduct: (_a, input) => call('addProduct', { input }),
+      updateProduct: (_a, id, patch) => call('updateProduct', { id, patch }),
+      deleteProduct: (_a, id) => call('deleteProduct', { id }),
+      importProducts: (_a, merchantId, rows) => call('importProducts', { merchantId, rows }),
+      importSkus: (_a, rows) => call('importSkus', { rows }),
     };
   }, [data, state, loaded, call]);
 

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { ExpiryBadge } from '@/components/inventory/ExpiryBadge';
+import { MasterListPanel } from '@/components/inventory/MasterListPanel';
 import { ReceivingPanel } from '@/components/inventory/ReceivingPanel';
 import { RtsPanel } from '@/components/inventory/RtsPanel';
 import { StockBadge } from '@/components/inventory/StockBadge';
@@ -12,7 +13,7 @@ import { StatCard } from '@/components/ui/StatCard';
 import { useAuth } from '@/lib/auth';
 import { COVER_WARNING_DAYS } from '@/lib/brand';
 import { formatCurrency, formatDate, formatNumber } from '@/lib/format';
-import { coverDays, getExpiry, getStockStatus, recentUnitsByItem, stockAt } from '@/lib/inventory';
+import { coverDays, describeParts, getExpiry, getStockStatus, recentUnitsByItem, stockAt } from '@/lib/inventory';
 import { availableOf, flattenDelivered, inTransitByItem, reservedByItem } from '@/lib/orders';
 import { isSdsiTeam } from '@/lib/roles';
 import { useAppData } from '@/lib/store';
@@ -22,12 +23,12 @@ import { useToday } from '@/lib/use-today';
 
 export function InventoryView() {
   const { user } = useAuth();
-  const { items, orders, receipts, merchants } = useAppData();
+  const { items, orders, receipts, merchants, products } = useAppData();
   const today = useToday();
 
   const isMerchant = user?.role === 'merchant';
   const isStaff = isSdsiTeam(user?.role ?? 'merchant');
-  const [tab, setTab] = useState<'stock' | 'receiving' | 'rts'>('stock');
+  const [tab, setTab] = useState<'stock' | 'receiving' | 'rts' | 'master'>('stock');
 
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<Category | 'all'>('all');
@@ -90,6 +91,7 @@ export function InventoryView() {
     { key: 'stock' as const, label: 'Stock', count: 0 },
     { key: 'receiving' as const, label: 'Stock in / out', count: scopedReceipts.filter((r) => r.status === 'pending').length },
     { key: 'rts' as const, label: 'RTS', count: scopedOrders.filter((o) => o.status === 'rts' && !o.returnReceiptId).length },
+    { key: 'master' as const, label: 'Master list', count: 0 },
   ];
 
   return (
@@ -163,6 +165,7 @@ export function InventoryView() {
       </div>
 
       {tab === 'receiving' ? <ReceivingPanel merchantFilter={isMerchant ? 'all' : merchantId} /> : null}
+      {tab === 'master' ? <MasterListPanel merchantFilter={isMerchant ? 'all' : merchantId} /> : null}
       {tab === 'rts' ? <RtsPanel merchantFilter={isMerchant ? 'all' : merchantId} /> : null}
 
       {tab === 'stock' ? (
@@ -305,6 +308,7 @@ export function InventoryView() {
                     <tr key={item.id} className={status === 'ok' ? '' : 'bg-amber-50/40'}>
                       <td className="px-5 py-4">
                         <p className="font-medium text-slate-900">{item.name}</p>
+                        {item.parts?.length ? <p className="mt-0.5 text-xs text-slate-500">Contains: {describeParts(item, products)}</p> : null}
                         <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
                           <span className="font-mono">{item.sku}</span>
                           <span className="inline-flex items-center gap-1">

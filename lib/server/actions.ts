@@ -44,6 +44,11 @@ export const ACTIONS: Record<string, Handler> = {
   setProgramMerchant: (st, ac, a, now) => engine.setProgramMerchant(st, ac, s(a.merchantId), a.on === true, now),
   setSkuReseller: (st, ac, a, now) => engine.setSkuReseller(st, ac, s(a.itemId), a.inProgram === true, now),
   addSku: (st, ac, a, now) => engine.addSku(st, ac, a.input as never, now),
+  addProduct: (st, ac, a, now) => engine.addProduct(st, ac, a.input as never, now),
+  updateProduct: (st, ac, a, now) => engine.updateProduct(st, ac, s(a.id), a.patch as never, now),
+  deleteProduct: (st, ac, a, now) => engine.deleteProduct(st, ac, s(a.id), now),
+  importProducts: (st, ac, a, now) => engine.importProducts(st, ac, s(a.merchantId), a.rows as never, now),
+  importSkus: (st, ac, a, now) => engine.importSkus(st, ac, a.rows as never, now),
 };
 
 /** Actions anyone can call without signing in. */

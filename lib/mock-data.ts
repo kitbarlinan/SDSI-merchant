@@ -6,6 +6,7 @@ import { addDays, weekdayOf } from './period';
 import { buildWeekRemittances, closableWeeks, weekEndOf } from './remittance';
 import type {
   InventoryItem,
+  MasterProduct,
   Merchant,
   Order,
   OrderLine,
@@ -66,7 +67,7 @@ const MOCK_INVENTORY_BASE: InventoryItem[] = [
     merchantId: 'mrc-1',
     sku: 'GRN-BAR-200',
     name: 'Organic Barley Grass Powder 200g',
-    category: 'Greens & Superfoods',
+    category: 'Food Supplements',
     unitCost: 420,
     unitPrice: 690,
     stock: 140,
@@ -78,7 +79,7 @@ const MOCK_INVENTORY_BASE: InventoryItem[] = [
     merchantId: 'mrc-1',
     sku: 'GRN-BAR-TAB',
     name: 'Barley Grass Tablets (120s)',
-    category: 'Greens & Superfoods',
+    category: 'Food Supplements',
     unitCost: 310,
     unitPrice: 520,
     stock: 14, // low stock
@@ -90,7 +91,7 @@ const MOCK_INVENTORY_BASE: InventoryItem[] = [
     merchantId: 'mrc-1',
     sku: 'GRN-SPI-100',
     name: 'Spirulina 500mg (100 tablets)',
-    category: 'Greens & Superfoods',
+    category: 'Food Supplements',
     unitCost: 260,
     unitPrice: 420,
     stock: 60,
@@ -102,7 +103,7 @@ const MOCK_INVENTORY_BASE: InventoryItem[] = [
     merchantId: 'mrc-1',
     sku: 'HRB-MAL-60',
     name: 'Malunggay Capsules (60s)',
-    category: 'Herbal',
+    category: 'Food Supplements',
     unitCost: 150,
     unitPrice: 260,
     stock: 18, // low stock + expiring soon
@@ -115,7 +116,7 @@ const MOCK_INVENTORY_BASE: InventoryItem[] = [
     merchantId: 'mrc-2',
     sku: 'BTY-GLU-30',
     name: 'Glutathione + Vitamin C (30 caps)',
-    category: 'Beauty & Skin',
+    category: 'Beauty Products',
     unitCost: 480,
     unitPrice: 799,
     stock: 70,
@@ -127,7 +128,7 @@ const MOCK_INVENTORY_BASE: InventoryItem[] = [
     merchantId: 'mrc-2',
     sku: 'BTY-COL-300',
     name: 'Collagen Peptides Powder 300g',
-    category: 'Beauty & Skin',
+    category: 'Beauty Products',
     unitCost: 520,
     unitPrice: 880,
     stock: 26, // running low on cover
@@ -140,7 +141,7 @@ const MOCK_INVENTORY_BASE: InventoryItem[] = [
     merchantId: 'mrc-3',
     sku: 'HRB-LUY-60',
     name: 'Turmeric + Black Pepper (60 caps)',
-    category: 'Herbal',
+    category: 'Food Supplements',
     unitCost: 175,
     unitPrice: 295,
     stock: 90,
@@ -152,7 +153,7 @@ const MOCK_INVENTORY_BASE: InventoryItem[] = [
     merchantId: 'mrc-3',
     sku: 'VIT-CZN-100',
     name: 'Vitamin C 500mg + Zinc (100 tabs)',
-    category: 'Vitamins & Minerals',
+    category: 'Food Supplements',
     unitCost: 190,
     unitPrice: 320,
     stock: 120,
@@ -164,7 +165,7 @@ const MOCK_INVENTORY_BASE: InventoryItem[] = [
     merchantId: 'mrc-3',
     sku: 'VIT-D3-60',
     name: 'Vitamin D3 1000 IU (60 softgels)',
-    category: 'Vitamins & Minerals',
+    category: 'Food Supplements',
     unitCost: 210,
     unitPrice: 350,
     stock: 0, // out of stock
@@ -176,7 +177,7 @@ const MOCK_INVENTORY_BASE: InventoryItem[] = [
     merchantId: 'mrc-3',
     sku: 'HRT-OM3-60',
     name: 'Omega-3 Fish Oil 1000mg (60 softgels)',
-    category: 'Heart & Wellness',
+    category: 'Food Supplements',
     unitCost: 240,
     unitPrice: 399,
     stock: 40,
@@ -189,7 +190,7 @@ const MOCK_INVENTORY_BASE: InventoryItem[] = [
     merchantId: 'mrc-4',
     sku: 'SDS-IMM-30',
     name: 'SDSI Immune Boost (30 sachets)',
-    category: 'Heart & Wellness',
+    category: 'Food Supplements',
     unitCost: 300,
     unitPrice: 600,
     stock: 80,
@@ -201,7 +202,7 @@ const MOCK_INVENTORY_BASE: InventoryItem[] = [
     merchantId: 'mrc-4',
     sku: 'SDS-COL-30',
     name: 'SDSI Collagen Drink (30 sachets)',
-    category: 'Beauty & Skin',
+    category: 'Beauty Products',
     unitCost: 380,
     unitPrice: 750,
     stock: 60,
@@ -213,7 +214,7 @@ const MOCK_INVENTORY_BASE: InventoryItem[] = [
     merchantId: 'mrc-4',
     sku: 'SDS-GRN-200',
     name: 'SDSI Greens Powder 200g',
-    category: 'Greens & Superfoods',
+    category: 'Food Supplements',
     unitCost: 260,
     unitPrice: 520,
     stock: 70,
@@ -227,7 +228,7 @@ const MOCK_INVENTORY_BASE: InventoryItem[] = [
     merchantId: 'mrc-4',
     sku: 'RSL-PKG-1',
     name: 'Reseller Package 1',
-    category: 'Greens & Superfoods',
+    category: 'Food Supplements',
     unitCost: 500,
     unitPrice: 990,
     stock: 40,
@@ -240,7 +241,7 @@ const MOCK_INVENTORY_BASE: InventoryItem[] = [
     merchantId: 'mrc-4',
     sku: 'RSL-PKG-2',
     name: 'Reseller Package 2',
-    category: 'Greens & Superfoods',
+    category: 'Food Supplements',
     unitCost: 1000,
     unitPrice: 1980,
     stock: 20,
@@ -364,6 +365,19 @@ const stamp = (date: string, hour: number, minute: number): string =>
  * DEMO costing. The pickup prices are only the suggested prices from the formula, so the screen
  * has something to show. The admin must set the real pickup prices.
  */
+/** The demo master list: one product per distinct item name. */
+export const MOCK_PRODUCTS: MasterProduct[] = (() => {
+  const seen = new Set<string>();
+  const list: MasterProduct[] = [];
+  for (const item of MOCK_INVENTORY) {
+    const key = `${item.merchantId}|${item.name.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    list.push({ id: `prd-${String(list.length + 1).padStart(4, '0')}`, merchantId: item.merchantId, code: `INV-${String(list.length + 1).padStart(3, '0')}`, name: item.name, srp: item.unitPrice, expiryDate: item.expiryDate });
+  }
+  return list;
+})();
+
 export const MOCK_COSTING: CostingState = {
   settings: { ...DEFAULT_COSTING_SETTINGS },
   rows: buildDemoCosting(MOCK_INVENTORY),

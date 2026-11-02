@@ -5,7 +5,7 @@
  */
 import { DEFAULT_COSTING_SETTINGS } from '../costing';
 import type { AppState } from '../engine';
-import type { Merchant } from '../types';
+import { normalizeCategory, type Merchant } from '../types';
 import type { Db } from './db';
 
 type Rec = Record<string, unknown> & { id: string };
@@ -13,6 +13,7 @@ type Rec = Record<string, unknown> & { id: string };
 /** One array of AppState per kind, newest first where the app prepends. */
 const LISTS = {
   item: { key: 'items', order: 'asc' },
+  product: { key: 'products', order: 'asc' },
   order: { key: 'orders', order: 'desc' },
   receipt: { key: 'receipts', order: 'desc' },
   reversal: { key: 'reversals', order: 'desc' },
@@ -25,6 +26,7 @@ type ListKind = keyof typeof LISTS;
 
 export const emptyState = (): AppState => ({
   items: [],
+  products: [],
   orders: [],
   receipts: [],
   reversals: [],
@@ -63,6 +65,9 @@ export async function loadAll(q: Db): Promise<Loaded> {
     const { key, order } = LISTS[kind];
     (state as unknown as Record<string, unknown>)[key] = (buckets.get(kind) ?? []).sort(byId(order));
   }
+  // Data saved before there were two categories.
+  state.items = state.items.map((item) => ({ ...item, category: normalizeCategory(item.category) }));
+  state.orders = state.orders.map((order) => ({ ...order, lines: order.lines.map((line) => ({ ...line, category: normalizeCategory(line.category) })) }));
   merchants.sort((a, b) => a.id.localeCompare(b.id));
   return { state, merchants };
 }

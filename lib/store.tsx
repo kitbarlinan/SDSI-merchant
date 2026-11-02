@@ -18,6 +18,7 @@ import {
   MOCK_REMITTANCES,
   MOCK_REVERSALS,
   MOCK_INVENTORY,
+  MOCK_PRODUCTS,
   MOCK_MERCHANTS,
   MOCK_ORDERS,
   MOCK_PO_SEQ,
@@ -28,6 +29,7 @@ import {
 import type { CostingRow, CostingSettings, CostingState } from './costing';
 import type {
   InventoryItem,
+  MasterProduct,
   Remittance,
   ReversalRequest,
   Merchant,
@@ -39,6 +41,7 @@ import type {
   StockReceipt,
   User,
 } from './types';
+import { normalizeCategory } from './types';
 
 export type ActionResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -63,6 +66,8 @@ export interface AppDataValue {
   merchants: Merchant[];
   users: User[];
   items: InventoryItem[];
+  /** Inventory master list. */
+  products: MasterProduct[];
   orders: Order[];
   receipts: StockReceipt[];
   reversals: ReversalRequest[];
@@ -140,6 +145,15 @@ export interface AppDataValue {
   setProgramMerchant: (actor: Actor, merchantId: string, on: boolean) => Promise<ActionResult<string[]>>;
   setSkuReseller: (actor: Actor, itemId: string, inProgram: boolean) => Promise<ActionResult<InventoryItem>>;
   addSku: (actor: Actor, input: engine.NewSkuInput) => Promise<ActionResult<InventoryItem>>;
+  addProduct: (actor: Actor, input: engine.ProductInput) => Promise<ActionResult<MasterProduct>>;
+  updateProduct: (actor: Actor, id: string, patch: engine.ProductPatch) => Promise<ActionResult<MasterProduct>>;
+  deleteProduct: (actor: Actor, id: string) => Promise<ActionResult<MasterProduct>>;
+  importProducts: (
+    actor: Actor,
+    merchantId: string,
+    rows: engine.ProductRow[],
+  ) => Promise<ActionResult<{ created: number; updated: number; unchanged: number }>>;
+  importSkus: (actor: Actor, rows: engine.SkuRow[]) => Promise<ActionResult<{ created: number }>>;
   resetDemo: () => void;
   /** Account management. Live mode only (null in the demo). */
   team: TeamTools | null;
@@ -148,10 +162,11 @@ export interface AppDataValue {
 }
 
 // Bumped whenever the saved data shape changes.
-const STORAGE_KEY = 'sdsi-wellness:v17';
+const STORAGE_KEY = 'sdsi-wellness:v18';
 
 const createInitialState = (): AppState => ({
   items: MOCK_INVENTORY.map((item) => ({ ...item })),
+  products: MOCK_PRODUCTS.map((product) => ({ ...product })),
   orders: MOCK_ORDERS.map((order) => ({ ...order, lines: order.lines.map((line) => ({ ...line })) })),
   receipts: MOCK_RECEIPTS.map((receipt) => ({ ...receipt, lines: receipt.lines.map((line) => ({ ...line })) })),
   reversals: MOCK_REVERSALS.map((request) => ({ ...request })),
@@ -206,7 +221,13 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       const raw = window.localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed: unknown = JSON.parse(raw);
-        if (isSavedState(parsed)) commit(parsed);
+        if (isSavedState(parsed)) {
+          commit({
+            ...parsed,
+            products: Array.isArray(parsed.products) ? parsed.products : [],
+            items: parsed.items.map((item) => ({ ...item, category: normalizeCategory(item.category) })),
+          });
+        }
       }
     } catch {
       // Ignore corrupt or unavailable storage and keep the demo data.
@@ -238,6 +259,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       merchants: MOCK_MERCHANTS,
       users: state.users,
       items: state.items,
+      products: state.products,
       orders: state.orders,
       receipts: state.receipts,
       reversals: state.reversals,
@@ -293,6 +315,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       setSkuDisabled: (actor, itemId, disabled) =>
         run((s) => engine.setSkuDisabled(s, actor, itemId, disabled, nowISO())),
       addSku: (actor, input) => run((s) => engine.addSku(s, actor, input, nowISO())),
+      addProduct: (actor, input) => run((s) => engine.addProduct(s, actor, input, nowISO())),
+      updateProduct: (actor, id, patch) => run((s) => engine.updateProduct(s, actor, id, patch, nowISO())),
+      deleteProduct: (actor, id) => run((s) => engine.deleteProduct(s, actor, id, nowISO())),
+      importProducts: (actor, merchantId, rows) => run((s) => engine.importProducts(s, actor, merchantId, rows, nowISO())),
+      importSkus: (actor, rows) => run((s) => engine.importSkus(s, actor, rows, nowISO())),
       resetDemo: () => commit(createInitialState()),
       remote: false,
       team: null,

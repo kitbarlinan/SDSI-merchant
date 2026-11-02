@@ -75,3 +75,13 @@ export function coverDays(stock: number, recentUnits: number): number | null {
 export function needsReorder(cover: number | null): boolean {
   return cover !== null && cover < COVER_WARNING_DAYS;
 }
+
+/** "Night Cream ×5 · Kojic Soap ×5 + 1 free" for a SKU built from the master list. Empty for older SKUs. */
+export function describeParts(item: Pick<InventoryItem, 'parts'>, products: { id: string; name: string }[]): string {
+  return (item.parts ?? [])
+    .map((part) => {
+      const name = products.find((product) => product.id === part.productId)?.name ?? 'Unknown product';
+      return `${name} ×${part.qty}${part.free > 0 ? ` + ${part.free} free` : ''}`;
+    })
+    .join(' · ');
+}

@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { NewSkuCard, SkuImportCard } from '@/components/accounting/NewSkuCard';
 import { Card } from '@/components/ui/Card';
 import { inputClass } from '@/components/ui/Field';
 import { Icon } from '@/components/ui/Icon';
@@ -13,6 +14,7 @@ import {
   type CostingSettings,
 } from '@/lib/costing';
 import { formatCurrency, formatDateTime, formatHkd } from '@/lib/format';
+import { describeParts } from '@/lib/inventory';
 import { CATEGORIES, type InventoryItem } from '@/lib/types';
 import type { CostingRow } from '@/lib/costing';
 import { useAppData } from '@/lib/store';
@@ -191,82 +193,11 @@ function ResellerProgramCard({ onChanged }: { onChanged: (message: string) => vo
   );
 }
 
-function NewSkuCard({ onAdded }: { onAdded: (message: string) => void }) {
-  const { user } = useAuth();
-  const { merchants, addSku } = useAppData();
-  const [merchantId, setMerchantId] = useState('');
-  const [sku, setSku] = useState('');
-  const [name, setName] = useState('');
-  const [category, setCategory] = useState<InventoryItem['category']>(CATEGORIES[0]);
-  const [srp, setSrp] = useState('');
-  const [pieces, setPieces] = useState('1');
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit() {
-    if (!user) return;
-    const result = await addSku(user, { merchantId, sku, name, category, unitPrice: Number(srp), qty: Number(pieces) });
-    if (!result.ok) return setError(result.error);
-    setError(null);
-    onAdded(`${result.value.sku} added as draft. Approve and go live a package to put it on sale. Receive stock in Inventory.`);
-    setSku('');
-    setName('');
-    setSrp('');
-  }
-
-  return (
-    <Card title="New SKU" subtitle="Same as the sheet: SKU code, product name, merchant SRP and qty. Solo and twin pack are separate SKUs with their own code and SRP (qty 1 and 2). The SKU code must be new and is never reused. It goes on sale only after a package is approved and live.">
-      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <label className="text-xs font-medium text-slate-500">
-          Merchant
-          <select value={merchantId} onChange={(event) => setMerchantId(event.target.value)} className={`mt-1 ${inputClass(false)}`}>
-            <option value="">Choose merchant…</option>
-            {merchants.map((merchant) => (
-              <option key={merchant.id} value={merchant.id}>{merchant.name}</option>
-            ))}
-          </select>
-        </label>
-        <label className="text-xs font-medium text-slate-500">
-          SKU code
-          <input value={sku} onChange={(event) => setSku(event.target.value)} placeholder="SKU-001" className={`mt-1 ${inputClass(Boolean(error))}`} />
-        </label>
-        <label className="text-xs font-medium text-slate-500">
-          Product name
-          <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Q10pro 30's" className={`mt-1 ${inputClass(false)}`} />
-        </label>
-        <label className="text-xs font-medium text-slate-500">
-          Category
-          <select value={category} onChange={(event) => setCategory(event.target.value as InventoryItem['category'])} className={`mt-1 ${inputClass(false)}`}>
-            {CATEGORIES.map((option) => (
-              <option key={option} value={option}>{option}</option>
-            ))}
-          </select>
-        </label>
-        <label className="text-xs font-medium text-slate-500">
-          Net SRP per unit (PHP)
-          <input type="number" min={0} step="0.01" value={srp} onChange={(event) => setSrp(event.target.value)} placeholder="990" className={`mt-1 ${inputClass(false)}`} />
-        </label>
-        <label className="text-xs font-medium text-slate-500">
-          Pieces inside (qty)
-          <input type="number" min={1} max={99} value={pieces} onChange={(event) => setPieces(event.target.value)} placeholder="1" className={`mt-1 ${inputClass(false)}`} />
-        </label>
-      </div>
-      {error ? <p role="alert" className="mt-3 text-sm text-rose-600">{error}</p> : null}
-      <button
-        type="button"
-        onClick={submit}
-        disabled={!merchantId || !sku || !name || !srp}
-        className="mt-3 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-emerald-950 hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        Add SKU as draft
-      </button>
-    </Card>
-  );
-}
-
 function CostingEditor() {
   const { user } = useAuth();
   const {
     items,
+    products,
     merchants,
     users,
     costing,
@@ -521,7 +452,12 @@ function CostingEditor() {
       </div>
       <ResellerProgramCard onChanged={setNotice} />
 
-      {showNewSku ? <NewSkuCard onAdded={setNotice} /> : null}
+      {showNewSku ? (
+        <>
+          <NewSkuCard onAdded={setNotice} />
+          <SkuImportCard onAdded={setNotice} />
+        </>
+      ) : null}
 
       <Card
         flush
@@ -607,6 +543,7 @@ function CostingEditor() {
                         } ${item.disabled ? 'text-slate-400' : 'text-slate-900'}`}
                       >
                         {item.name}
+                        {item.parts?.length ? <span className="mt-0.5 block text-[11px] font-normal leading-snug text-slate-500">{describeParts(item, products)}</span> : null}
                         {item.disabled ? <span className="ml-2 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-600">Disabled</span> : null}
                         <button
                           type="button"

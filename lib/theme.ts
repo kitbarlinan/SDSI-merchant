@@ -2,11 +2,8 @@ import type { Category, OrderTerms, PaymentMethod } from './types';
 
 /** Hex colors for SVG charts. Kept in one place so every chart agrees. */
 export const CATEGORY_COLORS: Record<Category, string> = {
-  'Greens & Superfoods': '#d99a00',
-  Herbal: '#d97706',
-  'Vitamins & Minerals': '#0284c7',
-  'Beauty & Skin': '#e11d48',
-  'Heart & Wellness': '#7c3aed',
+  'Food Supplements': '#d99a00',
+  'Beauty Products': '#e11d48',
 };
 
 export const PAYMENT_COLORS: Record<PaymentMethod, string> = {

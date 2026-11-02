@@ -151,6 +151,25 @@ const A = (id: string) => ({ authId: 'auth-' + id });
   const pub = await publicCatalog(db);
   check('the public page gets no merchant details at all', pub.merchants.length === 0 && !JSON.stringify(pub).includes('0012 3456'));
 
+  // ---- master list and bundle SKUs on the server
+  const addP = await act(db, deps, A('usr-clerk'), 'importProducts', { merchantId: 'mrc-1', rows: [{ row: 2, code: 'GL-1', name: 'Green Leaf Powder', srp: '₱500', expiry: '2027-01-31' }, { row: 3, code: 'GL-2', name: 'Green Leaf Tea', srp: 250, expiry: '' }] }, 'https://x') as any;
+  check('the inventory clerk imports products', addP.ok && addP.value.created === 2, addP);
+  const cashP = await act(db, deps, A('usr-cashier'), 'addProduct', { input: { merchantId: 'mrc-1', code: 'NOPE', name: 'Nope', srp: 5 } }, 'https://x') as any;
+  check('a cashier cannot change the master list', !cashP.ok);
+  const bundle = await act(db, deps, A('usr-admin'), 'importSkus', { rows: [{ row: 2, sku: 'GL-BUNDLE', bundleName: 'Green pack', product: 'GL-1', qty: 2, free: '' }, { row: 3, sku: 'GL-BUNDLE', bundleName: '', product: 'Green Leaf Tea', qty: 1, free: 1 }] }, 'https://x') as any;
+  check('admin imports a bundle SKU from the master list', bundle.ok && bundle.value.created === 1, bundle);
+  const clerkSku = await act(db, deps, A('usr-clerk'), 'importSkus', { rows: [{ row: 2, sku: 'GL-X', bundleName: 'x y', product: 'GL-1', qty: 1 }] }, 'https://x') as any;
+  check('the clerk cannot create SKUs', !clerkSku.ok);
+  const afterP = await db.tx((q) => loadAll(q));
+  const gl = afterP.state.items.find((i: any) => i.sku === 'GL-BUNDLE');
+  check('products and the bundle come back from the database', afterP.state.products.length === 2 && gl && gl.unitPrice === 1250 && gl.parts.length === 2 && gl.expiryDate === '2027-01-31', gl);
+  const adminP = await dataFor(db, A('usr-admin')) as any, m1P = await dataFor(db, A('usr-m1')) as any, m2P = await dataFor(db, A('usr-m2')) as any, c1P = await dataFor(db, A('usr-c1')) as any, cashP2 = await dataFor(db, A('usr-cashier')) as any;
+  check('master list is scoped: admin and cashier all, merchant own only, resellers none', adminP.data.state.products.length === 2 && cashP2.data.state.products.length === 2 && m1P.data.state.products.length === 2 && m2P.data.state.products.length === 0 && c1P.data.state.products.length === 0);
+  await pg.exec("update public.app_records set data = jsonb_set(data, '{category}', '\"Beauty & Skin\"') where kind = 'item' and id = 'itm-001'");
+  await pg.exec("update public.app_records set data = jsonb_set(data, '{category}', '\"Herbal\"') where kind = 'item' and id = 'itm-002'");
+  const legacy = await db.tx((q) => loadAll(q));
+  check('older five-category data loads as the two new categories', legacy.state.items.find((i: any) => i.id === 'itm-001')!.category === 'Beauty Products' && legacy.state.items.find((i: any) => i.id === 'itm-002')!.category === 'Food Supplements');
+
   // ---- first admin bootstrap on an empty database
   const fresh = await newDb();
   await fresh.pg.exec("insert into public.profiles values ('11111111-1111-1111-1111-111111111111', 'Kit', 'admin', true), ('22222222-2222-2222-2222-222222222222', 'Sneaky', 'cashier', true)");
