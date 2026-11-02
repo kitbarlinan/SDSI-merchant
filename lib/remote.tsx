@@ -204,7 +204,10 @@ export function RemoteProviders({ children }: { children: ReactNode }) {
       },
       signIn: async (email, password) => {
         const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-        return error ? (/invalid/i.test(error.message) ? 'Wrong email or password.' : error.message) : null;
+        if (!error) return null;
+        if (/api key|apikey|jwt/i.test(error.message)) return 'The app cannot reach its sign-in service: check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel, then redeploy.';
+        if (/not confirmed/i.test(error.message)) return 'This email is not confirmed yet. In Supabase, open the user and confirm it.';
+        return /invalid/i.test(error.message) ? 'Wrong email or password.' : error.message;
       },
       sendReset: async (email) => {
         const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: `${window.location.origin}/` });
