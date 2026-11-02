@@ -169,16 +169,26 @@ export function OrderCard({
             </span>
             <span className="text-lg font-semibold text-slate-900">{orderAmountLabel(order)}</span>
           </div>
-          {order.discountHkd ? (
+          {order.discountHkd || (showPeso && order.commissionPhp) ? (
             <div className="space-y-0.5 text-xs">
-              <p className="flex justify-between">
-                <span className="text-slate-500">Pickup price (HKD)</span>
-                <span className="text-slate-700">{formatHkd(order.pickupHkd ?? 0)}</span>
-              </p>
-              <p className="flex justify-between">
-                <span className="text-slate-500">Reseller discount {order.discountPct}% (HKD)</span>
-                <span className="font-semibold text-emerald-700">− {formatHkd(order.discountHkd)}</span>
-              </p>
+              {order.discountHkd ? (
+                <>
+                  <p className="flex justify-between">
+                    <span className="text-slate-500">Pickup price (HKD)</span>
+                    <span className="text-slate-700">{formatHkd(order.pickupHkd ?? 0)}</span>
+                  </p>
+                  <p className="flex justify-between">
+                    <span className="text-slate-500">Reseller discount {order.discountPct}% (HKD)</span>
+                    <span className="font-semibold text-emerald-700">− {formatHkd(order.discountHkd)}</span>
+                  </p>
+                </>
+              ) : null}
+              {showPeso && order.commissionPhp ? (
+                <p className="flex justify-between">
+                  <span className="text-slate-500">Unilevel {order.commissionPct}% to sponsor (charged to merchant)</span>
+                  <span className="font-semibold text-rose-700">− {formatCurrency(order.commissionPhp)}</span>
+                </p>
+              ) : null}
               {showPeso && order.discountPhp ? (
                 <p className="flex justify-between">
                   <span className="text-slate-500">Discount charged to merchant (PHP)</span>

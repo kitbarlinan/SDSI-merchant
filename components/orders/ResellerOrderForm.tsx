@@ -7,7 +7,7 @@ import { ProductList, parseQuantities, type ListRow } from '@/components/orders/
 import { Field, inputClass } from '@/components/ui/Field';
 import { Icon } from '@/components/ui/Icon';
 import { useAuth } from '@/lib/auth';
-import { isSellable, livePickup } from '@/lib/costing';
+import { inResellerProgram, isSellable, livePickup } from '@/lib/costing';
 import { formatHkd, roundMoney } from '@/lib/format';
 import { MOCK_TODAY } from '@/lib/mock-data';
 import { availableOf, reservedByItem } from '@/lib/orders';
@@ -38,13 +38,20 @@ export function ResellerOrderForm() {
           available: availableOf(item, reserved),
           expired: item.expiryDate < today,
           pickupHkd: livePickup(costing, item.id) ?? 0,
+          discountPct: inResellerProgram(item, costing) ? pct : 0,
         })),
     [items, reserved, today, costing],
   );
 
   const parsed = parseQuantities(rows, typed);
   const subtotal = parsed.totalHkd;
-  const discount = roundMoney((subtotal * pct) / 100);
+  // Discount only on the products in the reseller program.
+  const discount = roundMoney(
+    parsed.lines.reduce(
+      (sum, line) => sum + (inResellerProgram(line.item, costing) ? ((livePickup(costing, line.item.id) ?? 0) * line.quantity * pct) / 100 : 0),
+      0,
+    ),
+  );
   const toPay = roundMoney(subtotal - discount);
   const canSubmit = parsed.lines.length > 0 && Object.keys(parsed.errors).length === 0;
 
@@ -69,7 +76,7 @@ export function ResellerOrderForm() {
     <div className="space-y-6">
       <PageHeader
         title="New Order"
-        description={`Pickup only. You pay at the counter when you collect. Your reseller discount of ${pct}% is already taken off the prices.`}
+        description={`Pickup only. You pay at the counter when you collect. Products in the reseller program show ${pct}% off. Other products are at the normal price.`}
       />
 
       {placed ? (
@@ -96,7 +103,6 @@ export function ResellerOrderForm() {
         typed={typed}
         errors={parsed.errors}
         showMerchant
-        discountPct={pct}
         onChange={(itemId, value) => {
           setPlaced(null);
           setError(null);

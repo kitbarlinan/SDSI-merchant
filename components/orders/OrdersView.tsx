@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { OrderCard } from '@/components/orders/OrderCard';
+import { SponsorCommissionCard } from '@/components/orders/SponsorCommissionCard';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Icon } from '@/components/ui/Icon';
 import { StatCard } from '@/components/ui/StatCard';
@@ -116,6 +117,8 @@ export function OrdersView() {
           ) : undefined
         }
       />
+
+      {isReseller && user ? <SponsorCommissionCard sponsorId={user.id} orders={orders} /> : null}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard

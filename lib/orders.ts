@@ -31,15 +31,15 @@ export const reservesStock = (order: Order): boolean =>
   order.status === 'pending' || order.status === 'packed';
 
 /**
- * Net SRP of the order, in PHP. A reseller discount comes off it: the merchant carries the discount,
- * so the amount remitted to the merchant is lower.
+ * Net SRP of the order, in PHP. The reseller discount and the sponsor's unilevel commission come off it:
+ * the merchant carries both, so the amount remitted to the merchant is lower.
  */
 export const orderTotal = (order: Order): number =>
-  roundMoney(order.lines.reduce((sum, line) => sum + line.total, 0) - (order.discountPhp ?? 0));
+  roundMoney(order.lines.reduce((sum, line) => sum + line.total, 0) - (order.discountPhp ?? 0) - (order.commissionPhp ?? 0));
 
 /** The order's discount shared over its lines in proportion to their Net SRP. The last line takes the rounding. */
 export function lineDiscounts(order: Order): number[] {
-  const discount = order.discountPhp ?? 0;
+  const discount = (order.discountPhp ?? 0) + (order.commissionPhp ?? 0);
   const gross = order.lines.reduce((sum, line) => sum + line.total, 0);
   if (discount <= 0 || gross <= 0) return order.lines.map(() => 0);
   let given = 0;
@@ -150,3 +150,14 @@ export const orderAmountLabel = (order: Order): string =>
 
 /** Customer price basis of a delivered order: Net SRP plus the mark-up (990 -> 1,485). */
 export const orderGross = (order: Order): number => roundMoney(orderTotal(order) + orderTopUp(order));
+
+/** Unilevel commission a sponsor has earned (delivered orders) and what is still on its way. PHP. */
+export function sponsorCommission(orders: Order[], sponsorId: string): { earned: number; pending: number; orders: Order[] } {
+  const mine = orders.filter((order) => order.sponsorId === sponsorId && (order.commissionPhp ?? 0) > 0);
+  const sum = (list: Order[]) => roundMoney(list.reduce((total, order) => total + (order.commissionPhp ?? 0), 0));
+  return {
+    earned: sum(mine.filter((order) => order.status === 'delivered')),
+    pending: sum(mine.filter((order) => order.status === 'pending' || order.status === 'packed')),
+    orders: mine,
+  };
+}

@@ -35,6 +35,8 @@ export interface CostingSettings {
   cfMinHkd: number;
   /** Discount for resellers / customers with a login, percent of the pickup price. Charged to the merchant. */
   resellerDiscountPct: number;
+  /** Unilevel commission for the sponsor of a reseller, percent of the SRP (PHP) of the program products. Charged to the merchant. */
+  unilevelPct: number;
 }
 
 /** Values from the costing sheet. The exchange rate matches the sheet's 1,485 PHP = 182.36 HKD. */
@@ -46,6 +48,7 @@ export const DEFAULT_COSTING_SETTINGS: CostingSettings = {
   cfRatePct: 2.5,
   cfMinHkd: 5,
   resellerDiscountPct: 10,
+  unilevelPct: 5,
 };
 
 /**
@@ -95,7 +98,13 @@ export interface CostingState {
   settings: CostingSettings;
   rows: CostingRow[];
   log: CostingLogEntry[];
+  /** Reseller program: merchants whose products carry the reseller discount and the unilevel commission. */
+  programMerchantIds: string[];
 }
+
+/** In the reseller program: the merchant is in it and the SKU was not switched off. */
+export const inResellerProgram = (item: InventoryItem, costing: CostingState): boolean =>
+  costing.programMerchantIds.includes(item.merchantId) && !item.resellerOff;
 
 export interface CostingResult {
   netSrpPhp: number;
@@ -196,6 +205,51 @@ export function orderCharges(
   return { pickupHkd: pickupTotal, sfHkd, cfHkd, netCodHkd: roundMoney(pickupTotal + sfHkd + cfHkd) };
 }
 
+export interface ResellerCharges {
+  /** Pickup price of the whole order, HKD (before the discount). */
+  pickupHkd: number;
+  /** Only the program products get the discount. */
+  discountHkd: number;
+  /** The same discount in PHP at today's rate. It comes off the merchant's net payable. */
+  discountPhp: number;
+  /** Unilevel commission to the sponsor, PHP: a percent of the SRP of the program products. */
+  commissionPhp: number;
+  /** What the reseller pays at pickup, HKD. */
+  amountHkd: number;
+}
+
+/**
+ * Reseller order pricing. The discount is a fixed percent of the pickup price (HKD) and the unilevel commission
+ * is a percent of the SRP (PHP). Both apply only to products in the reseller program, and the merchant carries both.
+ * null when a line has no live price.
+ */
+export function resellerCharges(
+  lines: { itemId: string; quantity: number; total: number }[],
+  items: InventoryItem[],
+  costing: CostingState,
+  hasSponsor: boolean,
+): ResellerCharges | null {
+  const all = orderCharges(lines, costing);
+  if (!all) return null;
+  let eligiblePickup = 0;
+  let eligibleSrp = 0;
+  for (const line of lines) {
+    const item = items.find((candidate) => candidate.id === line.itemId);
+    if (!item || !inResellerProgram(item, costing)) continue;
+    eligiblePickup += (livePickup(costing, line.itemId) ?? 0) * line.quantity;
+    eligibleSrp += line.total;
+  }
+  const { resellerDiscountPct, unilevelPct, fxPhpPerHkd } = costing.settings;
+  const discountHkd = roundMoney((eligiblePickup * resellerDiscountPct) / 100);
+  return {
+    pickupHkd: all.pickupHkd,
+    discountHkd,
+    discountPhp: roundMoney(discountHkd * fxPhpPerHkd),
+    commissionPhp: hasSponsor ? roundMoney((eligibleSrp * unilevelPct) / 100) : 0,
+    amountHkd: roundMoney(all.pickupHkd - discountHkd),
+  };
+}
+
 /** The live pickup price (HKD) of one SKU, or null when it has none. */
 export const livePickup = (costing: CostingState, itemId: string): number | null =>
   costingRowFor(costing.rows, itemId)?.live?.pickupPriceHkd ?? null;
@@ -253,6 +307,7 @@ const RANGES: Record<keyof CostingSettings, { label: string; min: number; max: n
   cfRatePct: { label: 'Collection fee %', min: 0, max: 100 },
   cfMinHkd: { label: 'Minimum collection fee', min: 0, max: 1000 },
   resellerDiscountPct: { label: 'Reseller discount %', min: 0, max: 90 },
+  unilevelPct: { label: 'Unilevel %', min: 0, max: 50 },
 };
 
 export const SETTING_LABEL: Record<keyof CostingSettings, string> = {
@@ -263,6 +318,7 @@ export const SETTING_LABEL: Record<keyof CostingSettings, string> = {
   cfRatePct: 'Collection fee rate (%)',
   cfMinHkd: 'Minimum collection fee (HKD)',
   resellerDiscountPct: 'Reseller discount (%)',
+  unilevelPct: 'Unilevel commission to sponsor (%)',
 };
 
 export function validateSettings(patch: Partial<CostingSettings>): string | null {

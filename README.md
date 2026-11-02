@@ -99,3 +99,11 @@ Open http://localhost:3000 and pick an account (demo sign-in, no password).
 - The browser can only read, and only what its role may see. Writes (orders, approvals, payouts, costing) will go through the server, which checks the rules first (Phase 2).
 - `supabase/tests/rls.test.mjs` checks the access rules on a local Postgres (PGlite).
 - Never put the `service_role` key or the database password in the repo, in chat, or in a `NEXT_PUBLIC_*` variable.
+
+## Reseller program (discount + unilevel)
+
+- Program is **per merchant** (Accounting → Costing → *Reseller program*; default: SDSI Direct) with an on/off checkbox **per SKU**.
+- Reseller discount: `resellerDiscountPct` (default 10%) of the HKD pickup price, program products only. Charged to the merchant.
+- Unilevel: `unilevelPct` (default 5%) of the SRP in pesos of program products, paid to the reseller's sponsor (1 level for now). Earned on delivery, reversed if a delivered order is undone. Charged to the merchant.
+- Sponsors see their group's commission on the Orders page. Payout of commissions and a sponsor-assignment UI are not built yet.
+- Database: run `supabase/0003_reseller_program.sql` after 0001 and 0002.

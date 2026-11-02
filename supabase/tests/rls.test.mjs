@@ -1,3 +1,4 @@
+// Checks the access rules of 0001 + 0003 on a local Postgres (PGlite). Run: npm i @electric-sql/pglite && node supabase/tests/rls.test.mjs
 // Checks the access rules of 0001_init.sql on a local Postgres (PGlite). Run: npm i @electric-sql/pglite && node supabase/tests/rls.test.mjs
 import { PGlite } from '@electric-sql/pglite';
 import fs from 'fs';
@@ -10,6 +11,7 @@ await db.exec(`
 `);
 const sql = fs.readFileSync(new URL('../0001_init.sql', import.meta.url), 'utf8');
 await db.exec(sql);
+await db.exec(fs.readFileSync(new URL('../0003_reseller_program.sql', import.meta.url), 'utf8'));
 console.log('schema ok');
 const U = { admin: '00000000-0000-0000-0000-000000000001', cashier: '00000000-0000-0000-0000-000000000002', clerk: '00000000-0000-0000-0000-000000000003', m1: '00000000-0000-0000-0000-000000000011', m2: '00000000-0000-0000-0000-000000000012', c1: '00000000-0000-0000-0000-000000000021', c2: '00000000-0000-0000-0000-000000000022' };
 await db.exec(`
@@ -68,4 +70,17 @@ check('undo needs a real note', await bad("insert into reversals (id,order_id,me
 check('week must start Monday', await bad("insert into remittances (id,merchant_id,week_start,week_end,net_payable,payout_php) values ('RMT-2','mrc-2','2026-10-20','2026-10-26',1,1)"));
 check('an order is in at most one remittance', await bad("insert into remittances (id,merchant_id,week_start,week_end,net_payable,payout_php) values ('RMT-3','mrc-1','2026-10-26','2026-11-01',1,1); insert into remittance_orders values ('RMT-1','POID-1'),('RMT-3','POID-1')"));
 check('merchant profile needs a merchant', await bad("insert into profiles (id,name,role) select '" + U.m1 + "','x','merchant' where false; insert into auth.users values ('00000000-0000-0000-0000-000000000099'); insert into profiles (id,name,role) values ('00000000-0000-0000-0000-000000000099','x','merchant')"));
+
+// ---- reseller program (0003)
+await db.exec(`update merchants set reseller_program = true where id = 'mrc-1';
+ update items set reseller_off = false;
+ update profiles set sponsor_id = '${U.c1}' where id = '${U.c2}';
+ update orders set sponsor_id = '${U.c1}', commission_pct = 5, commission_php = 34.5 where id = 'POID-3';`);
+const cat2 = await as(U.c2, 'select id, in_reseller_program from catalog order by id');
+check('catalog shows which products are in the program', Array.isArray(cat2) && cat2[0].in_reseller_program === true && cat2[1].in_reseller_program === false, cat2);
+const mc = await as(U.c1, 'select * from my_commissions');
+check('sponsor sees only commission rows of their group, nothing else', Array.isArray(mc) && mc.length === 1 && mc[0].order_id === 'POID-3' && !('address' in mc[0]) && !('amount_hkd' in mc[0]), mc);
+check('another reseller sees no commissions', n(await as(U.c2, 'select * from my_commissions')) === 0 && n(await as(U.m1, 'select * from my_commissions')) === 0);
+check('pricing_settings still hides markup/fx', !('markup_pct' in (await as(U.m1, 'select * from pricing_settings'))[0]));
+check('cannot sponsor yourself', await bad("update profiles set sponsor_id = id where id = '" + U.c1 + "'"));
 console.log(fails ? fails + ' FAILED' : 'ALL DB CHECKS PASSED');

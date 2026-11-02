@@ -12,6 +12,8 @@ export interface ListRow {
   expired: boolean;
   /** Live price of one piece of this SKU, HKD. */
   pickupHkd: number;
+  /** Reseller discount for this product, percent. 0 or missing = full price. */
+  discountPct?: number;
 }
 
 export interface ParsedQuantities {
@@ -58,7 +60,6 @@ export function ProductList({
   onChange,
   errors,
   showMerchant = false,
-  discountPct = 0,
   footer,
 }: {
   rows: ListRow[];
@@ -68,8 +69,6 @@ export function ProductList({
   errors: Record<string, string>;
   /** Show which merchant owns each product (staff views). */
   showMerchant?: boolean;
-  /** Reseller discount, percent. Shows the price before and after the discount. */
-  discountPct?: number;
   footer?: ReactNode;
 }) {
   const [query, setQuery] = useState('');
@@ -143,7 +142,7 @@ export function ProductList({
         {visible.length === 0 ? (
           <li className="px-4 py-10 text-center text-sm text-slate-500">No products match your search.</li>
         ) : (
-          visible.map(({ item, available, expired, number, pickupHkd }) => {
+          visible.map(({ item, available, expired, number, pickupHkd, discountPct = 0 }) => {
             const raw = typed[item.id] ?? '';
             const quantity = Number(raw);
             const error = errors[item.id];

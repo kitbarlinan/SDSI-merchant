@@ -1,5 +1,5 @@
 import { roundMoney } from './format';
-import { buildDemoCosting, DEFAULT_COSTING_SETTINGS, orderCharges, type CostingState } from './costing';
+import { buildDemoCosting, DEFAULT_COSTING_SETTINGS, orderCharges, resellerCharges, type CostingState } from './costing';
 import { formatPoid } from './engine';
 import { addDays, weekdayOf } from './period';
 import { buildWeekRemittances, closableWeeks, weekEndOf } from './remittance';
@@ -27,6 +27,8 @@ export const MOCK_MERCHANTS: Merchant[] = [
   { id: 'mrc-1', name: 'Green Leaf Naturals', color: '#059669' },
   { id: 'mrc-2', name: 'Pure Glow Beauty', color: '#e11d48' },
   { id: 'mrc-3', name: 'Everyday Health PH', color: '#0284c7' },
+  // SDSI's own brand. It is the merchant in the reseller program: the discount and the unilevel commission are charged to it.
+  { id: 'mrc-4', name: 'SDSI Direct', color: '#7c3aed' },
 ];
 
 export const MOCK_USERS: User[] = [
@@ -37,7 +39,7 @@ export const MOCK_USERS: User[] = [
   { id: 'usr-m2', name: 'Bea Ramirez', role: 'merchant', merchantId: 'mrc-2' },
   { id: 'usr-m3', name: 'Carlo Navarro', role: 'merchant', merchantId: 'mrc-3' },
   { id: 'usr-c1', name: 'Wong Mei Ling', role: 'customer' },
-  { id: 'usr-c2', name: 'Chan Ka Ho', role: 'customer' },
+  { id: 'usr-c2', name: 'Chan Ka Ho', role: 'customer', sponsorId: 'usr-c1' },
 ];
 
 const CASHIER_ID = 'usr-cashier';
@@ -172,6 +174,44 @@ export const MOCK_INVENTORY: InventoryItem[] = [
     reorderLevel: 20,
     expiryDate: '2027-11-30',
   },
+  // SDSI Direct (SDSI's own brand, in the reseller program)
+  {
+    id: 'itm-011',
+    merchantId: 'mrc-4',
+    sku: 'SDS-IMM-30',
+    name: 'SDSI Immune Boost (30 sachets)',
+    category: 'Heart & Wellness',
+    unitCost: 300,
+    unitPrice: 600,
+    stock: 80,
+    reorderLevel: 20,
+    expiryDate: '2027-10-31',
+  },
+  {
+    id: 'itm-012',
+    merchantId: 'mrc-4',
+    sku: 'SDS-COL-30',
+    name: 'SDSI Collagen Drink (30 sachets)',
+    category: 'Beauty & Skin',
+    unitCost: 380,
+    unitPrice: 750,
+    stock: 60,
+    reorderLevel: 20,
+    expiryDate: '2027-09-30',
+  },
+  {
+    id: 'itm-013',
+    merchantId: 'mrc-4',
+    sku: 'SDS-GRN-200',
+    name: 'SDSI Greens Powder 200g',
+    category: 'Greens & Superfoods',
+    unitCost: 260,
+    unitPrice: 520,
+    stock: 70,
+    reorderLevel: 20,
+    expiryDate: '2027-08-31',
+    resellerOff: true, // example: a SKU switched off inside a program merchant
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -286,6 +326,7 @@ export const MOCK_COSTING: CostingState = {
   settings: { ...DEFAULT_COSTING_SETTINGS },
   rows: buildDemoCosting(MOCK_INVENTORY),
   log: [],
+  programMerchantIds: ['mrc-4'],
 };
 
 function generateOrders(): Order[] {
@@ -302,7 +343,7 @@ function generateOrders(): Order[] {
     const progress = 1 - offset / HISTORY_DAYS; // business grows a little over time
     const isPayday = [14, 15, 16, 29, 30, 31, 1].includes(dayOfMonth);
 
-    for (const merchant of MOCK_MERCHANTS) {
+    for (const merchant of MOCK_MERCHANTS.filter((m) => m.id in MERCHANT_VOLUME)) {
       const catalog = MOCK_INVENTORY.filter((item) => item.merchantId === merchant.id);
       const volume = MERCHANT_VOLUME[merchant.id];
       let mean = volume * (weekday === 0 || weekday === 6 ? 1.2 : 1) * (1 + progress * 0.45);
@@ -447,8 +488,9 @@ function generateOrders(): Order[] {
     }
   }
 
-  // A few reseller orders (pickup only, 10% discount carried by the merchant).
+  // A few reseller orders (pickup only). Only SDSI Direct is in the program, so only its products get the discount and the commission.
   {
+    const SPONSORS: Record<string, string | undefined> = { 'usr-c1': undefined, 'usr-c2': 'usr-c1' };
     const resellerOrder = (
       userId: string,
       name: string,
@@ -472,9 +514,7 @@ function generateOrders(): Order[] {
           total: roundMoney(quantity * item.unitPrice),
         };
       });
-      const charges = orderCharges(lines.map((line) => ({ itemId: line.itemId, quantity: line.quantity })), MOCK_COSTING)!;
-      const pct = MOCK_COSTING.settings.resellerDiscountPct;
-      const discountHkd = roundMoney((charges.pickupHkd * pct) / 100);
+      const charges = resellerCharges(lines, MOCK_INVENTORY, MOCK_COSTING, Boolean(SPONSORS[userId]))!;
       const order: Order = {
         id: formatPoid(counter),
         merchantId,
@@ -489,11 +529,18 @@ function generateOrders(): Order[] {
         lines,
         status,
         pickupHkd: charges.pickupHkd,
-        discountPct: pct,
-        discountHkd,
-        discountPhp: roundMoney(discountHkd * MOCK_COSTING.settings.fxPhpPerHkd),
-        amountHkd: roundMoney(charges.pickupHkd - discountHkd),
+        amountHkd: charges.amountHkd,
       };
+      if (charges.discountHkd > 0) {
+        order.discountPct = MOCK_COSTING.settings.resellerDiscountPct;
+        order.discountHkd = charges.discountHkd;
+        order.discountPhp = charges.discountPhp;
+      }
+      if (charges.commissionPhp > 0) {
+        order.sponsorId = SPONSORS[userId];
+        order.commissionPct = MOCK_COSTING.settings.unilevelPct;
+        order.commissionPhp = charges.commissionPhp;
+      }
       if (status !== 'pending') {
         order.packedAt = stamp(date, hour + 1, 0);
         order.handledBy = CASHIER_ID;
@@ -507,9 +554,10 @@ function generateOrders(): Order[] {
     };
     const firstOf = (merchantId: string, nth: number): string =>
       MOCK_INVENTORY.filter((item) => item.merchantId === merchantId)[nth].id;
-    resellerOrder('usr-c1', 'Wong Mei Ling', 'mrc-1', [[firstOf('mrc-1', 0), 2]], 'pending', MOCK_TODAY, 10);
+    resellerOrder('usr-c1', 'Wong Mei Ling', 'mrc-4', [[firstOf('mrc-4', 0), 2], [firstOf('mrc-4', 1), 1]], 'pending', MOCK_TODAY, 10);
     resellerOrder('usr-c1', 'Wong Mei Ling', 'mrc-2', [[firstOf('mrc-2', 0), 1], [firstOf('mrc-2', 1), 1]], 'packed', MOCK_TODAY, 9);
-    resellerOrder('usr-c2', 'Chan Ka Ho', 'mrc-1', [[firstOf('mrc-1', 2), 1]], 'delivered', addDays(MOCK_TODAY, -1), 11);
+    resellerOrder('usr-c2', 'Chan Ka Ho', 'mrc-4', [[firstOf('mrc-4', 0), 1], [firstOf('mrc-4', 2), 1]], 'delivered', addDays(MOCK_TODAY, -1), 11);
+    resellerOrder('usr-c2', 'Chan Ka Ho', 'mrc-4', [[firstOf('mrc-4', 1), 2]], 'delivered', addDays(MOCK_TODAY, -2), 14);
     resellerOrder('usr-c1', 'Wong Mei Ling', 'mrc-3', [[firstOf('mrc-3', 0), 3]], 'delivered', addDays(MOCK_TODAY, -2), 14);
   }
 

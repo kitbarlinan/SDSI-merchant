@@ -14,6 +14,7 @@ import {
   validateSkuCode,
   validatePickupPrice,
   validateSettings,
+  resellerCharges,
   SETTING_LABEL,
   type CostingLogEntry,
   type CostingRow,
@@ -55,6 +56,8 @@ export interface Actor {
   id: string;
   role: Role;
   merchantId?: string;
+  /** Resellers: who brought them in. */
+  sponsorId?: string;
 }
 
 export type Outcome<T> = { ok: true; state: AppState; value: T } | { ok: false; error: string };
@@ -218,16 +221,12 @@ export function placeResellerOrder(
   }
 
   const { ids, poSeq } = nextPoids(state, byMerchant.size);
-  const { resellerDiscountPct, fxPhpPerHkd } = state.costing.settings;
+  const { resellerDiscountPct, unilevelPct } = state.costing.settings;
   const created: Order[] = [];
   for (const [merchantId, lines] of byMerchant) {
-    const charges = orderCharges(
-      lines.map((line) => ({ itemId: line.itemId, quantity: line.quantity })),
-      state.costing,
-    );
+    const charges = resellerCharges(lines, state.items, state.costing, Boolean(actor.sponsorId));
     if (!charges) return fail('One of these products has no live price.');
-    const discountHkd = roundMoney((charges.pickupHkd * resellerDiscountPct) / 100);
-    created.push({
+    const order: Order = {
       id: ids[created.length],
       merchantId,
       source: 'reseller',
@@ -241,11 +240,19 @@ export function placeResellerOrder(
       lines,
       status: 'pending',
       pickupHkd: charges.pickupHkd,
-      discountPct: resellerDiscountPct,
-      discountHkd,
-      discountPhp: roundMoney(discountHkd * fxPhpPerHkd),
-      amountHkd: roundMoney(charges.pickupHkd - discountHkd),
-    });
+      amountHkd: charges.amountHkd,
+    };
+    if (charges.discountHkd > 0) {
+      order.discountPct = resellerDiscountPct;
+      order.discountHkd = charges.discountHkd;
+      order.discountPhp = charges.discountPhp;
+    }
+    if (charges.commissionPhp > 0 && actor.sponsorId) {
+      order.sponsorId = actor.sponsorId;
+      order.commissionPct = unilevelPct;
+      order.commissionPhp = charges.commissionPhp;
+    }
+    created.push(order);
   }
   return { ok: true, state: { ...state, poSeq, orders: [...created.reverse(), ...state.orders] }, value: created };
 }
@@ -879,6 +886,51 @@ export function setSkuDisabled(
     ok: true,
     state: {
       ...logged(state, actor, now, disabled ? 'SKU disabled' : 'SKU enabled', [`${item.sku} ${item.name}`], {}),
+      items: state.items.map((candidate) => (candidate.id === itemId ? next : candidate)),
+    },
+    value: next,
+  };
+}
+
+export function setProgramMerchant(
+  state: AppState,
+  actor: Actor,
+  merchantId: string,
+  on: boolean,
+  now: string,
+): Outcome<string[]> {
+  const denied = costingGuard(actor);
+  if (denied) return denied;
+  if (!state.items.some((item) => item.merchantId === merchantId)) return fail('Merchant not found.');
+  const current = state.costing.programMerchantIds;
+  if (current.includes(merchantId) === on) return fail(on ? 'This merchant is already in the program.' : 'This merchant is not in the program.');
+  const ids = on ? [...current, merchantId] : current.filter((id) => id !== merchantId);
+  return {
+    ok: true,
+    state: logged(state, actor, now, on ? 'Merchant added to the reseller program' : 'Merchant removed from the reseller program', [merchantId], {
+      programMerchantIds: ids,
+    }),
+    value: ids,
+  };
+}
+
+export function setSkuReseller(
+  state: AppState,
+  actor: Actor,
+  itemId: string,
+  inProgram: boolean,
+  now: string,
+): Outcome<InventoryItem> {
+  const denied = costingGuard(actor);
+  if (denied) return denied;
+  const item = state.items.find((candidate) => candidate.id === itemId);
+  if (!item) return fail('Product not found.');
+  if (!item.resellerOff === inProgram) return fail(inProgram ? 'This SKU is already in the program.' : 'This SKU is already switched off.');
+  const next: InventoryItem = { ...item, resellerOff: inProgram ? undefined : true };
+  return {
+    ok: true,
+    state: {
+      ...logged(state, actor, now, inProgram ? 'SKU switched on for resellers' : 'SKU switched off for resellers', [`${item.sku} ${item.name}`], {}),
       items: state.items.map((candidate) => (candidate.id === itemId ? next : candidate)),
     },
     value: next,

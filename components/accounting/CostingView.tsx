@@ -111,6 +111,85 @@ function ReviewDialog({
   );
 }
 
+function ResellerProgramCard({ onChanged }: { onChanged: (message: string) => void }) {
+  const { user } = useAuth();
+  const { merchants, items, costing, setProgramMerchant, setSkuReseller } = useAppData();
+  const [error, setError] = useState<string | null>(null);
+  if (!user) return null;
+  const { resellerDiscountPct, unilevelPct } = costing.settings;
+
+  return (
+    <Card
+      title="Reseller program"
+      subtitle={`Products in the program give resellers ${resellerDiscountPct}% off the pickup price, and the reseller's sponsor earns ${unilevelPct}% of the SRP (PHP). The merchant carries both. Turn a merchant on, then switch single SKUs on or off.`}
+    >
+      <ul className="mt-3 divide-y divide-slate-100 text-sm">
+        {merchants.map((merchant) => {
+          const on = costing.programMerchantIds.includes(merchant.id);
+          const own = items.filter((item) => item.merchantId === merchant.id);
+          return (
+            <li key={merchant.id} className="py-3">
+              <label className="flex cursor-pointer items-center justify-between gap-3">
+                <span className="flex items-center gap-2 font-medium text-slate-900">
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ background: merchant.color }} />
+                  {merchant.name}
+                </span>
+                <span className="flex items-center gap-2 text-xs text-slate-500">
+                  {on ? 'In the program' : 'Not in the program'}
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    aria-label={`Reseller program for ${merchant.name}`}
+                    onChange={(event) => {
+                      const r = setProgramMerchant(user, merchant.id, event.target.checked);
+                      if (r.ok) {
+                        setError(null);
+                        onChanged(`${merchant.name} ${event.target.checked ? 'added to' : 'removed from'} the reseller program.`);
+                      } else setError(r.error);
+                    }}
+                    className="h-4 w-4 rounded border-slate-300 text-emerald-600"
+                  />
+                </span>
+              </label>
+              {on ? (
+                <ul className="mt-2 space-y-1 rounded-xl bg-slate-50 p-3">
+                  {own.map((item) => (
+                    <li key={item.id}>
+                      <label className="flex cursor-pointer items-center justify-between gap-3 text-xs">
+                        <span className="min-w-0 truncate text-slate-700">
+                          <span className="font-mono text-slate-500">{item.sku}</span> {item.name}
+                        </span>
+                        <input
+                          type="checkbox"
+                          checked={!item.resellerOff}
+                          aria-label={`Reseller program for ${item.sku}`}
+                          onChange={(event) => {
+                            const r = setSkuReseller(user, item.id, event.target.checked);
+                            if (r.ok) {
+                              setError(null);
+                              onChanged(`${item.sku} ${event.target.checked ? 'switched on' : 'switched off'} for resellers.`);
+                            } else setError(r.error);
+                          }}
+                          className="h-4 w-4 shrink-0 rounded border-slate-300 text-emerald-600"
+                        />
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+      {error ? (
+        <p role="alert" className="mt-2 text-xs text-rose-600">
+          {error}
+        </p>
+      ) : null}
+    </Card>
+  );
+}
+
 function NewSkuCard({ onAdded }: { onAdded: (message: string) => void }) {
   const { user } = useAuth();
   const { merchants, addSku } = useAppData();
@@ -439,6 +518,8 @@ function CostingEditor() {
           {showNewSku ? 'Close new SKU' : '+ New SKU'}
         </button>
       </div>
+      <ResellerProgramCard onChanged={setNotice} />
+
       {showNewSku ? <NewSkuCard onAdded={setNotice} /> : null}
 
       <Card

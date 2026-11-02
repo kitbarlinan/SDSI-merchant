@@ -22,6 +22,8 @@ export interface User {
   role: Role;
   /** Only for role === 'merchant'. */
   merchantId?: string;
+  /** Only for role === 'customer': the reseller who brought them in. Earns the unilevel commission. */
+  sponsorId?: string;
 }
 
 export interface Merchant {
@@ -51,6 +53,8 @@ export interface InventoryItem {
   expiryDate: string;
   /** Switched off by the admin. A disabled SKU cannot be sold and its code is never reused. */
   disabled?: boolean;
+  /** Switched off for the reseller program by the admin. Only matters if the merchant is in the program. */
+  resellerOff?: boolean;
 }
 
 export type StockStatus = 'ok' | 'low' | 'out';
@@ -134,7 +138,12 @@ export interface Order {
   discountHkd?: number;
   /** Same discount in PHP at the exchange rate of that day. It comes off the merchant's net payable. */
   discountPhp?: number;
-
+  /** Reseller orders: the sponsor who earns the unilevel commission. */
+  sponsorId?: string;
+  /** Unilevel rate used, percent of the SRP of the program products. */
+  commissionPct?: number;
+  /** The commission in PHP. It comes off the merchant's net payable and is earned once delivered. */
+  commissionPhp?: number;
 }
 
 /** One delivered order line, flattened for reporting. Dated by the day payment was collected. */
