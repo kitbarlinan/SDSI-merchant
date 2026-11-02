@@ -53,6 +53,8 @@ export interface User {
   password?: string;
   /** True until the reseller replaces the temporary username and password. */
   mustChange?: boolean;
+  /** Real sign-in (Supabase Auth user id). Server only: never sent to a browser. */
+  authId?: string;
   /** Resellers: shared on the landing page link so new resellers land under them. */
   refCode?: string;
 }
