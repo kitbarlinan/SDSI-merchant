@@ -100,10 +100,12 @@ Open http://localhost:3000 and pick an account (demo sign-in, no password).
 - `supabase/tests/rls.test.mjs` checks the access rules on a local Postgres (PGlite).
 - Never put the `service_role` key or the database password in the repo, in chat, or in a `NEXT_PUBLIC_*` variable.
 
-## Reseller program (discount + unilevel)
+## Reseller program (package, discount, tier income)
 
-- Program is **per merchant** (Accounting → Costing → *Reseller program*; default: SDSI Direct) with an on/off checkbox **per SKU**.
-- Reseller discount: `resellerDiscountPct` (default 10%) of the HKD pickup price, program products only. Charged to the merchant.
-- Unilevel: `unilevelPct` (default 5%) of the SRP in pesos of program products, paid to the reseller's sponsor (1 level for now). Earned on delivery, reversed if a delivered order is undone. Charged to the merchant.
-- Sponsors see their group's commission on the Orders page. Payout of commissions and a sponsor-assignment UI are not built yet.
-- Database: run `supabase/0003_reseller_program.sql` after 0001 and 0002.
+- **Package:** a reseller buys the package (350 HKD, SRP basis 990 PHP). The cashier or admin records it under *Resellers*. Until then the reseller cannot order.
+- **Split of one package** (all % are Costing settings): top-up 50% (495), reseller 15% (148.50), tier income 5% (49.50), SDSI net 30% (297). Tier income is 2% / 2% / 1% to the 3 active sponsors above the buyer. A level with nobody above stays with SDSI. Paid out of SDSI's top-up, not the merchant. Admin sees the split; the cashier sees HKD only.
+- **Orders of an active reseller:** pickup (COP) only. Products of a merchant in the program (LSM) get the reseller discount (15% of the HKD pickup price). The merchant carries that discount. No commission on regular orders.
+- **Program:** per merchant (Accounting → Costing → *Reseller program*) with an on/off per SKU.
+- A reseller sees the tier income from their downline on the Orders page.
+- Database: run `supabase/0003_reseller_program.sql`, then `0004_reseller_package.sql` (replaces the order commission with package sales and tier income).
+- Not built yet: paying out tier income, a screen to assign sponsors and create new resellers.

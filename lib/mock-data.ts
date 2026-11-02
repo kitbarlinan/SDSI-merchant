@@ -1,5 +1,5 @@
 import { roundMoney } from './format';
-import { buildDemoCosting, DEFAULT_COSTING_SETTINGS, orderCharges, resellerCharges, type CostingState } from './costing';
+import { buildDemoCosting, DEFAULT_COSTING_SETTINGS, makePackageSale, orderCharges, resellerCharges, uplineOf, type CostingState } from './costing';
 import { formatPoid } from './engine';
 import { addDays, weekdayOf } from './period';
 import { buildWeekRemittances, closableWeeks, weekEndOf } from './remittance';
@@ -14,6 +14,7 @@ import type {
   ReversalRequest,
   StockReceipt,
   User,
+  PackageSale,
 } from './types';
 
 /**
@@ -28,7 +29,7 @@ export const MOCK_MERCHANTS: Merchant[] = [
   { id: 'mrc-2', name: 'Pure Glow Beauty', color: '#e11d48' },
   { id: 'mrc-3', name: 'Everyday Health PH', color: '#0284c7' },
   // SDSI's own brand. It is the merchant in the reseller program: the discount and the unilevel commission are charged to it.
-  { id: 'mrc-4', name: 'SDSI Direct', color: '#7c3aed' },
+  { id: 'mrc-4', name: 'LSM', color: '#7c3aed' },
 ];
 
 export const MOCK_USERS: User[] = [
@@ -40,6 +41,8 @@ export const MOCK_USERS: User[] = [
   { id: 'usr-m3', name: 'Carlo Navarro', role: 'merchant', merchantId: 'mrc-3' },
   { id: 'usr-c1', name: 'Wong Mei Ling', role: 'customer' },
   { id: 'usr-c2', name: 'Chan Ka Ho', role: 'customer', sponsorId: 'usr-c1' },
+  // Has not bought the package yet, so cannot order
+  { id: 'usr-c3', name: 'Lee Siu Ming', role: 'customer', sponsorId: 'usr-c2' },
 ];
 
 const CASHIER_ID = 'usr-cashier';
@@ -174,7 +177,7 @@ export const MOCK_INVENTORY: InventoryItem[] = [
     reorderLevel: 20,
     expiryDate: '2027-11-30',
   },
-  // SDSI Direct (SDSI's own brand, in the reseller program)
+  // LSM (the merchant in the reseller program)
   {
     id: 'itm-011',
     merchantId: 'mrc-4',
@@ -488,9 +491,8 @@ function generateOrders(): Order[] {
     }
   }
 
-  // A few reseller orders (pickup only). Only SDSI Direct is in the program, so only its products get the discount and the commission.
+  // A few reseller orders (pickup only). Only LSM is in the program, so only its products get the discount.
   {
-    const SPONSORS: Record<string, string | undefined> = { 'usr-c1': undefined, 'usr-c2': 'usr-c1' };
     const resellerOrder = (
       userId: string,
       name: string,
@@ -514,7 +516,7 @@ function generateOrders(): Order[] {
           total: roundMoney(quantity * item.unitPrice),
         };
       });
-      const charges = resellerCharges(lines, MOCK_INVENTORY, MOCK_COSTING, Boolean(SPONSORS[userId]))!;
+      const charges = resellerCharges(lines, MOCK_INVENTORY, MOCK_COSTING)!;
       const order: Order = {
         id: formatPoid(counter),
         merchantId,
@@ -535,11 +537,6 @@ function generateOrders(): Order[] {
         order.discountPct = MOCK_COSTING.settings.resellerDiscountPct;
         order.discountHkd = charges.discountHkd;
         order.discountPhp = charges.discountPhp;
-      }
-      if (charges.commissionPhp > 0) {
-        order.sponsorId = SPONSORS[userId];
-        order.commissionPct = MOCK_COSTING.settings.unilevelPct;
-        order.commissionPhp = charges.commissionPhp;
       }
       if (status !== 'pending') {
         order.packedAt = stamp(date, hour + 1, 0);
@@ -748,3 +745,18 @@ function generateReversals(): ReversalRequest[] {
 }
 
 export const MOCK_REVERSALS: ReversalRequest[] = generateReversals();
+
+/** Package sales so far: Wong Mei Ling first, then Chan Ka Ho under her. Lee Siu Ming has not bought yet. */
+export const MOCK_PACKAGE_SALES: PackageSale[] = (() => {
+  const buyer = (id: string) => MOCK_USERS.find((user) => user.id === id)!;
+  const first = makePackageSale('PKG-0001', buyer('usr-c1'), MOCK_COSTING.settings, [], 'usr-cashier', `${addDays(MOCK_TODAY, -20)}T10:00:00`);
+  const second = makePackageSale(
+    'PKG-0002',
+    buyer('usr-c2'),
+    MOCK_COSTING.settings,
+    uplineOf(MOCK_USERS, new Set(['usr-c1']), 'usr-c2'),
+    'usr-cashier',
+    `${addDays(MOCK_TODAY, -10)}T14:00:00`,
+  );
+  return [second, first];
+})();

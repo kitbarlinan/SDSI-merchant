@@ -83,4 +83,20 @@ check('sponsor sees only commission rows of their group, nothing else', Array.is
 check('another reseller sees no commissions', n(await as(U.c2, 'select * from my_commissions')) === 0 && n(await as(U.m1, 'select * from my_commissions')) === 0);
 check('pricing_settings still hides markup/fx', !('markup_pct' in (await as(U.m1, 'select * from pricing_settings'))[0]));
 check('cannot sponsor yourself', await bad("update profiles set sponsor_id = id where id = '" + U.c1 + "'"));
+
+// ---- reseller package (0004)
+await db.exec(fs.readFileSync(new URL('../0004_reseller_package.sql', import.meta.url), 'utf8'));
+await db.exec(`insert into package_sales values ('PKG-0001','${U.c1}','${U.cashier}','2026-10-10 10:00',350,990,495,148.5,455.4),
+ ('PKG-0002','${U.c2}','${U.cashier}','2026-10-20 10:00',350,990,495,148.5,306.9);
+ insert into package_tiers values ('PKG-0002',1,'${U.c1}',2,19.8);`);
+check('browser cannot read package tables directly', n(await as(U.admin, 'select * from package_sales')) === 'ERR: permission denied for table package_sales' || typeof (await as(U.admin, 'select * from package_sales')) === 'string');
+check('admin sees the full split', (await as(U.admin, 'select * from package_sales_admin')).length === 2);
+check('cashier sees buyers and HKD but no pesos', (async () => 1)() && Array.isArray(await as(U.cashier, 'select * from package_sales_staff')) && !('net_php' in (await as(U.cashier, 'select * from package_sales_staff'))[0]) && typeof (await as(U.cashier, 'select * from package_sales_admin')) !== 'string' && n(await as(U.cashier, 'select * from package_sales_admin')) === 0);
+check('merchant sees no package sale', n(await as(U.m1, 'select * from package_sales_staff')) === 0);
+check('reseller sees only own purchase', n(await as(U.c2, 'select * from my_package')) === 1 && n(await as(U.m1, 'select * from my_package')) === 0);
+const ti = await as(U.c1, 'select * from my_tier_income');
+check('upline sees own tier income only', Array.isArray(ti) && ti.length === 1 && ti[0].php == 19.8 && ti[0].level === 1 && n(await as(U.c2, 'select * from my_tier_income')) === 0);
+check('one package per reseller', await bad("insert into package_sales values ('PKG-0009','" + U.c1 + "','" + U.cashier + "','2026-10-21 10:00',350,990,495,148.5,1)"));
+check('tier level only 1-3', await bad("insert into package_tiers values ('PKG-0001',4,'" + U.c1 + "',1,1)"));
+check('pricing_settings shows package price, still no markup', (await as(U.c2, 'select * from pricing_settings'))[0].package_hkd == 350 && !('markup_pct' in (await as(U.c2, 'select * from pricing_settings'))[0]));
 console.log(fails ? fails + ' FAILED' : 'ALL DB CHECKS PASSED');

@@ -18,7 +18,7 @@
  * SF 34, CF 5.55 -> 6, net COD 228.
  */
 import { roundMoney } from './format';
-import type { InventoryItem } from './types';
+import type { InventoryItem, PackageSale, User } from './types';
 
 export interface CostingSettings {
   /** Mark-up on the merchant's SRP, percent. */
@@ -35,8 +35,14 @@ export interface CostingSettings {
   cfMinHkd: number;
   /** Discount for resellers / customers with a login, percent of the pickup price. Charged to the merchant. */
   resellerDiscountPct: number;
-  /** Unilevel commission for the sponsor of a reseller, percent of the SRP (PHP) of the program products. Charged to the merchant. */
-  unilevelPct: number;
+  /** Price of the reseller package, HKD. Buying it makes someone a reseller. */
+  packageHkd: number;
+  /** SRP basis of the package in PHP. The mark-up, the reseller share and the tier income are worked out on it. */
+  packageSrpPhp: number;
+  /** Tier income of the upline, percent of the package SRP. Level 1, 2 and 3 above the buyer. Paid out of SDSI's top-up. */
+  tierL1Pct: number;
+  tierL2Pct: number;
+  tierL3Pct: number;
 }
 
 /** Values from the costing sheet. The exchange rate matches the sheet's 1,485 PHP = 182.36 HKD. */
@@ -47,8 +53,12 @@ export const DEFAULT_COSTING_SETTINGS: CostingSettings = {
   shippingFeeHkd: 34,
   cfRatePct: 2.5,
   cfMinHkd: 5,
-  resellerDiscountPct: 10,
-  unilevelPct: 5,
+  resellerDiscountPct: 15,
+  packageHkd: 350,
+  packageSrpPhp: 990,
+  tierL1Pct: 2,
+  tierL2Pct: 2,
+  tierL3Pct: 1,
 };
 
 /**
@@ -212,40 +222,34 @@ export interface ResellerCharges {
   discountHkd: number;
   /** The same discount in PHP at today's rate. It comes off the merchant's net payable. */
   discountPhp: number;
-  /** Unilevel commission to the sponsor, PHP: a percent of the SRP of the program products. */
-  commissionPhp: number;
   /** What the reseller pays at pickup, HKD. */
   amountHkd: number;
 }
 
 /**
- * Reseller order pricing. The discount is a fixed percent of the pickup price (HKD) and the unilevel commission
- * is a percent of the SRP (PHP). Both apply only to products in the reseller program, and the merchant carries both.
+ * Reseller order pricing. The discount is a fixed percent of the pickup price (HKD), only on products in the
+ * reseller program, and the merchant carries it.
  * null when a line has no live price.
  */
 export function resellerCharges(
   lines: { itemId: string; quantity: number; total: number }[],
   items: InventoryItem[],
   costing: CostingState,
-  hasSponsor: boolean,
 ): ResellerCharges | null {
   const all = orderCharges(lines, costing);
   if (!all) return null;
   let eligiblePickup = 0;
-  let eligibleSrp = 0;
   for (const line of lines) {
     const item = items.find((candidate) => candidate.id === line.itemId);
     if (!item || !inResellerProgram(item, costing)) continue;
     eligiblePickup += (livePickup(costing, line.itemId) ?? 0) * line.quantity;
-    eligibleSrp += line.total;
   }
-  const { resellerDiscountPct, unilevelPct, fxPhpPerHkd } = costing.settings;
+  const { resellerDiscountPct, fxPhpPerHkd } = costing.settings;
   const discountHkd = roundMoney((eligiblePickup * resellerDiscountPct) / 100);
   return {
     pickupHkd: all.pickupHkd,
     discountHkd,
     discountPhp: roundMoney(discountHkd * fxPhpPerHkd),
-    commissionPhp: hasSponsor ? roundMoney((eligibleSrp * unilevelPct) / 100) : 0,
     amountHkd: roundMoney(all.pickupHkd - discountHkd),
   };
 }
@@ -307,7 +311,11 @@ const RANGES: Record<keyof CostingSettings, { label: string; min: number; max: n
   cfRatePct: { label: 'Collection fee %', min: 0, max: 100 },
   cfMinHkd: { label: 'Minimum collection fee', min: 0, max: 1000 },
   resellerDiscountPct: { label: 'Reseller discount %', min: 0, max: 90 },
-  unilevelPct: { label: 'Unilevel %', min: 0, max: 50 },
+  packageHkd: { label: 'Package price', min: 0, max: 100_000 },
+  packageSrpPhp: { label: 'Package SRP', min: 0, max: 1_000_000 },
+  tierL1Pct: { label: 'Tier level 1 %', min: 0, max: 50 },
+  tierL2Pct: { label: 'Tier level 2 %', min: 0, max: 50 },
+  tierL3Pct: { label: 'Tier level 3 %', min: 0, max: 50 },
 };
 
 export const SETTING_LABEL: Record<keyof CostingSettings, string> = {
@@ -318,7 +326,11 @@ export const SETTING_LABEL: Record<keyof CostingSettings, string> = {
   cfRatePct: 'Collection fee rate (%)',
   cfMinHkd: 'Minimum collection fee (HKD)',
   resellerDiscountPct: 'Reseller discount (%)',
-  unilevelPct: 'Unilevel commission to sponsor (%)',
+  packageHkd: 'Reseller package price (HKD)',
+  packageSrpPhp: 'Reseller package SRP basis (PHP)',
+  tierL1Pct: 'Tier income level 1 (% of package SRP)',
+  tierL2Pct: 'Tier income level 2 (% of package SRP)',
+  tierL3Pct: 'Tier income level 3 (% of package SRP)',
 };
 
 export function validateSettings(patch: Partial<CostingSettings>): string | null {
@@ -349,4 +361,77 @@ export function buildDemoCosting(items: InventoryItem[], settings = DEFAULT_COST
     const item = items.find((candidate) => candidate.id === row.itemId)!;
     return { ...row, live: snapshotLive(item.unitPrice, row, settings, 'usr-admin', '2026-10-01T09:00') };
   });
+}
+
+export interface PackageBreakdown {
+  grossPhp: number;
+  resellerPhp: number;
+  tierPoolPhp: number;
+  tiers: { level: 1 | 2 | 3; userId: string; pct: number; php: number }[];
+  /** SDSI's net: gross top-up, less the reseller share and the tier income actually paid. */
+  netPhp: number;
+}
+
+/**
+ * Split of one reseller package, worked out on its SRP basis (990 -> 50% mark-up 495, reseller 15% 148.50,
+ * tier 5% 49.50, net 30% 297). `upline` lists the sponsors above the buyer, nearest first. A level with no
+ * active reseller pays nobody and stays with SDSI.
+ */
+export function packageBreakdown(settings: CostingSettings, upline: string[]): PackageBreakdown {
+  const srp = settings.packageSrpPhp;
+  const pcts = [settings.tierL1Pct, settings.tierL2Pct, settings.tierL3Pct];
+  const tiers = upline.slice(0, 3).map((userId, index) => ({
+    level: (index + 1) as 1 | 2 | 3,
+    userId,
+    pct: pcts[index],
+    php: roundMoney((srp * pcts[index]) / 100),
+  }));
+  const grossPhp = roundMoney((srp * settings.markupPct) / 100);
+  const resellerPhp = roundMoney((srp * settings.resellerDiscountPct) / 100);
+  const paid = roundMoney(tiers.reduce((sum, tier) => sum + tier.php, 0));
+  return {
+    grossPhp,
+    resellerPhp,
+    tierPoolPhp: roundMoney((srp * pcts.reduce((a, b) => a + b, 0)) / 100),
+    tiers,
+    netPhp: roundMoney(grossPhp - resellerPhp - paid),
+  };
+}
+
+/** The active resellers above a buyer, nearest first, up to 3 levels. A sponsor who is not active yet is skipped. */
+export function uplineOf(users: User[], activeIds: Set<string>, buyerId: string): string[] {
+  const chain: string[] = [];
+  const seen = new Set<string>([buyerId]);
+  let current = users.find((user) => user.id === buyerId)?.sponsorId;
+  while (current && !seen.has(current) && chain.length < 3) {
+    seen.add(current);
+    if (activeIds.has(current)) chain.push(current);
+    current = users.find((user) => user.id === current)?.sponsorId;
+  }
+  return chain;
+}
+
+/** Builds the record of one package sale with its split. */
+export function makePackageSale(
+  id: string,
+  buyer: User,
+  settings: CostingSettings,
+  upline: string[],
+  recordedBy: string,
+  createdAt: string,
+): PackageSale {
+  const split = packageBreakdown(settings, upline);
+  return {
+    id,
+    resellerId: buyer.id,
+    resellerName: buyer.name,
+    createdAt,
+    recordedBy,
+    hkd: settings.packageHkd,
+    srpPhp: settings.packageSrpPhp,
+    grossPhp: split.grossPhp,
+    resellerPhp: split.resellerPhp,
+    tiers: split.tiers,
+    netPhp: split.netPhp,
+  };
 }

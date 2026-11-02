@@ -15,6 +15,8 @@ import {
   validatePickupPrice,
   validateSettings,
   resellerCharges,
+  makePackageSale,
+  uplineOf,
   SETTING_LABEL,
   type CostingLogEntry,
   type CostingRow,
@@ -30,12 +32,14 @@ import {
   type OrderLine,
   type OrderStatus,
   type OrderTerms,
+  type PackageSale,
   type PaymentMethod,
   type ReceiptLine,
   type Remittance,
   type ReversalRequest,
   type Role,
   type StockReceipt,
+  type User,
 } from './types';
 
 export interface AppState {
@@ -48,6 +52,8 @@ export interface AppState {
   remittances: Remittance[];
   /** Pickup-price costing. Admin only. */
   costing: CostingState;
+  /** Reseller packages sold. A reseller is active once they have one. */
+  packageSales: PackageSale[];
   /** Last PO number handed out. Only ever goes up, so a POID is never reused. */
   poSeq: number;
 }
@@ -197,6 +203,36 @@ export interface ResellerOrderInput {
   lines: { itemId: string; quantity: number }[];
 }
 
+export const isActiveReseller = (state: AppState, userId: string): boolean =>
+  state.packageSales.some((sale) => sale.resellerId === userId);
+
+/**
+ * The cashier or admin records that a reseller bought the package. From then on the reseller is active
+ * (orders with the program discount) and the three sponsors above earn tier income out of SDSI's top-up.
+ */
+export function recordPackageSale(
+  state: AppState,
+  actor: Actor,
+  input: { resellerId: string },
+  users: User[],
+  now: string,
+): Outcome<PackageSale> {
+  if (!isStaff(actor)) return fail('Only the cashier or admin can record a package sale.');
+  const buyer = users.find((user) => user.id === input.resellerId && user.role === 'customer');
+  if (!buyer) return fail('Choose a reseller.');
+  if (isActiveReseller(state, buyer.id)) return fail(`${buyer.name} already bought the package.`);
+  const active = new Set(state.packageSales.map((sale) => sale.resellerId));
+  const sale = makePackageSale(
+    `PKG-${String(state.packageSales.length + 1).padStart(4, '0')}`,
+    buyer,
+    state.costing.settings,
+    uplineOf(users, active, buyer.id),
+    actor.id,
+    now,
+  );
+  return { ok: true, state: { ...state, packageSales: [sale, ...state.packageSales] }, value: sale };
+}
+
 /**
  * A reseller / customer orders with their own login. Pickup only (COP), no SF or CF. The discount
  * (costing setting, 10% for now) comes off the pickup price in HKD and is charged to the merchant.
@@ -209,6 +245,7 @@ export function placeResellerOrder(
   now: string,
 ): Outcome<Order[]> {
   if (actor.role !== 'customer') return fail('Only resellers can place this kind of order.');
+  if (!isActiveReseller(state, actor.id)) return fail('Buy the reseller package first. The cashier will record it for you.');
   if (input.customerName.trim().length < 2) return fail('Enter your name.');
 
   const built = buildLines(state, input.lines, dateOf(now));
@@ -221,10 +258,10 @@ export function placeResellerOrder(
   }
 
   const { ids, poSeq } = nextPoids(state, byMerchant.size);
-  const { resellerDiscountPct, unilevelPct } = state.costing.settings;
+  const { resellerDiscountPct } = state.costing.settings;
   const created: Order[] = [];
   for (const [merchantId, lines] of byMerchant) {
-    const charges = resellerCharges(lines, state.items, state.costing, Boolean(actor.sponsorId));
+    const charges = resellerCharges(lines, state.items, state.costing);
     if (!charges) return fail('One of these products has no live price.');
     const order: Order = {
       id: ids[created.length],
@@ -246,11 +283,6 @@ export function placeResellerOrder(
       order.discountPct = resellerDiscountPct;
       order.discountHkd = charges.discountHkd;
       order.discountPhp = charges.discountPhp;
-    }
-    if (charges.commissionPhp > 0 && actor.sponsorId) {
-      order.sponsorId = actor.sponsorId;
-      order.commissionPct = unilevelPct;
-      order.commissionPhp = charges.commissionPhp;
     }
     created.push(order);
   }

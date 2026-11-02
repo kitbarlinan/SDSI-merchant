@@ -138,12 +138,6 @@ export interface Order {
   discountHkd?: number;
   /** Same discount in PHP at the exchange rate of that day. It comes off the merchant's net payable. */
   discountPhp?: number;
-  /** Reseller orders: the sponsor who earns the unilevel commission. */
-  sponsorId?: string;
-  /** Unilevel rate used, percent of the SRP of the program products. */
-  commissionPct?: number;
-  /** The commission in PHP. It comes off the merchant's net payable and is earned once delivered. */
-  commissionPhp?: number;
 }
 
 /** One delivered order line, flattened for reporting. Dated by the day payment was collected. */
@@ -272,4 +266,22 @@ export interface Remittance {
   /** YYYY-MM-DD, the day the money was released to the merchant. */
   releasedDate?: string;
   reference?: string;
+}
+
+/** A reseller package sold at the counter. After it the buyer is an active reseller and the upline earns tier income. */
+export interface PackageSale {
+  id: string;
+  resellerId: string;
+  resellerName: string;
+  createdAt: string;
+  recordedBy: string;
+  /** What the buyer paid, HKD. */
+  hkd: number;
+  /** SRP basis in PHP. */
+  srpPhp: number;
+  grossPhp: number;
+  resellerPhp: number;
+  /** Tier income paid to the upline, level 1 to 3. */
+  tiers: { level: 1 | 2 | 3; userId: string; pct: number; php: number }[];
+  netPhp: number;
 }

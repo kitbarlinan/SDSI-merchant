@@ -116,12 +116,12 @@ function ResellerProgramCard({ onChanged }: { onChanged: (message: string) => vo
   const { merchants, items, costing, setProgramMerchant, setSkuReseller } = useAppData();
   const [error, setError] = useState<string | null>(null);
   if (!user) return null;
-  const { resellerDiscountPct, unilevelPct } = costing.settings;
+  const { resellerDiscountPct } = costing.settings;
 
   return (
     <Card
       title="Reseller program"
-      subtitle={`Products in the program give resellers ${resellerDiscountPct}% off the pickup price, and the reseller's sponsor earns ${unilevelPct}% of the SRP (PHP). The merchant carries both. Turn a merchant on, then switch single SKUs on or off.`}
+      subtitle={`Products in the program give active resellers ${resellerDiscountPct}% off the pickup price. The merchant carries the discount. Turn a merchant on, then switch single SKUs on or off. Package price and tier income % are in the settings above.`}
     >
       <ul className="mt-3 divide-y divide-slate-100 text-sm">
         {merchants.map((merchant) => {

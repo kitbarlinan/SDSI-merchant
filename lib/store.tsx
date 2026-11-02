@@ -23,6 +23,7 @@ import {
   MOCK_PO_SEQ,
   MOCK_RECEIPTS,
   MOCK_USERS,
+  MOCK_PACKAGE_SALES,
 } from './mock-data';
 import type { CostingRow, CostingSettings, CostingState } from './costing';
 import type {
@@ -32,6 +33,7 @@ import type {
   Merchant,
   Order,
   PaymentMethod,
+  PackageSale,
   StockReceipt,
   User,
 } from './types';
@@ -46,6 +48,7 @@ interface AppDataValue {
   receipts: StockReceipt[];
   reversals: ReversalRequest[];
   remittances: Remittance[];
+  packageSales: PackageSale[];
   /** Costing table, settings and change log. Show it only to the admin. */
   costing: CostingState;
   hydrated: boolean;
@@ -108,6 +111,7 @@ interface AppDataValue {
   revokeApproval: (actor: Actor, rowId: string) => ActionResult<CostingRow>;
   goLiveCostingRow: (actor: Actor, rowId: string) => ActionResult<CostingRow>;
   setSkuDisabled: (actor: Actor, itemId: string, disabled: boolean) => ActionResult<InventoryItem>;
+  recordPackageSale: (actor: Actor, resellerId: string) => ActionResult<PackageSale>;
   setProgramMerchant: (actor: Actor, merchantId: string, on: boolean) => ActionResult<string[]>;
   setSkuReseller: (actor: Actor, itemId: string, inProgram: boolean) => ActionResult<InventoryItem>;
   addSku: (actor: Actor, input: engine.NewSkuInput) => ActionResult<InventoryItem>;
@@ -115,7 +119,7 @@ interface AppDataValue {
 }
 
 // Bumped whenever the saved data shape changes.
-const STORAGE_KEY = 'sdsi-wellness:v13';
+const STORAGE_KEY = 'sdsi-wellness:v14';
 
 const createInitialState = (): AppState => ({
   items: MOCK_INVENTORY.map((item) => ({ ...item })),
@@ -129,6 +133,7 @@ const createInitialState = (): AppState => ({
     log: [],
     programMerchantIds: [...MOCK_COSTING.programMerchantIds],
   },
+  packageSales: MOCK_PACKAGE_SALES.map((sale) => ({ ...sale, tiers: sale.tiers.map((tier) => ({ ...tier })) })),
   poSeq: MOCK_PO_SEQ,
 });
 
@@ -141,6 +146,7 @@ const isSavedState = (value: unknown): value is AppState => {
     Array.isArray(candidate.receipts) &&
     Array.isArray(candidate.reversals) &&
     Array.isArray(candidate.remittances) &&
+    Array.isArray(candidate.packageSales) &&
     !!candidate.costing &&
     Array.isArray(candidate.costing.rows) &&
     typeof candidate.poSeq === 'number'
@@ -203,6 +209,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       receipts: state.receipts,
       reversals: state.reversals,
       remittances: state.remittances,
+      packageSales: state.packageSales,
       costing: state.costing,
       hydrated,
       placeOrder: (actor, input) => run((s) => engine.placeMerchantOrder(s, actor, input, nowISO())),
@@ -243,6 +250,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       approveCostingRow: (actor, rowId) => run((s) => engine.approveCostingRow(s, actor, rowId, nowISO())),
       revokeApproval: (actor, rowId) => run((s) => engine.revokeApproval(s, actor, rowId, nowISO())),
       goLiveCostingRow: (actor, rowId) => run((s) => engine.goLiveCostingRow(s, actor, rowId, nowISO())),
+      recordPackageSale: (actor, resellerId) =>
+        run((s) => engine.recordPackageSale(s, actor, { resellerId }, MOCK_USERS, nowISO())),
       setProgramMerchant: (actor, merchantId, on) =>
         run((s) => engine.setProgramMerchant(s, actor, merchantId, on, nowISO())),
       setSkuReseller: (actor, itemId, inProgram) =>

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { OrderCard } from '@/components/orders/OrderCard';
-import { SponsorCommissionCard } from '@/components/orders/SponsorCommissionCard';
+import { TierIncomeCard } from '@/components/orders/TierIncomeCard';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Icon } from '@/components/ui/Icon';
 import { StatCard } from '@/components/ui/StatCard';
@@ -29,7 +29,7 @@ const PAGE_SIZE = 24;
 
 export function OrdersView() {
   const { user } = useAuth();
-  const { orders, merchants } = useAppData();
+  const { orders, merchants, packageSales } = useAppData();
 
   const isReseller = user?.role === 'customer';
   const isMerchant = user?.role === 'merchant' || isReseller;
@@ -118,7 +118,7 @@ export function OrdersView() {
         }
       />
 
-      {isReseller && user ? <SponsorCommissionCard sponsorId={user.id} orders={orders} /> : null}
+      {isReseller && user ? <TierIncomeCard userId={user.id} sales={packageSales} /> : null}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard

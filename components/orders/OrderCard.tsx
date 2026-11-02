@@ -169,7 +169,7 @@ export function OrderCard({
             </span>
             <span className="text-lg font-semibold text-slate-900">{orderAmountLabel(order)}</span>
           </div>
-          {order.discountHkd || (showPeso && order.commissionPhp) ? (
+          {order.discountHkd ? (
             <div className="space-y-0.5 text-xs">
               {order.discountHkd ? (
                 <>
@@ -182,12 +182,6 @@ export function OrderCard({
                     <span className="font-semibold text-emerald-700">− {formatHkd(order.discountHkd)}</span>
                   </p>
                 </>
-              ) : null}
-              {showPeso && order.commissionPhp ? (
-                <p className="flex justify-between">
-                  <span className="text-slate-500">Unilevel {order.commissionPct}% to sponsor (charged to merchant)</span>
-                  <span className="font-semibold text-rose-700">− {formatCurrency(order.commissionPhp)}</span>
-                </p>
               ) : null}
               {showPeso && order.discountPhp ? (
                 <p className="flex justify-between">

@@ -42,6 +42,7 @@ const NAV: NavItem[] = [
     roles: ['admin', 'cashier', 'clerk', 'merchant'],
     badge: 'inventory',
   },
+  { href: '/resellers', label: 'Resellers', icon: 'user', roles: ['admin', 'cashier'] },
   { href: '/remittances', label: 'Remittances', icon: 'wallet', roles: ['admin', 'cashier', 'merchant'] },
   { href: '/approvals', label: 'For Approval', icon: 'check', roles: ['admin', 'clerk'], badge: 'approvals' },
   { href: '/accounting', label: 'Accounting', icon: 'wallet', roles: ['admin'] },

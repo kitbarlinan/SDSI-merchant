@@ -18,7 +18,7 @@ import { useToday } from '@/lib/use-today';
 /** A reseller / customer orders for pickup, with the reseller discount. */
 export function ResellerOrderForm() {
   const { user } = useAuth();
-  const { items, orders, merchants, costing, placeResellerOrder } = useAppData();
+  const { items, orders, merchants, costing, packageSales, placeResellerOrder } = useAppData();
   const today = useToday() || MOCK_TODAY;
 
   const [typed, setTyped] = useState<Record<string, string>>({});
@@ -56,6 +56,18 @@ export function ResellerOrderForm() {
   const canSubmit = parsed.lines.length > 0 && Object.keys(parsed.errors).length === 0;
 
   if (!user) return null;
+
+  if (!packageSales.some((sale) => sale.resellerId === user.id)) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="New Order" description="Ordering opens once you have the reseller package." />
+        <p role="status" className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          Buy the reseller package ({formatHkd(costing.settings.packageHkd)}) at the counter. After the cashier records it you can order here with
+          the reseller discount.
+        </p>
+      </div>
+    );
+  }
 
   function submit() {
     if (!user || !canSubmit) return;
