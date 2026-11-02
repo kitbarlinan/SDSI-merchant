@@ -41,6 +41,7 @@ export function RemoteProviders({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<User | null>(null);
   const [data, setData] = useState<Scoped | null>(null);
   const [accountProblem, setAccountProblem] = useState<string | null>(null);
+  const [serverProblem, setServerProblem] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const sessionRef = useRef<Session | null>(null);
 
@@ -60,6 +61,7 @@ export function RemoteProviders({ children }: { children: ReactNode }) {
         setMe(null);
         setData(null);
         setAccountProblem(null);
+        setServerProblem(null);
         setLoaded(false);
       }
     });
@@ -80,11 +82,14 @@ export function RemoteProviders({ children }: { children: ReactNode }) {
           setMe(json.me);
           setData(json.data);
           setAccountProblem(null);
+          setServerProblem(null);
         } else if (response.status === 403) {
           setMe(null);
+          setServerProblem(null);
           setAccountProblem(json?.error ?? 'This sign-in has no account in the app yet.');
-        } else if (response.status !== 401) {
+        } else {
           setAccountProblem(null);
+          setServerProblem(json?.error ?? 'The server did not answer. Check your connection and try again.');
         }
       } else {
         const response = await fetch('/api/public/catalog', { cache: 'no-store' });
@@ -93,6 +98,7 @@ export function RemoteProviders({ children }: { children: ReactNode }) {
       }
     } catch {
       // Offline: keep what is on screen and try again at the next poll.
+      if (token) setServerProblem((current) => current ?? OFFLINE);
     }
     setLoaded(true);
   }, [token]);
@@ -196,6 +202,8 @@ export function RemoteProviders({ children }: { children: ReactNode }) {
       remote: true,
       signedInEmail: session?.user.email ?? null,
       accountProblem,
+      serverProblem,
+      retry: () => void load(),
       needPassword: needPassword && !!session,
       login: () => undefined,
       loginWithPassword: () => false,
@@ -226,7 +234,7 @@ export function RemoteProviders({ children }: { children: ReactNode }) {
         return null;
       },
     }),
-    [me, ready, loaded, session, accountProblem, needPassword, supabase],
+    [me, ready, loaded, session, accountProblem, serverProblem, needPassword, supabase, load],
   );
 
   return (

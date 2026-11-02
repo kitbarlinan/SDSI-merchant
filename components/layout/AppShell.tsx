@@ -121,7 +121,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   if (auth.needPassword) return <SetPasswordScreen />;
-  if (auth.accountProblem) return <NoAccountScreen />;
+  if (auth.accountProblem || (auth.serverProblem && !user)) return <NoAccountScreen />;
   if (!user) return auth.remote ? <RemoteSignIn /> : <LoginScreen />;
   if (user.mustChange) return <SetCredentialsScreen />;
 

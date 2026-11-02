@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { configProblem, database, deps, tooMany } from '@/lib/server/runtime';
+import { explainFailure } from '@/lib/server/diagnose';
 import { act } from '@/lib/server/service';
 import { authenticate } from '@/lib/server/supabase';
 
@@ -28,7 +29,8 @@ export async function POST(request: Request) {
     const origin = process.env.NEXT_PUBLIC_SITE_URL ?? new URL(request.url).origin;
     const reply = await act(database(), deps, auth, body.action, (body.args ?? {}) as Record<string, unknown>, origin);
     return NextResponse.json(reply, { status: reply.ok ? 200 : reply.status });
-  } catch {
-    return NextResponse.json({ ok: false, error: 'The server could not finish that. Nothing was changed. Try again.' }, { status: 500 });
+  } catch (error) {
+    console.error('action failed', error);
+    return NextResponse.json({ ok: false, error: `${explainFailure(error)} Nothing was changed.` }, { status: 500 });
   }
 }

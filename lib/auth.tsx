@@ -34,6 +34,10 @@ interface AuthValue {
   signedInEmail: string | null;
   /** Signed in, but the admin has not given this email an account. */
   accountProblem: string | null;
+  /** Signed in, but the server could not load the data (a setup problem). */
+  serverProblem: string | null;
+  /** Try loading the data again. */
+  retry: () => void;
   /** True right after an invitation or password-reset link: the person must choose a password. */
   needPassword: boolean;
   signIn: (email: string, password: string) => Promise<string | null>;
@@ -106,6 +110,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       remote: false,
       signedInEmail: null,
       accountProblem: null,
+      serverProblem: null,
+      retry: () => undefined,
       needPassword: false,
       signIn: demoOnly,
       sendReset: demoOnly,
