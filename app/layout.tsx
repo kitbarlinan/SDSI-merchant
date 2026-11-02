@@ -15,11 +15,11 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <body>
-        <AuthProvider>
-          <AppDataProvider>
+        <AppDataProvider>
+          <AuthProvider>
             <AppShell>{children}</AppShell>
-          </AppDataProvider>
-        </AuthProvider>
+          </AuthProvider>
+        </AppDataProvider>
       </body>
     </html>
   );

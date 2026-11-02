@@ -40,6 +40,9 @@ export function PosView() {
   const [customerName, setCustomerName] = useState(DEFAULT_NAME);
   const [method, setMethod] = useState<PaymentMethod>('Cash');
   const [resellerId, setResellerId] = useState('');
+  const [newName, setNewName] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [sponsorId, setSponsorId] = useState('');
   const [tendered, setTendered] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
@@ -69,7 +72,9 @@ export function PosView() {
   const sellingPackage = parsed.lines.some((line) => line.item.package);
   const bought = new Set(packageSales.map((sale) => sale.resellerId));
   const newResellers = users.filter((candidate) => candidate.role === 'customer' && !bought.has(candidate.id));
-  const packageOk = !sellingPackage || (parsed.lines.length === 1 && parsed.lines[0].quantity === 1 && resellerId !== '');
+  const activeResellers = users.filter((candidate) => candidate.role === 'customer' && bought.has(candidate.id));
+  const buyerOk = resellerId === '' ? newName.trim().length >= 2 : true;
+  const packageOk = !sellingPackage || (parsed.lines.length === 1 && parsed.lines[0].quantity === 1 && buyerOk);
   const canSubmit = parsed.lines.length > 0 && !hasRowErrors && shortBy === 0 && packageOk;
 
   function complete() {
@@ -78,7 +83,11 @@ export function PosView() {
       lines: parsed.lines.map((line) => ({ itemId: line.item.id, quantity: line.quantity })),
       paymentMethod: method,
       customerName,
-      resellerId: sellingPackage ? resellerId : undefined,
+      ...(sellingPackage
+        ? resellerId
+          ? { resellerId }
+          : { newReseller: { name: newName, email: newEmail, sponsorId } }
+        : {}),
     });
     if (!result.ok) {
       setError(result.error);
@@ -89,6 +98,9 @@ export function PosView() {
     setTendered('');
     setCustomerName(DEFAULT_NAME);
     setResellerId('');
+    setNewName('');
+    setNewEmail('');
+    setSponsorId('');
     setError(null);
   }
 
@@ -136,15 +148,16 @@ export function PosView() {
             <p className="mt-1 font-semibold text-slate-900">{formatDate(today)}</p>
           </div>
           {sellingPackage ? (
-            <Field label="Reseller buying the package" htmlFor="walkInReseller">
-              <select id="walkInReseller" value={resellerId} onChange={(event) => setResellerId(event.target.value)} className={inputClass(false)}>
-                <option value="">Choose a reseller</option>
-                {newResellers.map((candidate) => (
-                  <option key={candidate.id} value={candidate.id}>
-                    {candidate.name}
-                  </option>
-                ))}
-              </select>
+            <Field label="Customer buying the package" htmlFor="walkInNewName">
+              <input
+                id="walkInNewName"
+                type="text"
+                value={newName}
+                disabled={resellerId !== ''}
+                onChange={(event) => setNewName(event.target.value)}
+                placeholder="Full name"
+                className={inputClass(false)}
+              />
             </Field>
           ) : (
             <Field label="Customer (optional)" htmlFor="walkInName">
@@ -173,6 +186,35 @@ export function PosView() {
             </select>
           </Field>
         </div>
+        {sellingPackage ? (
+          <div className="mt-4 grid gap-x-6 gap-y-4 border-t border-slate-100 pt-4 md:grid-cols-3">
+            <Field label="Email (for the login invite, optional)" htmlFor="walkInNewEmail">
+              <input id="walkInNewEmail" type="email" value={newEmail} disabled={resellerId !== ''} onChange={(event) => setNewEmail(event.target.value)} className={inputClass(false)} />
+            </Field>
+            <Field label="Sponsor (who brought them in)" htmlFor="walkInSponsor">
+              <select id="walkInSponsor" value={sponsorId} disabled={resellerId !== ''} onChange={(event) => setSponsorId(event.target.value)} className={inputClass(false)}>
+                <option value="">No sponsor</option>
+                {activeResellers.map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>
+                    {candidate.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            {newResellers.length > 0 ? (
+              <Field label="Or an existing account without a package" htmlFor="walkInReseller">
+                <select id="walkInReseller" value={resellerId} onChange={(event) => setResellerId(event.target.value)} className={inputClass(false)}>
+                  <option value="">New customer (fill in the name)</option>
+                  {newResellers.map((candidate) => (
+                    <option key={candidate.id} value={candidate.id}>
+                      {candidate.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            ) : null}
+          </div>
+        ) : null}
       </section>
 
       <ProductList

@@ -61,6 +61,7 @@ interface AppDataValue {
       paymentMethod: PaymentMethod;
       customerName?: string;
       resellerId?: string;
+      newReseller?: { name: string; email?: string; sponsorId?: string };
     },
   ) => ActionResult<Order[]>;
   markPacked: (actor: Actor, orderId: string) => ActionResult<Order>;
@@ -205,7 +206,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AppDataValue>(
     () => ({
       merchants: MOCK_MERCHANTS,
-      users: MOCK_USERS,
+      users: state.users,
       items: state.items,
       orders: state.orders,
       receipts: state.receipts,

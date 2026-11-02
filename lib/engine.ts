@@ -320,6 +320,8 @@ export function checkoutWalkIn(
     customerName?: string;
     /** Required when the cart has the reseller package: the reseller who is buying it. */
     resellerId?: string;
+    /** Or a new customer who buys the package: they become a reseller account (the login invite comes later). */
+    newReseller?: { name: string; email?: string; sponsorId?: string };
   },
   now: string,
 ): Outcome<Order[]> {
@@ -327,12 +329,25 @@ export function checkoutWalkIn(
   if (!PAYMENT_METHODS.includes(input.paymentMethod)) return fail('Choose a payment method.');
   const packageLines = input.lines.filter((line) => isPackageLine(state, line.itemId));
   let packageBuyer: User | undefined;
+  let newUser: User | undefined;
   if (packageLines.length > 0) {
     if (input.lines.length !== 1 || packageLines[0].quantity !== 1) return fail('Sell the reseller package on its own, one at a time.');
-    packageBuyer = state.users.find((user) => user.id === input.resellerId && user.role === 'customer');
-    if (!packageBuyer) return fail('Choose the reseller who is buying the package.');
-    if (isActiveReseller(state, packageBuyer.id)) return fail(`${packageBuyer.name} already has the package.`);
-  } else if (input.resellerId) {
+    if (input.newReseller) {
+      const name = input.newReseller.name.trim();
+      if (name.length < 2) return fail('Enter the name of the customer buying the package.');
+      const email = input.newReseller.email?.trim();
+      if (email && !/^\S+@\S+\.\S+$/.test(email)) return fail('That email does not look right.');
+      const sponsorId = input.newReseller.sponsorId || undefined;
+      if (sponsorId && !isActiveReseller(state, sponsorId)) return fail('The sponsor must be a reseller who already has the package.');
+      const nextNo = state.users.reduce((max, user) => Math.max(max, Number(/^usr-c(\d+)$/.exec(user.id)?.[1] ?? 0)), 0) + 1;
+      newUser = { id: `usr-c${nextNo}`, name, role: 'customer', ...(sponsorId ? { sponsorId } : {}), ...(email ? { email } : {}) };
+      packageBuyer = newUser;
+    } else {
+      packageBuyer = state.users.find((user) => user.id === input.resellerId && user.role === 'customer');
+      if (!packageBuyer) return fail('Choose or enter the customer who is buying the package.');
+      if (isActiveReseller(state, packageBuyer.id)) return fail(`${packageBuyer.name} already has the package.`);
+    }
+  } else if (input.resellerId || input.newReseller) {
     return fail('A reseller is only chosen when selling the package.');
   }
 
@@ -390,7 +405,8 @@ export function checkoutWalkIn(
     ),
     orders: [...[...created].reverse(), ...state.orders],
   };
-  return { ok: true, state: packageBuyer ? addPackageSale(next, first, actor.id, now) : next, value: created };
+  const withUser: AppState = newUser ? { ...next, users: [...next.users, newUser] } : next;
+  return { ok: true, state: packageBuyer ? addPackageSale(withUser, first, actor.id, now) : withUser, value: created };
 }
 
 function updateOrder(state: AppState, orderId: string, change: Partial<Order>): AppState {

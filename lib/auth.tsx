@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { MOCK_USERS } from './mock-data';
+import { useAppData } from './store';
 import type { User } from './types';
 
 /**
@@ -31,13 +31,14 @@ interface AuthValue {
 const AuthContext = createContext<AuthValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const { users: accounts } = useAppData();
   const [userId, setUserId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem(SESSION_KEY);
-      if (saved && MOCK_USERS.some((candidate) => candidate.id === saved)) setUserId(saved);
+      if (saved) setUserId(saved);
     } catch {
       // Storage unavailable: start signed out.
     }
@@ -45,14 +46,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback((id: string) => {
-    if (!MOCK_USERS.some((candidate) => candidate.id === id)) return;
+    if (!accounts.some((candidate) => candidate.id === id)) return;
     setUserId(id);
     try {
       window.localStorage.setItem(SESSION_KEY, id);
     } catch {
       // Ignore.
     }
-  }, []);
+  }, [accounts]);
 
   const logout = useCallback(() => {
     setUserId(null);
@@ -65,13 +66,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AuthValue>(
     () => ({
-      user: MOCK_USERS.find((candidate) => candidate.id === userId) ?? null,
-      users: MOCK_USERS,
+      user: accounts.find((candidate) => candidate.id === userId) ?? null,
+      users: accounts,
       ready,
       login,
       logout,
     }),
-    [userId, ready, login, logout],
+    [userId, ready, login, logout, accounts],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

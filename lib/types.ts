@@ -24,6 +24,8 @@ export interface User {
   merchantId?: string;
   /** Only for role === 'customer': the reseller who brought them in. Earns the unilevel commission. */
   sponsorId?: string;
+  /** Where the login invite goes. Resellers created at the counter. */
+  email?: string;
 }
 
 export interface Merchant {
