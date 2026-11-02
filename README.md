@@ -91,3 +91,11 @@ Open http://localhost:3000 and pick an account (demo sign-in, no password).
 - The discount (**Reseller discount %**, Accounting → Costing settings, 10% for now) comes off the pickup price in HKD (200 → 180). The order shows the pickup price, the discount and what to pay.
 - **The merchant carries the discount**: the discount in HKD, converted to PHP at the rate of that day, comes off the merchant's net payable. SDSI's top-up is unchanged.
 - The rate is one setting for now. Per-customer rates come later.
+
+## Database (Supabase) — Phase 1
+
+- `supabase/0001_init.sql`: tables, access rules (RLS) and safe views. Run it once in the Supabase SQL Editor.
+- `supabase/0002_first_admin.sql`: makes your own login the admin.
+- The browser can only read, and only what its role may see. Writes (orders, approvals, payouts, costing) will go through the server, which checks the rules first (Phase 2).
+- `supabase/tests/rls.test.mjs` checks the access rules on a local Postgres (PGlite).
+- Never put the `service_role` key or the database password in the repo, in chat, or in a `NEXT_PUBLIC_*` variable.
