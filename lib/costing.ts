@@ -18,7 +18,7 @@
  * SF 34, CF 5.55 -> 6, net COD 228.
  */
 import { roundMoney } from './format';
-import type { InventoryItem, PackageSale, User } from './types';
+import type { InventoryItem, PackageSale, PaymentMethod, TierShare, User } from './types';
 
 export interface CostingSettings {
   /** Mark-up on the merchant's SRP, percent. */
@@ -112,9 +112,9 @@ export interface CostingState {
   programMerchantIds: string[];
 }
 
-/** In the reseller program: the merchant is in it and the SKU was not switched off. */
+/** In the reseller program: the merchant is in it and the SKU was not switched off. The package itself never gets the discount. */
 export const inResellerProgram = (item: InventoryItem, costing: CostingState): boolean =>
-  costing.programMerchantIds.includes(item.merchantId) && !item.resellerOff;
+  !item.package && costing.programMerchantIds.includes(item.merchantId) && !item.resellerOff;
 
 export interface CostingResult {
   netSrpPhp: number;
@@ -218,17 +218,19 @@ export function orderCharges(
 export interface ResellerCharges {
   /** Pickup price of the whole order, HKD (before the discount). */
   pickupHkd: number;
-  /** Only the program products get the discount. */
+  /** SRP (PHP) of the program products. The discount and the tier income are worked out on it. */
+  eligibleSrpPhp: number;
+  /** Discount in HKD, shown to the reseller. */
   discountHkd: number;
-  /** The same discount in PHP at today's rate. It comes off the merchant's net payable. */
+  /** The same discount in PHP: a percent of the SRP. It comes out of SDSI's top-up, not the merchant. */
   discountPhp: number;
   /** What the reseller pays at pickup, HKD. */
   amountHkd: number;
 }
 
 /**
- * Reseller order pricing. The discount is a fixed percent of the pickup price (HKD), only on products in the
- * reseller program, and the merchant carries it.
+ * Reseller order pricing. The discount is a percent of the SRP (PHP) of the program products, shown in HKD at today's
+ * rate and taken off the pickup price. The merchant is still paid the full SRP: the discount comes out of SDSI's top-up.
  * null when a line has no live price.
  */
 export function resellerCharges(
@@ -238,20 +240,33 @@ export function resellerCharges(
 ): ResellerCharges | null {
   const all = orderCharges(lines, costing);
   if (!all) return null;
-  let eligiblePickup = 0;
+  let eligibleSrp = 0;
   for (const line of lines) {
     const item = items.find((candidate) => candidate.id === line.itemId);
     if (!item || !inResellerProgram(item, costing)) continue;
-    eligiblePickup += (livePickup(costing, line.itemId) ?? 0) * line.quantity;
+    eligibleSrp += line.total;
   }
   const { resellerDiscountPct, fxPhpPerHkd } = costing.settings;
-  const discountHkd = roundMoney((eligiblePickup * resellerDiscountPct) / 100);
+  const discountPhp = roundMoney((eligibleSrp * resellerDiscountPct) / 100);
+  const discountHkd = roundMoney(discountPhp / fxPhpPerHkd);
   return {
     pickupHkd: all.pickupHkd,
+    eligibleSrpPhp: roundMoney(eligibleSrp),
     discountHkd,
-    discountPhp: roundMoney(discountHkd * fxPhpPerHkd),
+    discountPhp,
     amountHkd: roundMoney(all.pickupHkd - discountHkd),
   };
+}
+
+/** Tier income of a purchase: each active sponsor above the buyer gets a percent of the SRP, levels 1 to 3. */
+export function orderTiers(settings: CostingSettings, upline: string[], srpPhp: number): TierShare[] {
+  const pcts = [settings.tierL1Pct, settings.tierL2Pct, settings.tierL3Pct];
+  return upline.slice(0, 3).map((userId, index) => ({
+    level: (index + 1) as 1 | 2 | 3,
+    userId,
+    pct: pcts[index],
+    php: roundMoney((srpPhp * pcts[index]) / 100),
+  }));
 }
 
 /** The live pickup price (HKD) of one SKU, or null when it has none. */
@@ -352,7 +367,7 @@ export function buildDemoCosting(items: InventoryItem[], settings = DEFAULT_COST
     id: `cst-${item.id.replace('itm-', '')}`,
     itemId: item.id,
     qty: 1,
-    pickupPriceHkd: computeCosting(item.unitPrice, 1, null, settings).suggestedPickupHkd,
+    pickupPriceHkd: item.package ? settings.packageHkd : computeCosting(item.unitPrice, 1, null, settings).suggestedPickupHkd,
     status: 'live',
     live: null,
   }));
@@ -419,16 +434,19 @@ export function makePackageSale(
   upline: string[],
   recordedBy: string,
   createdAt: string,
+  paid?: { hkd: number; srpPhp: number; orderId?: string; paymentMethod?: PaymentMethod },
 ): PackageSale {
-  const split = packageBreakdown(settings, upline);
+  const split = packageBreakdown(paid ? { ...settings, packageSrpPhp: paid.srpPhp } : settings, upline);
   return {
     id,
     resellerId: buyer.id,
     resellerName: buyer.name,
     createdAt,
     recordedBy,
-    hkd: settings.packageHkd,
-    srpPhp: settings.packageSrpPhp,
+    hkd: paid?.hkd ?? settings.packageHkd,
+    srpPhp: paid?.srpPhp ?? settings.packageSrpPhp,
+    orderId: paid?.orderId,
+    paymentMethod: paid?.paymentMethod,
     grossPhp: split.grossPhp,
     resellerPhp: split.resellerPhp,
     tiers: split.tiers,

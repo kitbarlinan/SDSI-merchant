@@ -1,6 +1,5 @@
 'use client';
 
-import { PackagePanel } from '@/components/pos/PackagePanel';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { OrderCard } from '@/components/orders/OrderCard';
@@ -30,7 +29,7 @@ const PAGE_SIZE = 24;
 
 export function OrdersView() {
   const { user } = useAuth();
-  const { orders, merchants, packageSales, packageRequests } = useAppData();
+  const { orders, merchants, packageSales } = useAppData();
 
   const isReseller = user?.role === 'customer';
   const isMerchant = user?.role === 'merchant' || isReseller;
@@ -119,9 +118,7 @@ export function OrdersView() {
         }
       />
 
-      {user && (user.role === 'cashier' || user.role === 'admin') && packageRequests.length > 0 ? <PackagePanel /> : null}
-
-      {isReseller && user ? <TierIncomeCard userId={user.id} sales={packageSales} /> : null}
+      {isReseller && user ? <TierIncomeCard userId={user.id} sales={packageSales} orders={orders} /> : null}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard

@@ -100,12 +100,14 @@ Open http://localhost:3000 and pick an account (demo sign-in, no password).
 - `supabase/tests/rls.test.mjs` checks the access rules on a local Postgres (PGlite).
 - Never put the `service_role` key or the database password in the repo, in chat, or in a `NEXT_PUBLIC_*` variable.
 
-## Reseller program (package, discount, tier income)
+## Reseller program (package SKU, discount, tier income)
 
-- **Package:** a reseller buys the package (350 HKD, SRP basis 990 PHP). The cashier or admin records it under *Resellers*. Until then the reseller cannot order.
-- **Split of one package** (all % are Costing settings): top-up 50% (495), reseller 15% (148.50), tier income 5% (49.50), SDSI net 30% (297). Tier income is 2% / 2% / 1% to the 3 active sponsors above the buyer. A level with nobody above stays with SDSI. Paid out of SDSI's top-up, not the merchant. Admin sees the split; the cashier sees HKD only.
-- **Orders of an active reseller:** pickup (COP) only. Products of a merchant in the program (LSM) get the reseller discount (15% of the HKD pickup price). The merchant carries that discount. No commission on regular orders.
-- **Program:** per merchant (Accounting → Costing → *Reseller program*) with an on/off per SKU.
-- A reseller sees the tier income from their downline on the Orders page. The package is sold in Walk-in POS (or confirmed from Orders after the reseller taps "Request reseller package"). Accounting shows the package income sample (net 30%) and the real totals.
-- Database: run `supabase/0003_reseller_program.sql`, then `0004_reseller_package.sql` (replaces the order commission with package sales and tier income).
-- Not built yet: paying out tier income, a screen to assign sponsors and create new resellers.
+- **Package = an SKU** ("Reseller Package 1", 350 HKD pickup price, SRP basis 990, shows its inclusions: 5 × barley). It sits in the product list like any other product. The package SKU keeps its own stock (pre-packed kits); the barley inside is not deducted separately yet.
+- **Becoming a reseller:** a reseller logs in and orders the package (it is the only thing they see until then), or the cashier sells it in Walk-in POS and picks the reseller. When the package order is delivered the buyer is active, and the sale is recorded with its split. A delivered package cannot be undone in the app.
+- **Every purchase after that:** 15% off the SRP of program products (shown in HKD), and 5% of that SRP goes to the 3 active sponsors above the buyer (L1 2% · L2 2% · L3 1%). All of it comes out of SDSI's 50% top-up, so the merchant (LSM) is paid the full SRP. Example on SRP 990: top-up 495, reseller 148.50, tier 49.50, SDSI net 297 (30%). A level with nobody above stays with SDSI.
+- **Tier income** is earned once the order is delivered and taken back if the delivered order is undone.
+- **Resellers page** (admin sees pesos, cashier sees only the list): every reseller with discount received and tier income per level, summary tiles, and a breakdown per purchase. **Accounting** shows the sample split and the real totals.
+- **Program:** per merchant (Accounting → Costing → *Reseller program*) with an on/off per SKU. The package is never discounted.
+- Settings in Costing: reseller discount %, package price and SRP, tier % per level.
+- Database: run `supabase/0003_reseller_program.sql`, then `0004_reseller_package.sql`.
+- Not built yet: paying out tier income, a screen to assign sponsors and create new resellers, deducting the package's inclusions from the barley stock.

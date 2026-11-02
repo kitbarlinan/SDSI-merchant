@@ -1,5 +1,5 @@
 import { roundMoney } from './format';
-import { buildDemoCosting, DEFAULT_COSTING_SETTINGS, makePackageSale, orderCharges, resellerCharges, uplineOf, type CostingState } from './costing';
+import { buildDemoCosting, DEFAULT_COSTING_SETTINGS, makePackageSale, orderCharges, orderTiers, resellerCharges, uplineOf, type CostingState } from './costing';
 import { formatPoid } from './engine';
 import { addDays, weekdayOf } from './period';
 import { buildWeekRemittances, closableWeeks, weekEndOf } from './remittance';
@@ -214,6 +214,20 @@ export const MOCK_INVENTORY: InventoryItem[] = [
     reorderLevel: 20,
     expiryDate: '2027-08-31',
     resellerOff: true, // example: a SKU switched off inside a program merchant
+  },
+  // The reseller package: buying it makes someone a reseller. Price 350 HKD, SRP basis 990.
+  {
+    id: 'itm-014',
+    merchantId: 'mrc-4',
+    sku: 'RSL-PKG-1',
+    name: 'Reseller Package 1',
+    category: 'Greens & Superfoods',
+    unitCost: 500,
+    unitPrice: 990,
+    stock: 40,
+    reorderLevel: 10,
+    expiryDate: '2027-08-31',
+    package: { inclusions: '5 × Organic Barley Grass Powder 200g' },
   },
 ];
 
@@ -538,6 +552,9 @@ function generateOrders(): Order[] {
         order.discountHkd = charges.discountHkd;
         order.discountPhp = charges.discountPhp;
       }
+      order.buyerId = userId;
+      const tiers = orderTiers(MOCK_COSTING.settings, uplineOf(MOCK_USERS, new Set(['usr-c1', 'usr-c2']), userId), charges.eligibleSrpPhp);
+      if (tiers.length > 0) order.tiers = tiers;
       if (status !== 'pending') {
         order.packedAt = stamp(date, hour + 1, 0);
         order.handledBy = CASHIER_ID;

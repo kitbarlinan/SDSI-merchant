@@ -55,6 +55,8 @@ export interface InventoryItem {
   disabled?: boolean;
   /** Switched off for the reseller program by the admin. Only matters if the merchant is in the program. */
   resellerOff?: boolean;
+  /** A reseller package: a product that bundles other goods. Buying it makes the buyer a reseller. */
+  package?: { inclusions: string };
 }
 
 export type StockStatus = 'ok' | 'low' | 'out';
@@ -138,6 +140,10 @@ export interface Order {
   discountHkd?: number;
   /** Same discount in PHP at the exchange rate of that day. It comes off the merchant's net payable. */
   discountPhp?: number;
+  /** Reseller orders: the buyer's upline at the time of the order and the tier income each earns once delivered. */
+  tiers?: TierShare[];
+  /** The reseller this order is for (counter sale of the package). */
+  buyerId?: string;
 }
 
 /** One delivered order line, flattened for reporting. Dated by the day payment was collected. */
@@ -268,6 +274,14 @@ export interface Remittance {
   reference?: string;
 }
 
+/** Tier income of one upline reseller on one purchase. */
+export interface TierShare {
+  level: 1 | 2 | 3;
+  userId: string;
+  pct: number;
+  php: number;
+}
+
 /** A reseller package sold at the counter. After it the buyer is an active reseller and the upline earns tier income. */
 export interface PackageSale {
   id: string;
@@ -285,11 +299,6 @@ export interface PackageSale {
   tiers: { level: 1 | 2 | 3; userId: string; pct: number; php: number }[];
   netPhp: number;
   paymentMethod?: PaymentMethod;
-}
-
-/** A reseller asked to buy the package. The cashier confirms it when paid. */
-export interface PackageRequest {
-  id: string;
-  resellerId: string;
-  createdAt: string;
+  /** The package order this sale came from. */
+  orderId?: string;
 }

@@ -16,6 +16,7 @@ import {
   validateSettings,
   resellerCharges,
   makePackageSale,
+  orderTiers,
   uplineOf,
   SETTING_LABEL,
   type CostingLogEntry,
@@ -23,7 +24,7 @@ import {
   type CostingSettings,
   type CostingState,
 } from './costing';
-import { availableOf, reservedByItem } from './orders';
+import { availableOf, orderTotal, reservedByItem } from './orders';
 import { buildWeekRemittances, remittedOrderIds, weekEndOf, weekStartOf } from './remittance';
 import {
   PAYMENT_METHODS,
@@ -32,7 +33,6 @@ import {
   type OrderLine,
   type OrderStatus,
   type OrderTerms,
-  type PackageRequest,
   type PackageSale,
   type PaymentMethod,
   type ReceiptLine,
@@ -55,8 +55,8 @@ export interface AppState {
   costing: CostingState;
   /** Reseller packages sold. A reseller is active once they have one. */
   packageSales: PackageSale[];
-  /** Resellers who asked to buy the package and have not paid yet. */
-  packageRequests: PackageRequest[];
+  /** Everyone who can sign in. The reseller chain (sponsors) is read from here. */
+  users: User[];
   /** Last PO number handed out. Only ever goes up, so a POID is never reused. */
   poSeq: number;
 }
@@ -209,52 +209,31 @@ export interface ResellerOrderInput {
 export const isActiveReseller = (state: AppState, userId: string): boolean =>
   state.packageSales.some((sale) => sale.resellerId === userId);
 
-/** A reseller who has not bought the package yet asks to buy it. The cashier sees it and takes the payment. */
-export function requestPackage(state: AppState, actor: Actor, now: string): Outcome<PackageRequest> {
-  if (actor.role !== 'customer') return fail('Only resellers can request the package.');
-  if (isActiveReseller(state, actor.id)) return fail('You already have the package.');
-  if (state.packageRequests.some((request) => request.resellerId === actor.id)) return fail('You already asked. Pay at the counter.');
-  const request: PackageRequest = { id: `PKR-${String(state.packageRequests.length + state.packageSales.length + 1).padStart(4, '0')}`, resellerId: actor.id, createdAt: now };
-  return { ok: true, state: { ...state, packageRequests: [request, ...state.packageRequests] }, value: request };
-}
+const isPackageLine = (state: AppState, itemId: string): boolean =>
+  Boolean(state.items.find((item) => item.id === itemId)?.package);
+
+export const hasPackage = (state: AppState, order: Order): boolean =>
+  order.lines.some((line) => isPackageLine(state, line.itemId));
 
 /**
- * The cashier or admin records that a reseller bought the package. From then on the reseller is active
- * (orders with the program discount) and the three sponsors above earn tier income out of SDSI's top-up.
+ * A delivered package order makes its buyer a reseller. The sale is recorded with the split of the package
+ * (top-up, reseller share, tier income to the 3 sponsors above) worked out on what was paid.
  */
-export function recordPackageSale(
-  state: AppState,
-  actor: Actor,
-  input: { resellerId: string; paymentMethod?: PaymentMethod },
-  users: User[],
-  now: string,
-): Outcome<PackageSale> {
-  if (!isStaff(actor)) return fail('Only the cashier or admin can record a package sale.');
-  const buyer = users.find((user) => user.id === input.resellerId && user.role === 'customer');
-  if (!buyer) return fail('Choose a reseller.');
-  if (isActiveReseller(state, buyer.id)) return fail(`${buyer.name} already bought the package.`);
+function addPackageSale(state: AppState, order: Order, recordedBy: string, now: string): AppState {
+  const buyerId = order.buyerId ?? order.createdBy;
+  const buyer = state.users.find((user) => user.id === buyerId && user.role === 'customer');
+  if (!buyer || isActiveReseller(state, buyer.id)) return state;
   const active = new Set(state.packageSales.map((sale) => sale.resellerId));
   const sale = makePackageSale(
     `PKG-${String(state.packageSales.length + 1).padStart(4, '0')}`,
     buyer,
     state.costing.settings,
-    uplineOf(users, active, buyer.id),
-    actor.id,
+    uplineOf(state.users, active, buyer.id),
+    recordedBy,
     now,
+    { hkd: order.amountHkd ?? state.costing.settings.packageHkd, srpPhp: orderTotal(order), orderId: order.id, paymentMethod: order.paymentMethod },
   );
-  if (input.paymentMethod) {
-    if (!PAYMENT_METHODS.includes(input.paymentMethod)) return fail('Choose a payment method.');
-    sale.paymentMethod = input.paymentMethod;
-  }
-  return {
-    ok: true,
-    state: {
-      ...state,
-      packageSales: [sale, ...state.packageSales],
-      packageRequests: state.packageRequests.filter((request) => request.resellerId !== buyer.id),
-    },
-    value: sale,
-  };
+  return { ...state, packageSales: [sale, ...state.packageSales] };
 }
 
 /**
@@ -269,8 +248,17 @@ export function placeResellerOrder(
   now: string,
 ): Outcome<Order[]> {
   if (actor.role !== 'customer') return fail('Only resellers can place this kind of order.');
-  if (!isActiveReseller(state, actor.id)) return fail('Buy the reseller package first. The cashier will record it for you.');
   if (input.customerName.trim().length < 2) return fail('Enter your name.');
+
+  const active = isActiveReseller(state, actor.id);
+  const packageLines = input.lines.filter((line) => isPackageLine(state, line.itemId));
+  if (!active) {
+    if (input.lines.length !== 1 || packageLines.length !== 1 || packageLines[0].quantity !== 1) {
+      return fail('Buy the reseller package first. It is the only thing you can order until then (one package).');
+    }
+  } else if (packageLines.length > 0) {
+    return fail('You already have the reseller package.');
+  }
 
   const built = buildLines(state, input.lines, dateOf(now));
   if (!built.ok) return fail(built.error);
@@ -283,6 +271,7 @@ export function placeResellerOrder(
 
   const { ids, poSeq } = nextPoids(state, byMerchant.size);
   const { resellerDiscountPct } = state.costing.settings;
+  const upline = uplineOf(state.users, new Set(state.packageSales.map((sale) => sale.resellerId)), actor.id);
   const created: Order[] = [];
   for (const [merchantId, lines] of byMerchant) {
     const charges = resellerCharges(lines, state.items, state.costing);
@@ -302,12 +291,16 @@ export function placeResellerOrder(
       status: 'pending',
       pickupHkd: charges.pickupHkd,
       amountHkd: charges.amountHkd,
+      buyerId: actor.id,
     };
     if (charges.discountHkd > 0) {
       order.discountPct = resellerDiscountPct;
       order.discountHkd = charges.discountHkd;
       order.discountPhp = charges.discountPhp;
     }
+    // Tier income is worked out on the SRP of the program products and paid from SDSI's top-up once delivered.
+    const tiers = active && charges.eligibleSrpPhp > 0 ? orderTiers(state.costing.settings, upline, charges.eligibleSrpPhp) : [];
+    if (tiers.length > 0) order.tiers = tiers;
     created.push(order);
   }
   return { ok: true, state: { ...state, poSeq, orders: [...created.reverse(), ...state.orders] }, value: created };
@@ -325,11 +318,23 @@ export function checkoutWalkIn(
     paymentMethod: PaymentMethod;
     /** Optional. Defaults to "Walk-in client". */
     customerName?: string;
+    /** Required when the cart has the reseller package: the reseller who is buying it. */
+    resellerId?: string;
   },
   now: string,
 ): Outcome<Order[]> {
   if (!isStaff(actor)) return fail('Only the cashier or admin can run the counter.');
   if (!PAYMENT_METHODS.includes(input.paymentMethod)) return fail('Choose a payment method.');
+  const packageLines = input.lines.filter((line) => isPackageLine(state, line.itemId));
+  let packageBuyer: User | undefined;
+  if (packageLines.length > 0) {
+    if (input.lines.length !== 1 || packageLines[0].quantity !== 1) return fail('Sell the reseller package on its own, one at a time.');
+    packageBuyer = state.users.find((user) => user.id === input.resellerId && user.role === 'customer');
+    if (!packageBuyer) return fail('Choose the reseller who is buying the package.');
+    if (isActiveReseller(state, packageBuyer.id)) return fail(`${packageBuyer.name} already has the package.`);
+  } else if (input.resellerId) {
+    return fail('A reseller is only chosen when selling the package.');
+  }
 
   const built = buildLines(state, input.lines, dateOf(now));
   if (!built.ok) return fail(built.error);
@@ -343,7 +348,7 @@ export function checkoutWalkIn(
   }
 
   const { ids, poSeq } = nextPoids(state, byMerchant.size);
-  const customerName = input.customerName?.trim() || WALK_IN_DEFAULT_NAME;
+  const customerName = packageBuyer?.name ?? (input.customerName?.trim() || WALK_IN_DEFAULT_NAME);
   const created: Order[] = [...byMerchant.entries()].map(([merchantId, lines], index) => {
     const charges = orderCharges(
       lines.map((line) => ({ itemId: line.itemId, quantity: line.quantity })),
@@ -369,24 +374,23 @@ export function checkoutWalkIn(
     topUpRate: state.costing.settings.markupPct,
     pickupHkd: charges.pickupHkd,
     amountHkd: charges.pickupHkd,
+    ...(packageBuyer ? { buyerId: packageBuyer.id } : {}),
     };
   });
 
   const sold = new Map<string, number>();
   for (const line of built.lines) sold.set(line.itemId, line.quantity);
 
-  return {
-    ok: true,
-    state: {
-      ...state,
-      poSeq,
-      items: state.items.map((item) =>
-        sold.has(item.id) ? { ...item, stock: item.stock - sold.get(item.id)! } : item,
-      ),
-      orders: [...created.reverse(), ...state.orders],
-    },
-    value: created,
+  const first = created[0];
+  const next: AppState = {
+    ...state,
+    poSeq,
+    items: state.items.map((item) =>
+      sold.has(item.id) ? { ...item, stock: item.stock - sold.get(item.id)! } : item,
+    ),
+    orders: [...[...created].reverse(), ...state.orders],
   };
+  return { ok: true, state: packageBuyer ? addPackageSale(next, first, actor.id, now) : next, value: created };
 }
 
 function updateOrder(state: AppState, orderId: string, change: Partial<Order>): AppState {
@@ -494,7 +498,9 @@ export function markDelivered(
     paymentMethod,
     topUpRate: state.costing.settings.markupPct,
   });
-  return { ok: true, state: next, value: next.orders.find((o) => o.id === orderId)! };
+  const delivered = next.orders.find((o) => o.id === orderId)!;
+  const final = hasPackage(next, delivered) ? addPackageSale(next, delivered, actor.id, now) : next;
+  return { ok: true, state: final, value: delivered };
 }
 
 /** A shipped order came back (customer refused, unreachable...). No sale; goods return via receiving. */
@@ -1089,6 +1095,9 @@ export function requestReversal(
   const order = state.orders.find((candidate) => candidate.id === orderId);
   if (!order) return fail('Order not found.');
   if (!UNDOABLE.includes(order.status)) return fail('This order has nothing to undo.');
+  if (order.status === 'delivered' && hasPackage(state, order)) {
+    return fail('A delivered reseller package cannot be undone here: the buyer is already a reseller.');
+  }
   if (order.status === 'cancelled' && order.source === 'walk-in') {
     return fail('A voided counter sale cannot be brought back. Ring up a new sale.');
   }

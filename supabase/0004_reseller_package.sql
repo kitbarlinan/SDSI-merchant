@@ -1,4 +1,4 @@
--- Step 4: reseller package (350 HKD) + tier income for the 3 levels above the buyer.
+-- Step 4: reseller package (an SKU, 350 HKD) + 15% reseller discount + tier income for the 3 levels above the buyer.
 -- Replaces the order-level unilevel commission of step 3. Run once in the Supabase SQL Editor after 0001-0003.
 
 -- Package and tier settings (all editable in Accounting -> Costing).
@@ -19,7 +19,25 @@ from public.costing_settings
 where public.app_role() is not null;
 grant select on public.pricing_settings to authenticated;
 
--- No commission on regular orders any more.
+-- The package is a product that bundles other goods. Buying it (order delivered) makes the buyer a reseller.
+alter table public.items
+  add column is_package boolean not null default false,
+  add column inclusions text;
+
+-- The discount (15% of the SRP) comes out of SDSI's top-up, not the merchant. Tier income per order, earned once delivered.
+alter table public.orders add column buyer_id uuid references public.profiles (id);
+create table public.order_tiers (
+  order_id text not null references public.orders (id) on delete cascade,
+  level    integer not null check (level between 1 and 3),
+  user_id  uuid not null references public.profiles (id),
+  pct      numeric not null,
+  php      numeric(12, 2) not null,
+  primary key (order_id, level)
+);
+alter table public.order_tiers enable row level security;
+revoke all on public.order_tiers from anon, authenticated;
+
+-- No commission to one sponsor on regular orders any more (replaced by the tiers above).
 drop view public.my_commissions;
 alter table public.orders drop column sponsor_id, drop column commission_pct, drop column commission_php;
 
@@ -34,22 +52,9 @@ create table public.package_sales (
   gross_php   numeric(12, 2) not null,
   reseller_php numeric(12, 2) not null,
   net_php     numeric(12, 2) not null,
+  order_id    text references public.orders (id),
   payment_method text check (payment_method in ('Cash', 'Bank Transfer', 'Debit / Credit Card'))
 );
-
--- A reseller asked to buy the package; the cashier clears it when the sale is recorded.
-create table public.package_requests (
-  id          text primary key,
-  reseller_id uuid not null unique references public.profiles (id),
-  created_at  timestamp not null default now()
-);
-alter table public.package_requests enable row level security;
-revoke all on public.package_requests from anon, authenticated;
-create view public.package_requests_open as
-select r.id, r.reseller_id, p.name as reseller_name, r.created_at
-from public.package_requests r join public.profiles p on p.id = r.reseller_id
-where public.is_sdsi_staff() or r.reseller_id = auth.uid();
-grant select on public.package_requests_open to authenticated;
 
 -- Who earned what on that sale (levels 1 to 3 above the buyer).
 create table public.package_tiers (
@@ -84,10 +89,15 @@ select s.id, s.created_at, s.hkd from public.package_sales s where s.reseller_id
 
 -- A reseller: the tier income they earned, and nothing else about the sale.
 create view public.my_tier_income as
-select t.sale_id, s.created_at, p.name as reseller_name, t.level, t.pct, t.php
+select t.sale_id as ref, 'package'::text as kind, s.created_at, p.name as reseller_name, t.level, t.pct, t.php, true as earned
 from public.package_tiers t
 join public.package_sales s on s.id = t.sale_id
 join public.profiles p on p.id = s.reseller_id
-where t.user_id = auth.uid();
+where t.user_id = auth.uid()
+union all
+select t.order_id, 'order', o.created_at, o.customer_name, t.level, t.pct, t.php, (o.status = 'delivered')
+from public.order_tiers t
+join public.orders o on o.id = t.order_id
+where t.user_id = auth.uid() and o.status not in ('cancelled', 'rts');
 
 grant select on public.package_sales_admin, public.package_sales_staff, public.my_package, public.my_tier_income to authenticated;

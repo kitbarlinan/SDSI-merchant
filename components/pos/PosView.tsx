@@ -1,6 +1,5 @@
 'use client';
 
-import { PackagePanel } from '@/components/pos/PackagePanel';
 import { useMemo, useState } from 'react';
 import { ProductList, parseQuantities, type ListRow } from '@/components/orders/ProductList';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -34,12 +33,13 @@ function quickAmounts(total: number): number[] {
 
 export function PosView() {
   const { user } = useAuth();
-  const { items, orders, merchants, costing, checkoutWalkIn } = useAppData();
+  const { items, orders, merchants, costing, users, packageSales, checkoutWalkIn } = useAppData();
   const today = useToday() || MOCK_TODAY;
 
   const [typed, setTyped] = useState<Record<string, string>>({});
   const [customerName, setCustomerName] = useState(DEFAULT_NAME);
   const [method, setMethod] = useState<PaymentMethod>('Cash');
+  const [resellerId, setResellerId] = useState('');
   const [tendered, setTendered] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
@@ -66,7 +66,11 @@ export function PosView() {
       ? roundMoney(tenderedAmount - total)
       : null;
   const shortBy = change !== null && change < 0 ? Math.abs(change) : 0;
-  const canSubmit = parsed.lines.length > 0 && !hasRowErrors && shortBy === 0;
+  const sellingPackage = parsed.lines.some((line) => line.item.package);
+  const bought = new Set(packageSales.map((sale) => sale.resellerId));
+  const newResellers = users.filter((candidate) => candidate.role === 'customer' && !bought.has(candidate.id));
+  const packageOk = !sellingPackage || (parsed.lines.length === 1 && parsed.lines[0].quantity === 1 && resellerId !== '');
+  const canSubmit = parsed.lines.length > 0 && !hasRowErrors && shortBy === 0 && packageOk;
 
   function complete() {
     if (!user || !canSubmit) return;
@@ -74,6 +78,7 @@ export function PosView() {
       lines: parsed.lines.map((line) => ({ itemId: line.item.id, quantity: line.quantity })),
       paymentMethod: method,
       customerName,
+      resellerId: sellingPackage ? resellerId : undefined,
     });
     if (!result.ok) {
       setError(result.error);
@@ -83,6 +88,7 @@ export function PosView() {
     setTyped({});
     setTendered('');
     setCustomerName(DEFAULT_NAME);
+    setResellerId('');
     setError(null);
   }
 
@@ -123,24 +129,35 @@ export function PosView() {
         </div>
       ) : null}
 
-      <PackagePanel />
-
       <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
         <div className="grid gap-x-6 gap-y-4 md:grid-cols-3">
           <div className="text-sm">
             <p className="text-xs font-medium text-slate-500">Date</p>
             <p className="mt-1 font-semibold text-slate-900">{formatDate(today)}</p>
           </div>
-          <Field label="Customer (optional)" htmlFor="walkInName">
-            <input
-              id="walkInName"
-              type="text"
-              value={customerName}
-              onChange={(event) => setCustomerName(event.target.value)}
-              onFocus={(event) => event.target.select()}
-              className={inputClass(false)}
-            />
-          </Field>
+          {sellingPackage ? (
+            <Field label="Reseller buying the package" htmlFor="walkInReseller">
+              <select id="walkInReseller" value={resellerId} onChange={(event) => setResellerId(event.target.value)} className={inputClass(false)}>
+                <option value="">Choose a reseller</option>
+                {newResellers.map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>
+                    {candidate.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          ) : (
+            <Field label="Customer (optional)" htmlFor="walkInName">
+              <input
+                id="walkInName"
+                type="text"
+                value={customerName}
+                onChange={(event) => setCustomerName(event.target.value)}
+                onFocus={(event) => event.target.select()}
+                className={inputClass(false)}
+              />
+            </Field>
+          )}
           <Field label="Payment option" htmlFor="walkInPayment">
             <select
               id="walkInPayment"

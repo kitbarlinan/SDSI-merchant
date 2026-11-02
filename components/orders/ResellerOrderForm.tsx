@@ -18,7 +18,7 @@ import { useToday } from '@/lib/use-today';
 /** A reseller / customer orders for pickup, with the reseller discount. */
 export function ResellerOrderForm() {
   const { user } = useAuth();
-  const { items, orders, merchants, costing, packageSales, packageRequests, requestPackage, placeResellerOrder } = useAppData();
+  const { items, orders, merchants, costing, packageSales, placeResellerOrder } = useAppData();
   const today = useToday() || MOCK_TODAY;
 
   const [typed, setTyped] = useState<Record<string, string>>({});
@@ -28,59 +28,33 @@ export function ResellerOrderForm() {
   const [placed, setPlaced] = useState<Order[] | null>(null);
 
   const pct = costing.settings.resellerDiscountPct;
+  const fx = costing.settings.fxPhpPerHkd;
+  const active = Boolean(user && packageSales.some((sale) => sale.resellerId === user.id));
   const reserved = useMemo(() => reservedByItem(orders), [orders]);
   const rows: ListRow[] = useMemo(
     () =>
       items
-        .filter((item) => isSellable(item, costing))
+        // Until the package is bought it is the only thing a reseller can order. After that it is hidden.
+        .filter((item) => isSellable(item, costing) && Boolean(item.package) === !active)
         .map((item) => ({
           item,
           available: availableOf(item, reserved),
           expired: item.expiryDate < today,
           pickupHkd: livePickup(costing, item.id) ?? 0,
-          discountPct: inResellerProgram(item, costing) ? pct : 0,
+          unitDiscountHkd: inResellerProgram(item, costing) ? roundMoney((item.unitPrice * pct) / 100 / fx) : 0,
         })),
-    [items, reserved, today, costing],
+    [items, reserved, today, costing, active, pct, fx],
   );
 
   const parsed = parseQuantities(rows, typed);
   const subtotal = parsed.totalHkd;
-  // Discount only on the products in the reseller program.
-  const discount = roundMoney(
-    parsed.lines.reduce(
-      (sum, line) => sum + (inResellerProgram(line.item, costing) ? ((livePickup(costing, line.item.id) ?? 0) * line.quantity * pct) / 100 : 0),
-      0,
-    ),
-  );
+  // The discount is a percent of the SRP of the program products, shown in HKD.
+  const eligibleSrp = parsed.lines.reduce((sum, line) => sum + (inResellerProgram(line.item, costing) ? line.item.unitPrice * line.quantity : 0), 0);
+  const discount = roundMoney(roundMoney((eligibleSrp * pct) / 100) / fx);
   const toPay = roundMoney(subtotal - discount);
   const canSubmit = parsed.lines.length > 0 && Object.keys(parsed.errors).length === 0;
 
   if (!user) return null;
-
-  if (!packageSales.some((sale) => sale.resellerId === user.id)) {
-    return (
-      <div className="space-y-6">
-        <PageHeader title="New Order" description="Ordering opens once you have the reseller package." />
-        <p role="status" className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          Buy the reseller package ({formatHkd(costing.settings.packageHkd)}) at the counter. After the cashier records it you can order here with
-          the reseller discount.
-        </p>
-        {packageRequests.some((request) => request.resellerId === user.id) ? (
-          <p role="status" className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
-            Requested. The cashier will see it, so just pay at the counter.
-          </p>
-        ) : (
-          <button
-            type="button"
-            onClick={() => requestPackage(user)}
-            className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500"
-          >
-            Request reseller package · {formatHkd(costing.settings.packageHkd)}
-          </button>
-        )}
-      </div>
-    );
-  }
 
   function submit() {
     if (!user || !canSubmit) return;
@@ -101,7 +75,11 @@ export function ResellerOrderForm() {
     <div className="space-y-6">
       <PageHeader
         title="New Order"
-        description={`Pickup only. You pay at the counter when you collect. Products in the reseller program show ${pct}% off. Other products are at the normal price.`}
+        description={
+          active
+            ? `Pickup only. You pay at the counter when you collect. Products in the reseller program show ${pct}% off. Other products are at the normal price.`
+            : 'Pickup only. Start with the reseller package. Once it is delivered you are a reseller and can order everything with the reseller discount.'
+        }
       />
 
       {placed ? (
@@ -160,10 +138,12 @@ export function ResellerOrderForm() {
                 <span>Subtotal (HKD)</span>
                 <span>{formatHkd(subtotal)}</span>
               </p>
-              <p className="flex justify-between text-emerald-700">
-                <span>Reseller discount {pct}%</span>
-                <span>− {formatHkd(discount)}</span>
-              </p>
+              {active ? (
+                <p className="flex justify-between text-emerald-700">
+                  <span>Reseller discount {pct}%</span>
+                  <span>− {formatHkd(discount)}</span>
+                </p>
+              ) : null}
               <p className="flex justify-between border-t border-slate-200 pt-1 text-xl font-semibold text-slate-900">
                 <span>To pay at pickup</span>
                 <span>{formatHkd(toPay)}</span>

@@ -31,26 +31,9 @@ export const isOpen = (order: Order): boolean =>
 export const reservesStock = (order: Order): boolean =>
   order.status === 'pending' || order.status === 'packed';
 
-/**
- * Net SRP of the order, in PHP. The reseller discount comes off it: the merchant carries it,
- * so the amount remitted to the merchant is lower.
- */
+/** SRP of the order, in PHP. The reseller discount is not taken off it: SDSI carries the discount out of its top-up. */
 export const orderTotal = (order: Order): number =>
-  roundMoney(order.lines.reduce((sum, line) => sum + line.total, 0) - (order.discountPhp ?? 0));
-
-/** The order's discount shared over its lines in proportion to their Net SRP. The last line takes the rounding. */
-export function lineDiscounts(order: Order): number[] {
-  const discount = order.discountPhp ?? 0;
-  const gross = order.lines.reduce((sum, line) => sum + line.total, 0);
-  if (discount <= 0 || gross <= 0) return order.lines.map(() => 0);
-  let given = 0;
-  return order.lines.map((line, index) => {
-    if (index === order.lines.length - 1) return roundMoney(discount - given);
-    const share = roundMoney((discount * line.total) / gross);
-    given += share;
-    return share;
-  });
-}
+  roundMoney(order.lines.reduce((sum, line) => sum + line.total, 0));
 
 export const orderUnits = (order: Order): number =>
   order.lines.reduce((sum, line) => sum + line.quantity, 0);
@@ -104,9 +87,8 @@ export function flattenDelivered(orders: Order[]): SaleLine[] {
   for (const order of orders) {
     if (order.status !== 'delivered' || !order.deliveredAt || !order.paymentMethod) continue;
     const rate = order.topUpRate ?? 0;
-    const discounts = lineDiscounts(order);
     order.lines.forEach((line, index) => {
-      const net = roundMoney(line.total - discounts[index]);
+      const net = roundMoney(line.total);
       lines.push({
         id: `${order.id}-${index + 1}`,
         orderId: order.id,
@@ -152,8 +134,41 @@ export const orderAmountLabel = (order: Order): string =>
 /** Customer price basis of a delivered order: Net SRP plus the mark-up (990 -> 1,485). */
 export const orderGross = (order: Order): number => roundMoney(orderTotal(order) + orderTopUp(order));
 
-/** Tier income a reseller has earned from the packages bought by their downline, PHP. */
-export function tierIncome(sales: PackageSale[], userId: string): { total: number; rows: { sale: PackageSale; level: number; php: number }[] } {
-  const rows = sales.flatMap((sale) => sale.tiers.filter((tier) => tier.userId === userId).map((tier) => ({ sale, level: tier.level, php: tier.php })));
-  return { total: roundMoney(rows.reduce((sum, row) => sum + row.php, 0)), rows };
+export interface TierRow {
+  kind: 'package' | 'order';
+  ref: string;
+  /** Who bought. */
+  name: string;
+  level: number;
+  php: number;
+  date: string;
+  /** Orders count once delivered. Packages always count. */
+  earned: boolean;
+}
+
+/** Tier income a reseller earns when someone below them buys the package or delivers an order. PHP. */
+export function tierIncome(
+  sales: PackageSale[],
+  orders: Order[],
+  userId: string,
+): { total: number; pending: number; rows: TierRow[] } {
+  const rows: TierRow[] = [];
+  for (const sale of sales) {
+    // A package that came from an order is counted once, on the sale.
+    for (const tier of sale.tiers) {
+      if (tier.userId === userId) rows.push({ kind: 'package', ref: sale.id, name: sale.resellerName, level: tier.level, php: tier.php, date: sale.createdAt.slice(0, 10), earned: true });
+    }
+  }
+  for (const order of orders) {
+    if (order.status === 'cancelled' || order.status === 'rts') continue;
+    for (const tier of order.tiers ?? []) {
+      if (tier.userId === userId) rows.push({ kind: 'order', ref: order.id, name: order.customerName ?? 'Walk-in', level: tier.level, php: tier.php, date: order.createdAt.slice(0, 10), earned: order.status === 'delivered' });
+    }
+  }
+  const sum = (list: TierRow[]) => roundMoney(list.reduce((total, row) => total + row.php, 0));
+  return {
+    total: sum(rows.filter((row) => row.earned)),
+    pending: sum(rows.filter((row) => !row.earned)),
+    rows: rows.sort((a, b) => b.date.localeCompare(a.date)),
+  };
 }

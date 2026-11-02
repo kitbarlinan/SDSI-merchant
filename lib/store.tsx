@@ -33,7 +33,6 @@ import type {
   Merchant,
   Order,
   PaymentMethod,
-  PackageRequest,
   PackageSale,
   StockReceipt,
   User,
@@ -50,8 +49,6 @@ interface AppDataValue {
   reversals: ReversalRequest[];
   remittances: Remittance[];
   packageSales: PackageSale[];
-  packageRequests: PackageRequest[];
-  requestPackage: (actor: Actor) => ActionResult<PackageRequest>;
   /** Costing table, settings and change log. Show it only to the admin. */
   costing: CostingState;
   hydrated: boolean;
@@ -63,6 +60,7 @@ interface AppDataValue {
       lines: { itemId: string; quantity: number }[];
       paymentMethod: PaymentMethod;
       customerName?: string;
+      resellerId?: string;
     },
   ) => ActionResult<Order[]>;
   markPacked: (actor: Actor, orderId: string) => ActionResult<Order>;
@@ -114,7 +112,6 @@ interface AppDataValue {
   revokeApproval: (actor: Actor, rowId: string) => ActionResult<CostingRow>;
   goLiveCostingRow: (actor: Actor, rowId: string) => ActionResult<CostingRow>;
   setSkuDisabled: (actor: Actor, itemId: string, disabled: boolean) => ActionResult<InventoryItem>;
-  recordPackageSale: (actor: Actor, resellerId: string, paymentMethod?: PaymentMethod) => ActionResult<PackageSale>;
   setProgramMerchant: (actor: Actor, merchantId: string, on: boolean) => ActionResult<string[]>;
   setSkuReseller: (actor: Actor, itemId: string, inProgram: boolean) => ActionResult<InventoryItem>;
   addSku: (actor: Actor, input: engine.NewSkuInput) => ActionResult<InventoryItem>;
@@ -122,7 +119,7 @@ interface AppDataValue {
 }
 
 // Bumped whenever the saved data shape changes.
-const STORAGE_KEY = 'sdsi-wellness:v15';
+const STORAGE_KEY = 'sdsi-wellness:v16';
 
 const createInitialState = (): AppState => ({
   items: MOCK_INVENTORY.map((item) => ({ ...item })),
@@ -136,7 +133,7 @@ const createInitialState = (): AppState => ({
     log: [],
     programMerchantIds: [...MOCK_COSTING.programMerchantIds],
   },
-  packageRequests: [],
+  users: MOCK_USERS.map((user) => ({ ...user })),
   packageSales: MOCK_PACKAGE_SALES.map((sale) => ({ ...sale, tiers: sale.tiers.map((tier) => ({ ...tier })) })),
   poSeq: MOCK_PO_SEQ,
 });
@@ -151,7 +148,7 @@ const isSavedState = (value: unknown): value is AppState => {
     Array.isArray(candidate.reversals) &&
     Array.isArray(candidate.remittances) &&
     Array.isArray(candidate.packageSales) &&
-    Array.isArray(candidate.packageRequests) &&
+    Array.isArray(candidate.users) &&
     !!candidate.costing &&
     Array.isArray(candidate.costing.rows) &&
     typeof candidate.poSeq === 'number'
@@ -215,7 +212,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       reversals: state.reversals,
       remittances: state.remittances,
       packageSales: state.packageSales,
-      packageRequests: state.packageRequests,
       costing: state.costing,
       hydrated,
       placeOrder: (actor, input) => run((s) => engine.placeMerchantOrder(s, actor, input, nowISO())),
@@ -256,9 +252,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       approveCostingRow: (actor, rowId) => run((s) => engine.approveCostingRow(s, actor, rowId, nowISO())),
       revokeApproval: (actor, rowId) => run((s) => engine.revokeApproval(s, actor, rowId, nowISO())),
       goLiveCostingRow: (actor, rowId) => run((s) => engine.goLiveCostingRow(s, actor, rowId, nowISO())),
-      requestPackage: (actor) => run((s) => engine.requestPackage(s, actor, nowISO())),
-      recordPackageSale: (actor, resellerId, paymentMethod) =>
-        run((s) => engine.recordPackageSale(s, actor, { resellerId, paymentMethod }, MOCK_USERS, nowISO())),
       setProgramMerchant: (actor, merchantId, on) =>
         run((s) => engine.setProgramMerchant(s, actor, merchantId, on, nowISO())),
       setSkuReseller: (actor, itemId, inProgram) =>

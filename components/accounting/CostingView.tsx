@@ -121,7 +121,7 @@ function ResellerProgramCard({ onChanged }: { onChanged: (message: string) => vo
   return (
     <Card
       title="Reseller program"
-      subtitle={`Products in the program give active resellers ${resellerDiscountPct}% off the pickup price. The merchant carries the discount. Turn a merchant on, then switch single SKUs on or off. Package price and tier income % are in the settings above.`}
+      subtitle={`Products in the program give active resellers ${resellerDiscountPct}% off (a percent of the SRP, shown in HKD). The discount comes out of SDSI's top-up, so the merchant still gets the full SRP. Turn a merchant on, then switch single SKUs on or off. Package price and tier income % are in the settings above.`}
     >
       <ul className="mt-3 divide-y divide-slate-100 text-sm">
         {merchants.map((merchant) => {

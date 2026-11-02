@@ -12,8 +12,8 @@ export interface ListRow {
   expired: boolean;
   /** Live price of one piece of this SKU, HKD. */
   pickupHkd: number;
-  /** Reseller discount for this product, percent. 0 or missing = full price. */
-  discountPct?: number;
+  /** Reseller discount per unit, HKD. 0 or missing = full price. */
+  unitDiscountHkd?: number;
 }
 
 export interface ParsedQuantities {
@@ -45,7 +45,7 @@ export function parseQuantities(rows: ListRow[], typed: Record<string, string>):
 }
 
 /** Unit price after the reseller discount. */
-export const discounted = (priceHkd: number, pct: number): number => roundMoney(priceHkd * (1 - pct / 100));
+export const discounted = (priceHkd: number, discountHkd: number): number => roundMoney(priceHkd - discountHkd);
 
 const COLUMNS = 'md:grid md:grid-cols-[2.5rem_8.5rem_1fr_6rem_5.5rem_6.5rem_7rem] md:items-center md:gap-3';
 
@@ -142,7 +142,7 @@ export function ProductList({
         {visible.length === 0 ? (
           <li className="px-4 py-10 text-center text-sm text-slate-500">No products match your search.</li>
         ) : (
-          visible.map(({ item, available, expired, number, pickupHkd, discountPct = 0 }) => {
+          visible.map(({ item, available, expired, number, pickupHkd, unitDiscountHkd = 0 }) => {
             const raw = typed[item.id] ?? '';
             const quantity = Number(raw);
             const error = errors[item.id];
@@ -158,12 +158,13 @@ export function ProductList({
                   <p className={`text-sm font-medium ${disabled ? 'text-slate-500' : 'text-slate-900'}`}>
                     {item.name}
                   </p>
+                  {item.package ? <p className="text-xs text-emerald-700">Includes {item.package.inclusions}</p> : null}
                   <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-slate-500 md:hidden">
                     <span className="font-mono">{item.sku}</span>
                     <span>
-                      {discountPct > 0 ? (
+                      {unitDiscountHkd > 0 ? (
                         <>
-                          <s className="text-slate-400">{formatHkd(pickupHkd)}</s> {formatHkd(discounted(pickupHkd, discountPct))}
+                          <s className="text-slate-400">{formatHkd(pickupHkd)}</s> {formatHkd(discounted(pickupHkd, unitDiscountHkd))}
                         </>
                       ) : (
                         formatHkd(pickupHkd)
@@ -184,10 +185,10 @@ export function ProductList({
                 </div>
 
                 <span className="hidden text-right text-sm md:block">
-                  {discountPct > 0 ? (
+                  {unitDiscountHkd > 0 ? (
                     <>
                       <s className="block text-xs text-slate-400">{formatHkd(pickupHkd)}</s>
-                      <span className="font-medium text-emerald-700">{formatHkd(discounted(pickupHkd, discountPct))}</span>
+                      <span className="font-medium text-emerald-700">{formatHkd(discounted(pickupHkd, unitDiscountHkd))}</span>
                     </>
                   ) : (
                     formatHkd(pickupHkd)

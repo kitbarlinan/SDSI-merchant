@@ -95,9 +95,10 @@ check('cashier sees buyers and HKD but no pesos', (async () => 1)() && Array.isA
 check('merchant sees no package sale', n(await as(U.m1, 'select * from package_sales_staff')) === 0);
 check('reseller sees only own purchase', n(await as(U.c2, 'select * from my_package')) === 1 && n(await as(U.m1, 'select * from my_package')) === 0);
 const ti = await as(U.c1, 'select * from my_tier_income');
+await db.exec(`insert into order_tiers values ('POID-3',1,'${U.c1}',2,24)`);
+const ti2 = await as(U.c1, 'select * from my_tier_income order by kind');
+check('upline also sees order tiers, pending ones marked not earned', Array.isArray(ti2) && ti2.length === 2 && ti2.some((r) => r.kind === 'order' && r.earned === false && r.php == 24) && n(await as(U.c2, 'select * from my_tier_income')) === 0);
 check('upline sees own tier income only', Array.isArray(ti) && ti.length === 1 && ti[0].php == 19.8 && ti[0].level === 1 && n(await as(U.c2, 'select * from my_tier_income')) === 0);
-await db.exec(`insert into package_requests values ('PKR-1','${U.c1}','2026-11-01 09:00')`);
-check('package requests: staff and the requester see it, others do not', n(await as(U.cashier, 'select * from package_requests_open')) === 1 && n(await as(U.c1, 'select * from package_requests_open')) === 1 && n(await as(U.c2, 'select * from package_requests_open')) === 0 && n(await as(U.m1, 'select * from package_requests_open')) === 0);
 check('one package per reseller', await bad("insert into package_sales values ('PKG-0009','" + U.c1 + "','" + U.cashier + "','2026-10-21 10:00',350,990,495,148.5,1)"));
 check('tier level only 1-3', await bad("insert into package_tiers values ('PKG-0001',4,'" + U.c1 + "',1,1)"));
 check('pricing_settings shows package price, still no markup', (await as(U.c2, 'select * from pricing_settings'))[0].package_hkd == 350 && !('markup_pct' in (await as(U.c2, 'select * from pricing_settings'))[0]));

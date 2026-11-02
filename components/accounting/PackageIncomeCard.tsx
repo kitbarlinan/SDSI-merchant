@@ -3,19 +3,21 @@
 import { Card } from '@/components/ui/Card';
 import { packageBreakdown } from '@/lib/costing';
 import { formatCurrency, formatHkd } from '@/lib/format';
+import { resellerLedger } from '@/lib/reseller';
 import { useAppData } from '@/lib/store';
 
 const pct = (value: number, base: number) => (base > 0 ? `${Math.round((value / base) * 1000) / 10}%` : '0%');
 
 /** What SDSI keeps from a reseller package: the sample at full upline, and the packages actually sold. */
 export function PackageIncomeCard() {
-  const { costing, packageSales } = useAppData();
+  const { costing, packageSales, orders, items } = useAppData();
   const { settings } = costing;
   const srp = settings.packageSrpPhp;
   const sample = packageBreakdown(settings, ['sample-1', 'sample-2', 'sample-3']);
-  const sum = (pick: (sale: (typeof packageSales)[number]) => number) => packageSales.reduce((total, sale) => total + pick(sale), 0);
-  const srpTotal = sum((sale) => sale.srpPhp);
-  const tierPaid = sum((sale) => sale.tiers.reduce((t, tier) => t + tier.php, 0));
+  const counted = resellerLedger(orders, packageSales, items, settings.markupPct).filter((row) => row.counted);
+  const sum = (pick: (row: (typeof counted)[number]) => number) => counted.reduce((total, row) => total + pick(row), 0);
+  const srpTotal = sum((row) => row.srpPhp);
+  const tierPaid = sum((row) => row.tiers.reduce((t, tier) => t + tier.php, 0));
   const rows: [string, number, number][] = [
     ['Top-up (gross)', sample.grossPhp, srp],
     [`Reseller ${settings.resellerDiscountPct}%`, -sample.resellerPhp, srp],
@@ -23,16 +25,16 @@ export function PackageIncomeCard() {
     ['SDSI net', sample.netPhp, srp],
   ];
   const actual: [string, number][] = [
-    ['Top-up (gross)', sum((sale) => sale.grossPhp)],
-    ['Reseller share', -sum((sale) => sale.resellerPhp)],
+    ['Top-up (gross)', sum((row) => row.topUpPhp)],
+    ['Reseller discount', -sum((row) => row.discountPhp)],
     ['Tier income paid', -tierPaid],
-    ['SDSI net', sum((sale) => sale.netPhp)],
+    ['SDSI net', sum((row) => row.netPhp)],
   ];
 
   return (
     <Card
-      title="Reseller package income"
-      subtitle={`Sample on a ${formatHkd(settings.packageHkd)} package (SRP ${formatCurrency(srp)}) with a full 3-level upline. Everything comes out of SDSI's top-up.`}
+      title="Reseller program income"
+      subtitle={`Sample on SRP ${formatCurrency(srp)} (the ${formatHkd(settings.packageHkd)} package) with a full 3-level upline. Every reseller purchase splits the same way, all out of SDSI's top-up. Details are on the Resellers page.`}
     >
       <table className="mt-3 min-w-full text-sm">
         <tbody className="divide-y divide-slate-100">
@@ -46,7 +48,7 @@ export function PackageIncomeCard() {
         </tbody>
       </table>
       <p className="mt-4 text-xs font-medium text-slate-500">
-        Sold so far: {packageSales.length} package{packageSales.length === 1 ? '' : 's'} · {formatHkd(sum((sale) => sale.hkd))} collected
+        Actual so far: {packageSales.length} package{packageSales.length === 1 ? '' : 's'} and {counted.length - packageSales.length} reseller order{counted.length - packageSales.length === 1 ? '' : 's'} (delivered)
       </p>
       <table className="mt-1 min-w-full text-sm">
         <tbody className="divide-y divide-slate-100">
