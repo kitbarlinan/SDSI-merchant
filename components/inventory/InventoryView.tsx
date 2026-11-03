@@ -20,7 +20,7 @@ import { availableOf, flattenDelivered } from '@/lib/orders';
 import { isSdsiTeam } from '@/lib/roles';
 import { useAppData } from '@/lib/store';
 import { CATEGORY_COLORS } from '@/lib/theme';
-import { BRANCHES, CATEGORIES, DEFAULT_BRANCH, type BranchId, type Category } from '@/lib/types';
+import { BRANCHES, DEFAULT_BRANCH, type BranchId } from '@/lib/types';
 import { useToday } from '@/lib/use-today';
 
 export function InventoryView() {
@@ -35,7 +35,6 @@ export function InventoryView() {
   const [tab, setTab] = useState<'stock' | 'receiving' | 'rts' | 'master'>('stock');
 
   const [query, setQuery] = useState('');
-  const [category, setCategory] = useState<Category | 'all'>('all');
   const [merchantId, setMerchantId] = useState('all');
   const [alertsOnly, setAlertsOnly] = useState(false);
   const [branchView, setBranchView] = useState<BranchId | 'all' | null>(null);
@@ -78,12 +77,11 @@ export function InventoryView() {
   const rows = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return scopedItems.filter((item) => {
-      if (category !== 'all' && item.category !== category) return false;
       if (alertsOnly && getStockStatus(item) === 'ok') return false;
       if (!needle) return true;
       return item.name.toLowerCase().includes(needle) || item.sku.toLowerCase().includes(needle);
     });
-  }, [scopedItems, query, category, alertsOnly]);
+  }, [scopedItems, query, alertsOnly]);
 
   if (!user) return null;
 
@@ -240,21 +238,6 @@ export function InventoryView() {
                 className="w-full rounded-xl border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200 sm:w-52"
               />
             </label>
-            <label>
-              <span className="sr-only">Filter by category</span>
-              <select
-                value={category}
-                onChange={(event) => setCategory(event.target.value as Category | 'all')}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
-              >
-                <option value="all">All categories</option>
-                {CATEGORIES.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
             <label className="flex items-center gap-2 whitespace-nowrap text-sm text-slate-600">
               <input
                 type="checkbox"
@@ -315,13 +298,15 @@ export function InventoryView() {
                         {item.parts?.length ? <p className="mt-0.5 text-xs text-slate-500">Contains: {describeParts(item, products)}</p> : null}
                         <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
                           <span className="font-mono">{item.sku}</span>
-                          <span className="inline-flex items-center gap-1">
-                            <span
-                              className="h-2 w-2 rounded-full"
-                              style={{ background: CATEGORY_COLORS[item.category] }}
-                            />
-                            {item.category}
-                          </span>
+                          {item.id.startsWith('prd-') ? null : (
+                            <span className="inline-flex items-center gap-1">
+                              <span
+                                className="h-2 w-2 rounded-full"
+                                style={{ background: CATEGORY_COLORS[item.category] }}
+                              />
+                              {item.category}
+                            </span>
+                          )}
                           {isStaff && merchant ? (
                             <span className="inline-flex items-center gap-1">
                               <span className="h-2 w-2 rounded-full" style={{ background: merchant.color }} />
@@ -349,7 +334,7 @@ export function InventoryView() {
                       </td>
                       <td className="px-4 py-4 text-right">{formatCurrency(item.unitPrice)}</td>
                       <td className="px-4 py-4">
-                        <p className="whitespace-nowrap text-slate-700">{formatDate(item.expiryDate)}</p>
+                        <p className="whitespace-nowrap text-slate-700">{item.expiryDate >= '2099' ? <span className="text-slate-400">—</span> : formatDate(item.expiryDate)}</p>
                         {expiry ? (
                           <div className="mt-1">
                             <ExpiryBadge status={expiry.status} daysLeft={expiry.daysLeft} />
