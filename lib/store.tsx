@@ -63,6 +63,8 @@ export interface TeamTools {
   addUser: (input: { name: string; role: string; email: string; branchId?: string; merchantId?: string }) => Promise<ActionResult<User>>;
   resendInvite: (userId: string) => Promise<ActionResult<boolean>>;
   deleteUser: (userId: string) => Promise<ActionResult<boolean>>;
+  /** An invitation link made without any email, to send by hand. */
+  inviteLink: (userId: string) => Promise<ActionResult<string>>;
 }
 
 export interface AppDataValue {

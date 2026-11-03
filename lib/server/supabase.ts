@@ -40,3 +40,17 @@ export const inviteByEmail: Deps['invite'] = async (email, name, redirectTo) => 
   }
   throw new Error(error?.message ?? 'Invitation failed.');
 };
+
+/** Makes the sign-in and an invitation link WITHOUT sending any email, so the admin can pass the link on by hand. */
+export const inviteLinkFor: NonNullable<Deps['inviteLink']> = async (email, name, redirectTo) => {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!key) throw new Error('SUPABASE_SERVICE_ROLE_KEY is not set.');
+  const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, key, { auth: { persistSession: false, autoRefreshToken: false } });
+  let made = await admin.auth.admin.generateLink({ type: 'invite', email, options: { data: { name }, redirectTo } });
+  // Already has a sign-in: a recovery link lets them set a password the same way.
+  if (made.error && /already|registered|exists/i.test(made.error.message)) {
+    made = await admin.auth.admin.generateLink({ type: 'recovery', email, options: { redirectTo } });
+  }
+  if (made.error || !made.data?.properties?.action_link || !made.data.user) throw new Error(made.error?.message ?? 'Could not make the link.');
+  return { authId: made.data.user.id, link: made.data.properties.action_link };
+};

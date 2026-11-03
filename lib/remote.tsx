@@ -163,6 +163,7 @@ export function RemoteProviders({ children }: { children: ReactNode }) {
         addUser: (input) => call('addUser', input),
         resendInvite: (userId) => call('resendInvite', { userId }),
         deleteUser: (userId) => call('deleteUser', { userId }),
+        inviteLink: (userId) => call('inviteLink', { userId }),
       },
       resetDemo: () => undefined,
       applyForReseller: (input) => call('applyForReseller', { input }),

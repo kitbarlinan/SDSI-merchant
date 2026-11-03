@@ -12,6 +12,8 @@ import { scopeFor, redactOrder, stockOnly, type Scoped } from './scope';
 export interface Deps {
   /** Supabase: send the invite email and return the new auth user's id. */
   invite(email: string, name: string, redirectTo: string): Promise<string>;
+  /** Supabase: make the sign-in and an invitation link without emailing anyone. */
+  inviteLink?(email: string, name: string, redirectTo: string): Promise<{ authId: string; link: string }>;
   /** Hong Kong and the Philippines are both UTC+8. YYYY-MM-DDTHH:mm */
   now(): string;
 }
@@ -119,9 +121,9 @@ export async function act(db: TxDb, deps: Deps, auth: AuthedUser | null, name: s
     const before = await loadAll(q);
 
     // Account management belongs to the admin and is done here, not in the shared rules.
-    if (['addMerchant', 'updateMerchant', 'deleteMerchant', 'addUser', 'resendInvite', 'deleteUser'].includes(name)) {
+    if (['addMerchant', 'updateMerchant', 'deleteMerchant', 'addUser', 'resendInvite', 'deleteUser', 'inviteLink'].includes(name)) {
       if (actor.role !== 'admin') return { error: 'Only the admin can do this.' as const, status: 403 };
-      return adminAction(q, before, name, args, me.id);
+      return adminAction(q, before, name, args, me.id, deps, origin);
     }
     if (name === 'finishSetup') return { done: true as const, after: before, invites: [] as User[], value: true };
 
@@ -188,7 +190,7 @@ function readProfile(args: Record<string, unknown>): { profile?: MerchantProfile
   return empty ? {} : { profile };
 }
 
-async function adminAction(q: Parameters<Parameters<TxDb['tx']>[0]>[0], before: Loaded, name: string, args: Record<string, unknown>, meId: string) {
+async function adminAction(q: Parameters<Parameters<TxDb['tx']>[0]>[0], before: Loaded, name: string, args: Record<string, unknown>, meId: string, deps: Deps, origin: string) {
   if (name === 'addMerchant') {
     const merchantName = String(args.name ?? '').trim();
     if (merchantName.length < 2) return { error: 'Enter the merchant name.', status: 422 };
@@ -276,6 +278,20 @@ async function adminAction(q: Parameters<Parameters<TxDb['tx']>[0]>[0], before: 
     const after: Loaded = { ...before, state: { ...before.state, users: before.state.users.filter((user) => user.id !== target.id) } };
     await saveDiff(q, before, after);
     return { done: true as const, after, invites: [] as User[], value: true };
+  }
+  if (name === 'inviteLink') {
+    const target = before.state.users.find((user) => user.id === args.userId);
+    if (!target?.email || target.role === 'customer') return { error: 'That account has no email.', status: 422 };
+    if (!deps.inviteLink) return { error: 'Invitation links are not available here.', status: 501 };
+    let made: { authId: string; link: string };
+    try {
+      made = await deps.inviteLink(target.email, target.name, `${origin}/`);
+    } catch (error) {
+      return { error: `Could not make the link: ${error instanceof Error ? error.message : 'unknown error'}.`, status: 502 };
+    }
+    const after: Loaded = { ...before, state: { ...before.state, users: before.state.users.map((user) => (user.id === target.id ? { ...user, authId: made.authId } : user)) } };
+    await saveDiff(q, before, after);
+    return { done: true as const, after, invites: [] as User[], value: made.link };
   }
   // resendInvite
   const target = before.state.users.find((user) => user.id === args.userId);

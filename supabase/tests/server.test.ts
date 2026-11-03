@@ -174,6 +174,15 @@ const A = (id: string) => ({ authId: 'auth-' + id });
   check('a failed invitation is reported with the reason and what to check', smtpFail.ok && smtpFail.warnings?.length === 1 && /Error sending invite email/.test(smtpFail.warnings[0]) && /SMTP/.test(smtpFail.warnings[0]) && /Send invitation again/.test(smtpFail.warnings[0]), smtpFail.warnings);
   const rateFail = await act(db, { ...deps, invite: async () => { throw new Error('email rate limit exceeded'); } }, A('usr-admin'), 'addUser', { name: 'Rate Test', role: 'cashier', email: 'rate@example.com', branchId: 'central' }, 'https://x') as any;
   check('the hourly email limit is explained', /per hour/.test(rateFail.warnings?.[0] ?? ''), rateFail.warnings);
+  // invitation link without email (when SMTP is the problem)
+  const linkDeps = { ...deps, invite: async () => { throw new Error('Error sending invite email'); }, inviteLink: async (email: string) => ({ authId: 'auth-link-1', link: `https://proj.supabase.co/auth/v1/verify?token=abc&email=${email}` }) };
+  const linkByCashier = await act(db, linkDeps, A('usr-cashier'), 'inviteLink', { userId: smtpFail.value.id }, 'https://x') as any;
+  check('only the admin can make an invite link', !linkByCashier.ok && linkByCashier.status === 403);
+  const linkOk = await act(db, linkDeps, A('usr-admin'), 'inviteLink', { userId: smtpFail.value.id }, 'https://x') as any;
+  const afterLink = await db.tx((q) => loadAll(q));
+  check('invite link is made without any email and the person is marked as invited', linkOk.ok && /verify\?token=abc/.test(linkOk.value) && afterLink.state.users.find((u: any) => u.id === smtpFail.value.id).authId === 'auth-link-1', linkOk);
+  const linkBroken = await act(db, { ...deps, inviteLink: async () => { throw new Error('boom'); } }, A('usr-admin'), 'inviteLink', { userId: smtpFail.value.id }, 'https://x') as any;
+  check('a failing link request is reported, not hidden', !linkBroken.ok && /boom/.test(linkBroken.error));
   // deleting a login that never did anything (the "Testing" cashier)
   const smtpUserId = smtpFail.value.id as string;
   const delByCashier = await act(db, deps, A('usr-cashier'), 'deleteUser', { userId: smtpUserId }, 'https://x') as any;

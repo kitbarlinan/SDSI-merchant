@@ -25,6 +25,8 @@ export function TeamView() {
   const [message, setMessage] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  // The answer for one row (why the email failed, or the link to pass on by hand) is shown right under that person.
+  const [rowNote, setRowNote] = useState<{ userId: string; tone: 'ok' | 'bad'; text: string; link?: string } | null>(null);
 
   if (!team) {
     return (
@@ -52,10 +54,31 @@ export function TeamView() {
 
   async function resend(userId: string, to?: string) {
     setBusy(true);
+    setRowNote(null);
     const result = await team!.resendInvite(userId);
     setBusy(false);
-    if (result.ok && result.warnings?.length) return show('bad', 'The invitation email was not sent.', result.warnings);
+    if (result.ok && result.warnings?.length) {
+      setRowNote({ userId, tone: 'bad', text: `The invitation email was not sent. ${result.warnings.join(' ')} Meanwhile you can use "Get invite link" and send it yourself.` });
+      return show('bad', 'The invitation email was not sent.', result.warnings);
+    }
+    if (result.ok) setRowNote({ userId, tone: 'ok', text: `Invitation sent again to ${to}.` });
+    else setRowNote({ userId, tone: 'bad', text: result.error });
     show(result.ok ? 'ok' : 'bad', result.ok ? `Invitation sent again to ${to}.` : result.error);
+  }
+
+  /** No email involved: make the link, show it, and the admin sends it by Messenger, Viber or SMS. */
+  async function getLink(userId: string) {
+    setBusy(true);
+    setRowNote(null);
+    const result = await team!.inviteLink(userId);
+    setBusy(false);
+    if (!result.ok) return setRowNote({ userId, tone: 'bad', text: result.error });
+    try {
+      await navigator.clipboard.writeText(result.value);
+    } catch {
+      /* the link is shown below anyway */
+    }
+    setRowNote({ userId, tone: 'ok', text: 'Invite link made (and copied). Send it to them yourself. They open it and choose a password. The link works once and expires, so make a new one if it stops working.', link: result.value });
   }
 
   async function remove(userId: string, who: string) {
@@ -137,6 +160,11 @@ export function TeamView() {
               </div>
               <Badge tone={user.hasLogin ? 'green' : 'amber'}>{user.hasLogin ? 'Invitation sent' : 'Invitation not sent'}</Badge>
               {user.email && !user.hasLogin ? (
+                <button type="button" disabled={busy} onClick={() => void getLink(user.id)} className="text-xs font-semibold text-emerald-700 hover:underline disabled:opacity-60">
+                  Get invite link
+                </button>
+              ) : null}
+              {user.email && !user.hasLogin ? (
                 <button type="button" disabled={busy} onClick={() => void resend(user.id, user.email)} className="text-xs font-semibold text-emerald-700 hover:underline disabled:opacity-60">
                   Send invitation again
                 </button>
@@ -150,6 +178,12 @@ export function TeamView() {
               ) : (
                 <button type="button" disabled={busy} onClick={() => setConfirmDelete(user.id)} className="text-xs font-semibold text-rose-700 hover:underline disabled:opacity-60">Delete</button>
               )}
+              {rowNote?.userId === user.id ? (
+                <div role="status" className={`w-full rounded-xl p-3 text-xs ${rowNote.tone === 'ok' ? 'bg-emerald-50 text-emerald-900' : 'bg-rose-50 text-rose-900'}`}>
+                  <p className="whitespace-pre-line">{rowNote.text}</p>
+                  {rowNote.link ? <input readOnly value={rowNote.link} onFocus={(event) => event.currentTarget.select()} aria-label="Invite link" className="mt-2 w-full rounded-lg border border-emerald-200 bg-white px-2 py-1.5 font-mono text-[11px]" /> : null}
+                </div>
+              ) : null}
             </li>
           ))}
         </ul>

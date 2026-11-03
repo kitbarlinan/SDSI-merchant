@@ -1,8 +1,8 @@
 import { productionDb, missingConfig } from './db';
 import { clockHk, type Deps } from './service';
-import { inviteByEmail } from './supabase';
+import { inviteByEmail, inviteLinkFor } from './supabase';
 
-export const deps: Deps = { invite: inviteByEmail, now: clockHk };
+export const deps: Deps = { invite: inviteByEmail, inviteLink: inviteLinkFor, now: clockHk };
 export const database = () => productionDb();
 export const configProblem = () => missingConfig();
 
