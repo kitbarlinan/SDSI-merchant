@@ -62,6 +62,7 @@ export interface TeamTools {
   deleteMerchant: (id: string) => Promise<ActionResult<boolean>>;
   addUser: (input: { name: string; role: string; email: string; branchId?: string; merchantId?: string }) => Promise<ActionResult<User>>;
   resendInvite: (userId: string) => Promise<ActionResult<boolean>>;
+  deleteUser: (userId: string) => Promise<ActionResult<boolean>>;
 }
 
 export interface AppDataValue {

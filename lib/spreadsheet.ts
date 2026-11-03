@@ -102,6 +102,7 @@ export const PRODUCT_COLUMNS: Column[] = [
   { key: 'srp', label: 'SRP', required: true, aliases: ['SRP', 'NETSRP', 'MERCHANTSRP', 'PRICE'] },
   { key: 'expiry', label: 'EXPIRY', aliases: ['EXPIRY', 'EXPIRYDATE', 'EXP', 'EXPIRATION', 'EXPIRATIONDATE'] },
   { key: 'supplier', label: 'SUPPLIER', aliases: ['SUPPLIER', 'VENDOR', 'SUPPLIERNAME'] },
+  { key: 'category', label: 'CATEGORY', aliases: ['CATEGORY', 'TYPE', 'CLASS'] },
 ];
 
 export const SKU_COLUMNS: Column[] = [

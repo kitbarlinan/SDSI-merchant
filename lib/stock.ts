@@ -122,7 +122,7 @@ export function stockUnits(items: InventoryItem[], products: MasterProduct[]): I
       merchantId: product.merchantId,
       sku: product.code,
       name: product.name,
-      category: categoryOf.get(product.id) ?? 'Food Supplements',
+      category: product.category ?? categoryOf.get(product.id) ?? 'Food Supplements',
       unitCost: 0,
       unitPrice: product.srp,
       stock: product.stock,

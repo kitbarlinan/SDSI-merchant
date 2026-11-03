@@ -119,9 +119,9 @@ export async function act(db: TxDb, deps: Deps, auth: AuthedUser | null, name: s
     const before = await loadAll(q);
 
     // Account management belongs to the admin and is done here, not in the shared rules.
-    if (['addMerchant', 'updateMerchant', 'deleteMerchant', 'addUser', 'resendInvite'].includes(name)) {
+    if (['addMerchant', 'updateMerchant', 'deleteMerchant', 'addUser', 'resendInvite', 'deleteUser'].includes(name)) {
       if (actor.role !== 'admin') return { error: 'Only the admin can do this.' as const, status: 403 };
-      return adminAction(q, before, name, args);
+      return adminAction(q, before, name, args, me.id);
     }
     if (name === 'finishSetup') return { done: true as const, after: before, invites: [] as User[], value: true };
 
@@ -188,7 +188,7 @@ function readProfile(args: Record<string, unknown>): { profile?: MerchantProfile
   return empty ? {} : { profile };
 }
 
-async function adminAction(q: Parameters<Parameters<TxDb['tx']>[0]>[0], before: Loaded, name: string, args: Record<string, unknown>) {
+async function adminAction(q: Parameters<Parameters<TxDb['tx']>[0]>[0], before: Loaded, name: string, args: Record<string, unknown>, meId: string) {
   if (name === 'addMerchant') {
     const merchantName = String(args.name ?? '').trim();
     if (merchantName.length < 2) return { error: 'Enter the merchant name.', status: 422 };
@@ -261,6 +261,21 @@ async function adminAction(q: Parameters<Parameters<TxDb['tx']>[0]>[0], before: 
     const after: Loaded = { ...before, state: { ...before.state, users: [...before.state.users, user] } };
     await saveDiff(q, before, after);
     return { done: true as const, after, invites: [user], value: stripAuth(user) };
+  }
+  if (name === 'deleteUser') {
+    const target = before.state.users.find((user) => user.id === args.userId);
+    if (!target || target.role === 'customer') return { error: 'Account not found.', status: 404 };
+    if (target.id === meId) return { error: 'You cannot delete your own account.', status: 422 };
+    if (target.role === 'admin' && before.state.users.filter((user) => user.role === 'admin').length < 2) return { error: 'The last admin cannot be deleted.', status: 422 };
+    // Anyone who already did something in the books stays, so the history keeps its names.
+    const { users: _users, ...records } = before.state;
+    void _users;
+    if (JSON.stringify(records).includes(`"${target.id}"`)) {
+      return { error: `${target.name} already has activity in the records (orders, stock or approvals), so the account stays to keep the books complete.`, status: 422 };
+    }
+    const after: Loaded = { ...before, state: { ...before.state, users: before.state.users.filter((user) => user.id !== target.id) } };
+    await saveDiff(q, before, after);
+    return { done: true as const, after, invites: [] as User[], value: true };
   }
   // resendInvite
   const target = before.state.users.find((user) => user.id === args.userId);

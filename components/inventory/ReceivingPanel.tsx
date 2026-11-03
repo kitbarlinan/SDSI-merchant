@@ -16,6 +16,8 @@ import { stockUnits } from '@/lib/stock';
 import { BranchSelect } from '@/components/ui/BranchSelect';
 import { useToday } from '@/lib/use-today';
 
+const NO_SUPPLIER_PICK = '__none__';
+
 export function ReceiptRow({ receipt, merchantFilter }: { receipt: StockReceipt; merchantFilter: string }) {
   const { user } = useAuth();
   const { users, merchants, approveReceipt, rejectReceipt } = useAppData();
@@ -155,12 +157,27 @@ function ReceiveForm() {
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [date, setDate] = useState('');
   const [note, setNote] = useState('');
+  const [supplierPick, setSupplierPick] = useState('all');
+  const [search, setSearch] = useState('');
   const [branchPick, setBranchPick] = useState<BranchId>(DEFAULT_BRANCH);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
 
   // Stock is kept per product from the master list (older hand-typed SKUs that keep their own stock are listed too).
   const catalog = useMemo(() => stockUnits(items, products).filter((unit) => unit.merchantId === merchantId), [items, products, merchantId]);
+  // Suppliers of this merchant's products, so the list can be narrowed down while counting a delivery.
+  const supplierOf = (id: string) => products.find((product) => product.id === id)?.supplier;
+  const suppliers = useMemo(
+    () => [...new Set(catalog.map((unit) => supplierOf(unit.id)).filter((name): name is string => !!name))].sort((a, b) => a.localeCompare(b)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [catalog, products],
+  );
+  const needle = search.trim().toLowerCase();
+  const shown = catalog.filter(
+    (unit) =>
+      (supplierPick === 'all' || (supplierPick === NO_SUPPLIER_PICK ? !supplierOf(unit.id) : supplierOf(unit.id) === supplierPick)) &&
+      (!needle || unit.name.toLowerCase().includes(needle) || unit.sku.toLowerCase().includes(needle)),
+  );
   if (!user) return null;
   const branch: BranchId = user.role === 'cashier' ? (user.branchId ?? DEFAULT_BRANCH) : branchPick;
 
@@ -221,6 +238,7 @@ function ReceiveForm() {
               value={merchantId}
               onChange={(event) => {
                 setMerchantId(event.target.value);
+                setSupplierPick('all');
                 setQuantities({});
               }}
               className={`mt-1 ${inputClass(false)}`}
@@ -252,11 +270,29 @@ function ReceiveForm() {
           </label>
         </div>
 
+        {catalog.length > 0 ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="text-xs font-medium text-slate-500">
+              Supplier
+              <select value={supplierPick} onChange={(event) => setSupplierPick(event.target.value)} className={`mt-1 ${inputClass(false)}`}>
+                <option value="all">All suppliers</option>
+                {suppliers.map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+                <option value={NO_SUPPLIER_PICK}>No supplier set</option>
+              </select>
+            </label>
+            <label className="text-xs font-medium text-slate-500">
+              Find a product
+              <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Code or name" className={`mt-1 ${inputClass(false)}`} />
+            </label>
+          </div>
+        ) : null}
         {catalog.length === 0 ? (
           <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800">This merchant has no products yet. Add them in Inventory → Master list first.</p>
         ) : null}
         <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200">
-          {catalog.map((item) => (
+          {shown.map((item) => (
             <li key={item.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium text-slate-900">{item.name}</p>
@@ -273,11 +309,15 @@ function ReceiveForm() {
                 onChange={(event) => setQuantities((prev) => ({ ...prev, [item.id]: event.target.value }))}
                 aria-label={`Quantity of ${item.name}`}
                 placeholder="0"
-                className={`w-24 text-center ${inputClass(false)}`}
+                className={`!w-24 shrink-0 text-center ${inputClass(false)}`}
               />
             </li>
           ))}
         </ul>
+        {catalog.length > 0 && shown.length === 0 ? <p className="text-sm text-slate-500">No product matches this supplier or search.</p> : null}
+        {Object.values(quantities).some((value) => Number(value) > 0) && shown.length < catalog.length ? (
+          <p className="text-xs text-slate-500">Quantities typed on products hidden by the filter are still included.</p>
+        ) : null}
 
         <label className="block text-xs font-medium text-slate-500">
           {kind === 'stock-out' ? 'Reason (required)' : 'Note (optional)'}

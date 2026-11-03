@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import { Field, inputClass } from '@/components/ui/Field';
 import { ROLE_LABEL } from '@/lib/roles';
+import { useAuth } from '@/lib/auth';
 import { useAppData } from '@/lib/store';
 import { BRANCHES, branchName, type Role } from '@/lib/types';
 
@@ -14,6 +15,7 @@ const INVITE_ROLES: Role[] = ['cashier', 'clerk', 'merchant', 'admin'];
 
 /** The admin makes merchants and gives people their login. Each person gets an invitation email to choose a password. */
 export function TeamView() {
+  const { user: me } = useAuth();
   const { users, merchants, team } = useAppData();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -22,6 +24,7 @@ export function TeamView() {
   const [merchantId, setMerchantId] = useState('');
   const [message, setMessage] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   if (!team) {
     return (
@@ -53,6 +56,14 @@ export function TeamView() {
     setBusy(false);
     if (result.ok && result.warnings?.length) return show('bad', 'The invitation email was not sent.', result.warnings);
     show(result.ok ? 'ok' : 'bad', result.ok ? `Invitation sent again to ${to}.` : result.error);
+  }
+
+  async function remove(userId: string, who: string) {
+    setBusy(true);
+    const result = await team!.deleteUser(userId);
+    setBusy(false);
+    setConfirmDelete(null);
+    show(result.ok ? 'ok' : 'bad', result.ok ? `${who} was deleted.` : result.error);
   }
 
   const staff = users.filter((user) => user.role !== 'customer');
@@ -130,6 +141,15 @@ export function TeamView() {
                   Send invitation again
                 </button>
               ) : null}
+              {user.id === me?.id ? null : confirmDelete === user.id ? (
+                <span className="inline-flex items-center gap-2 text-xs">
+                  Delete {user.name}?
+                  <button type="button" disabled={busy} onClick={() => void remove(user.id, user.name)} className="font-semibold text-rose-700 underline">Yes, delete</button>
+                  <button type="button" onClick={() => setConfirmDelete(null)} className="text-slate-600 underline">Cancel</button>
+                </span>
+              ) : (
+                <button type="button" disabled={busy} onClick={() => setConfirmDelete(user.id)} className="text-xs font-semibold text-rose-700 hover:underline disabled:opacity-60">Delete</button>
+              )}
             </li>
           ))}
         </ul>

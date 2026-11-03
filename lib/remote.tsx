@@ -162,6 +162,7 @@ export function RemoteProviders({ children }: { children: ReactNode }) {
         deleteMerchant: (id) => call('deleteMerchant', { id }),
         addUser: (input) => call('addUser', input),
         resendInvite: (userId) => call('resendInvite', { userId }),
+        deleteUser: (userId) => call('deleteUser', { userId }),
       },
       resetDemo: () => undefined,
       applyForReseller: (input) => call('applyForReseller', { input }),

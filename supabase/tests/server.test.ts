@@ -174,6 +174,25 @@ const A = (id: string) => ({ authId: 'auth-' + id });
   check('a failed invitation is reported with the reason and what to check', smtpFail.ok && smtpFail.warnings?.length === 1 && /Error sending invite email/.test(smtpFail.warnings[0]) && /SMTP/.test(smtpFail.warnings[0]) && /Send invitation again/.test(smtpFail.warnings[0]), smtpFail.warnings);
   const rateFail = await act(db, { ...deps, invite: async () => { throw new Error('email rate limit exceeded'); } }, A('usr-admin'), 'addUser', { name: 'Rate Test', role: 'cashier', email: 'rate@example.com', branchId: 'central' }, 'https://x') as any;
   check('the hourly email limit is explained', /per hour/.test(rateFail.warnings?.[0] ?? ''), rateFail.warnings);
+  // deleting a login that never did anything (the "Testing" cashier)
+  const smtpUserId = smtpFail.value.id as string;
+  const delByCashier = await act(db, deps, A('usr-cashier'), 'deleteUser', { userId: smtpUserId }, 'https://x') as any;
+  check('only the admin can delete a login', !delByCashier.ok && delByCashier.status === 403);
+  const delSelf = await act(db, deps, A('usr-admin'), 'deleteUser', { userId: 'usr-admin' }, 'https://x') as any;
+  check('the admin cannot delete themselves', !delSelf.ok && /own account/.test(delSelf.error));
+  const delBusy = await act(db, deps, A('usr-admin'), 'deleteUser', { userId: 'usr-cashier2' }, 'https://x') as any;
+  check('a login with activity in the records stays', !delBusy.ok && /stays/.test(delBusy.error), delBusy);
+  const delUserOk = await act(db, deps, A('usr-admin'), 'deleteUser', { userId: smtpUserId }, 'https://x') as any;
+  const afterUserDel = await db.tx((q) => loadAll(q));
+  check('an unused login whose invitation failed can be deleted', delUserOk.ok && !afterUserDel.state.users.some((u: any) => u.id === smtpUserId), delUserOk);
+  const reinvite = await act(db, deps, A('usr-admin'), 'addUser', { name: 'Smtp Test', role: 'cashier', email: 'smtp@example.com', branchId: 'central' }, 'https://x') as any;
+  check('the same email can be invited again after deleting', reinvite.ok, reinvite);
+  // category per product
+  const catSet = await act(db, deps, A('usr-clerk'), 'updateProduct', { id: 'prd-0001', patch: { category: 'Beauty Products' } }, 'https://x') as any;
+  const catRow = await db.tx((q) => loadAll(q));
+  check('category per product is saved', catSet.ok && catRow.state.products.find((p: any) => p.id === 'prd-0001')!.category === 'Beauty Products', catSet);
+  const catClear = await act(db, deps, A('usr-clerk'), 'updateProduct', { id: 'prd-0001', patch: { category: null } }, 'https://x') as any;
+  check('category can be cleared again', catClear.ok && catClear.value.category === undefined, catClear);
   // stock per product through the server
   const sIn = await act(db, deps, A('usr-clerk'), 'receiveStock', { input: { merchantId: 'mrc-1', receivedDate: '2026-10-29', note: '', lines: [{ productId: 'prd-0001', quantity: 9 }], branch: 'central' } }, 'https://x') as any;
   const afterS = await db.tx((q) => loadAll(q));

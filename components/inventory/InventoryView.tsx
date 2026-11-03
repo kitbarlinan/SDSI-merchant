@@ -298,7 +298,7 @@ export function InventoryView() {
                         {item.parts?.length ? <p className="mt-0.5 text-xs text-slate-500">Contains: {describeParts(item, products)}</p> : null}
                         <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
                           <span className="font-mono">{item.sku}</span>
-                          {item.id.startsWith('prd-') ? null : (
+                          {(item.id.startsWith('prd-') ? !products.find((product) => product.id === item.id)?.category : false) ? null : (
                             <span className="inline-flex items-center gap-1">
                               <span
                                 className="h-2 w-2 rounded-full"

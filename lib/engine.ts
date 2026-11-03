@@ -34,6 +34,7 @@ import {
   type MasterProduct,
   type SkuPart,
   normalizeCategory,
+  type Category,
   type Order,
   type OrderLine,
   type OrderStatus,
@@ -1127,6 +1128,8 @@ export interface ProductInput {
   expiryDate?: string;
   /** Optional supplier name. */
   supplier?: string;
+  /** Optional category (Food Supplements or Beauty Products). */
+  category?: Category | '';
 }
 
 const cleanSupplier = (value: string | undefined | null): string => (value ?? '').trim().replace(/\s+/g, ' ');
@@ -1163,6 +1166,7 @@ export function addProduct(state: AppState, actor: Actor, input: ProductInput, n
     srp: roundMoney(input.srp),
     ...(input.expiryDate ? { expiryDate: input.expiryDate } : {}),
     ...(supplier ? { supplier } : {}),
+    ...(input.category ? { category: normalizeCategory(input.category) } : {}),
     stock: 0,
     branchStock: emptySplit(),
     reorderLevel: 10,
@@ -1182,6 +1186,8 @@ export interface ProductPatch {
   expiryDate?: string | null;
   /** Empty or null clears the supplier. */
   supplier?: string | null;
+  /** Empty or null clears the category. */
+  category?: Category | '' | null;
 }
 
 export function updateProduct(state: AppState, actor: Actor, id: string, patch: ProductPatch, now: string): Outcome<MasterProduct> {
@@ -1197,11 +1203,13 @@ export function updateProduct(state: AppState, actor: Actor, id: string, patch: 
   const problem = checkProduct(code, name, srp, expiry) ?? supplierProblem(supplier);
   if (problem) return fail(problem);
   if (codeTaken(state.products, code, id)) return fail(`INV code ${code} is already in the master list.`);
-  const { expiryDate: _old, supplier: _oldSupplier, ...rest } = product;
+  const category = patch.category === undefined ? product.category : patch.category ? normalizeCategory(patch.category) : undefined;
+  const { expiryDate: _old, supplier: _oldSupplier, category: _oldCategory, ...rest } = product;
   void _old;
   void _oldSupplier;
-  const next: MasterProduct = { ...rest, code, name, srp: roundMoney(srp), ...(expiry ? { expiryDate: expiry } : {}), ...(supplier ? { supplier } : {}) };
-  if (next.code === product.code && next.name === product.name && next.srp === product.srp && next.expiryDate === product.expiryDate && (next.supplier ?? '') === (product.supplier ?? '')) return fail('Nothing was changed.');
+  void _oldCategory;
+  const next: MasterProduct = { ...rest, code, name, srp: roundMoney(srp), ...(expiry ? { expiryDate: expiry } : {}), ...(supplier ? { supplier } : {}), ...(category ? { category } : {}) };
+  if (next.code === product.code && next.name === product.name && next.srp === product.srp && next.expiryDate === product.expiryDate && (next.supplier ?? '') === (product.supplier ?? '') && next.category === product.category) return fail('Nothing was changed.');
   return {
     ok: true,
     state: {
@@ -1236,6 +1244,7 @@ export interface ProductRow {
   srp: string | number;
   expiry?: string;
   supplier?: string;
+  category?: string;
 }
 
 export interface ProductImportPlan {
@@ -1269,6 +1278,8 @@ export function planProductImport(state: AppState, merchantId: string, rows: Pro
     const srp = readNumber(line.srp);
     const expiry = String(line.expiry ?? '').trim();
     const supplier = cleanSupplier(line.supplier);
+    const categoryText = String(line.category ?? '').trim();
+    const category = categoryText ? normalizeCategory(categoryText) : undefined;
     const fail_ = (message: string) => plan.errors.push(`Row ${line.row}: ${message}`);
     const problem = checkProduct(code, name, srp, expiry || undefined) ?? supplierProblem(supplier);
     if (problem) {
@@ -1282,7 +1293,7 @@ export function planProductImport(state: AppState, merchantId: string, rows: Pro
     seen.set(code.toLowerCase(), line.row);
     const existing = codeTaken(state.products, code);
     if (!existing) {
-      plan.creates.push({ row: line.row, input: { merchantId, code, name, srp, ...(expiry ? { expiryDate: expiry } : {}), ...(supplier ? { supplier } : {}) } });
+      plan.creates.push({ row: line.row, input: { merchantId, code, name, srp, ...(expiry ? { expiryDate: expiry } : {}), ...(supplier ? { supplier } : {}), ...(category ? { category } : {}) } });
       continue;
     }
     if (existing.merchantId !== merchantId) {
@@ -1296,6 +1307,8 @@ export function planProductImport(state: AppState, merchantId: string, rows: Pro
     if (expiry && existing.expiryDate !== expiry) patch.expiryDate = expiry;
     // Same for the supplier: an empty cell keeps the saved one.
     if (supplier && (existing.supplier ?? '') !== supplier) patch.supplier = supplier;
+    // And the category: an empty cell keeps the saved one.
+    if (category && existing.category !== category) patch.category = category;
     if (Object.keys(patch).length === 0) plan.unchanged += 1;
     else plan.updates.push({ row: line.row, id: existing.id, before: existing, patch });
   }
@@ -1328,6 +1341,7 @@ export function importProducts(
       srp: roundMoney(create.input.srp),
       ...(create.input.expiryDate ? { expiryDate: create.input.expiryDate } : {}),
       ...(create.input.supplier ? { supplier: create.input.supplier } : {}),
+      ...(create.input.category ? { category: normalizeCategory(create.input.category) } : {}),
       stock: 0,
       branchStock: emptySplit(),
       reorderLevel: 10,
@@ -1342,6 +1356,7 @@ export function importProducts(
       ...(update.patch.srp ? { srp: roundMoney(update.patch.srp) } : {}),
       ...(update.patch.expiryDate ? { expiryDate: update.patch.expiryDate } : {}),
       ...(update.patch.supplier ? { supplier: update.patch.supplier } : {}),
+      ...(update.patch.category ? { category: normalizeCategory(update.patch.category) } : {}),
     };
   });
   return {

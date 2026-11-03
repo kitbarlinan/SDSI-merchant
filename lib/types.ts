@@ -101,6 +101,8 @@ export interface MasterProduct {
   branchStock?: Record<BranchId, number>;
   /** At or below this quantity the product is flagged as Low Stock. */
   reorderLevel: number;
+  /** Optional. Set one by one in the master list (or with a CATEGORY column on import). */
+  category?: Category;
 }
 
 /** One product inside a SKU. `qty` is paid for, `free` is given for nothing (it counts as a piece for the SF, not for the SRP). */
