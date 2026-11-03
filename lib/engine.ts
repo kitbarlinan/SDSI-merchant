@@ -1490,7 +1490,7 @@ const FREE_WORDS = /^(y|yes|free|x|true|1\s*free)$/i;
  * master list by INV code or by name, so the merchant is found from the product. FREE is the number of free
  * pieces of that product; the word "yes" (or "free") means this line's qty is all free.
  */
-export function planSkuImport(state: AppState, actor: Actor, rows: SkuRow[], now: string): SkuImportPlan {
+export function planSkuImport(state: AppState, actor: Actor, rows: SkuRow[], now: string, defaultCategory?: InventoryItem['category']): SkuImportPlan {
   const plan: SkuImportPlan = { state, created: [], errors: [] };
   if (rows.length === 0) return { ...plan, errors: ['The file has no SKU rows.'] };
   if (rows.length > MAX_IMPORT_ROWS) return { ...plan, errors: [`Too many rows (${rows.length}). Upload up to ${MAX_IMPORT_ROWS} at a time.`] };
@@ -1566,7 +1566,7 @@ export function planSkuImport(state: AppState, actor: Actor, rows: SkuRow[], now
     if (bad) continue;
     const bundleName = lines.map((line) => String(line.bundleName ?? '').trim()).find(Boolean) ?? '';
     const categoryText = lines.map((line) => String(line.category ?? '').trim()).find(Boolean);
-    const result = addSku(plan.state, actor, { merchantId, sku, name: bundleName, category: normalizeCategory(categoryText), parts }, now);
+    const result = addSku(plan.state, actor, { merchantId, sku, name: bundleName, category: categoryText ? normalizeCategory(categoryText) : defaultCategory ?? 'Food Supplements', parts }, now);
     if (!result.ok) {
       where(result.error);
       continue;
@@ -1578,10 +1578,10 @@ export function planSkuImport(state: AppState, actor: Actor, rows: SkuRow[], now
 }
 
 /** Makes every SKU in the sheet as a draft, all or nothing. */
-export function importSkus(state: AppState, actor: Actor, rows: SkuRow[], now: string): Outcome<{ created: number }> {
+export function importSkus(state: AppState, actor: Actor, rows: SkuRow[], now: string, defaultCategory?: InventoryItem['category']): Outcome<{ created: number }> {
   const denied = costingGuard(actor);
   if (denied) return denied;
-  const plan = planSkuImport(state, actor, rows, now);
+  const plan = planSkuImport(state, actor, rows, now, defaultCategory);
   if (plan.errors.length > 0) return fail(joinErrors(plan.errors));
   return { ok: true, state: plan.state, value: { created: plan.created.length } };
 }
@@ -1611,6 +1611,31 @@ export function setSkuSrp(state: AppState, actor: Actor, itemId: string, srp: nu
       items: state.items.map((candidate) => (candidate.id === itemId ? updated : candidate)),
     },
     value: updated,
+  };
+}
+
+/**
+ * Changes the category of one or more SKUs (Food Supplements or Beauty Products). Costing and stock are not touched.
+ * Orders already placed keep the category they were placed with.
+ */
+export function setSkuCategory(state: AppState, actor: Actor, itemIds: string[], category: InventoryItem['category'], now: string): Outcome<number> {
+  const denied = costingGuard(actor);
+  if (denied) return denied;
+  if (category !== 'Food Supplements' && category !== 'Beauty Products') return fail('Choose Food Supplements or Beauty Products.');
+  const ids = new Set(itemIds);
+  const targets = state.items.filter((item) => ids.has(item.id));
+  if (targets.length === 0) return fail('Choose at least one SKU.');
+  if (targets.length !== ids.size) return fail('A SKU was not found.');
+  const changing = targets.filter((item) => item.category !== category);
+  if (changing.length === 0) return fail(`They are already ${category}.`);
+  const changeIds = new Set(changing.map((item) => item.id));
+  return {
+    ok: true,
+    state: {
+      ...logged(state, actor, now, `Category set to ${category}`, [changing.length > 6 ? `${changing.length} SKUs` : changing.map((item) => item.sku).join(', ')], {}),
+      items: state.items.map((item) => (changeIds.has(item.id) ? { ...item, category } : item)),
+    },
+    value: changing.length,
   };
 }
 

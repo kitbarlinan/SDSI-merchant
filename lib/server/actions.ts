@@ -49,7 +49,8 @@ export const ACTIONS: Record<string, Handler> = {
   updateProduct: (st, ac, a, now) => engine.updateProduct(st, ac, s(a.id), a.patch as never, now),
   deleteProduct: (st, ac, a, now) => engine.deleteProduct(st, ac, s(a.id), now),
   importProducts: (st, ac, a, now) => engine.importProducts(st, ac, s(a.merchantId), a.rows as never, now),
-  importSkus: (st, ac, a, now) => engine.importSkus(st, ac, a.rows as never, now),
+  importSkus: (st, ac, a, now) => engine.importSkus(st, ac, a.rows as never, now, a.defaultCategory as never),
+  setSkuCategory: (st, ac, a, now) => engine.setSkuCategory(st, ac, a.itemIds as never, a.category as never, now),
 };
 
 /** Actions anyone can call without signing in. */

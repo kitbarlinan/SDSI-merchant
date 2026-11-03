@@ -157,10 +157,11 @@ export function SkuImportCard({ onAdded }: { onAdded: (message: string) => void 
   const [rows, setRows] = useState<SkuRow[] | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [defaultCategory, setDefaultCategory] = useState<Category>(CATEGORIES[0]);
 
   const plan = useMemo(
-    () => (rows && user ? planSkuImport({ items, products, costing } as never, { id: user.id, role: user.role }, rows, '2000-01-01T00:00') : null),
-    [rows, items, products, costing, user],
+    () => (rows && user ? planSkuImport({ items, products, costing } as never, { id: user.id, role: user.role }, rows, '2000-01-01T00:00', defaultCategory) : null),
+    [rows, items, products, costing, user, defaultCategory],
   );
 
   function onSheet(cells: string[][]) {
@@ -172,7 +173,7 @@ export function SkuImportCard({ onAdded }: { onAdded: (message: string) => void 
   async function run() {
     if (!user || !rows) return;
     setBusy(true);
-    const result = await importSkus(user, rows);
+    const result = await importSkus(user, rows, defaultCategory);
     setBusy(false);
     if (!result.ok) return setProblem(result.error);
     onAdded(`${result.value.created} SKU${result.value.created === 1 ? '' : 's'} added as draft. Approve and go live a package to put them on sale.`);
@@ -185,6 +186,14 @@ export function SkuImportCard({ onAdded }: { onAdded: (message: string) => void 
       title="Import SKUs from Excel"
       subtitle="Columns: SKU CODE, BUNDLE NAME, PRODUCT, QTY, FREE. PRODUCT is the INV code or the product name from the master list, so the merchant is found automatically. Put each product of a bundle on its own row with the same SKU code. FREE is the number of free pieces of that product (or write yes if the whole qty is free)."
     >
+      <label className="mt-3 block text-xs font-medium text-slate-500 sm:max-w-xs">
+        Category for SKUs without a CATEGORY column
+        <select value={defaultCategory} onChange={(event) => setDefaultCategory(event.target.value as Category)} className={`mt-1 ${inputClass(false)}`}>
+          {CATEGORIES.map((option) => (
+            <option key={option} value={option}>{option}</option>
+          ))}
+        </select>
+      </label>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <SheetPicker label="Choose Excel / CSV file" onRead={onSheet} onError={(text) => { setRows(null); setProblem(text); }} />
         <button

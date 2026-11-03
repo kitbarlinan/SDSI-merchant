@@ -15,7 +15,7 @@ import {
 } from '@/lib/costing';
 import { formatCurrency, formatDateTime, formatHkd } from '@/lib/format';
 import { describeParts } from '@/lib/inventory';
-import { CATEGORIES, type InventoryItem } from '@/lib/types';
+import { CATEGORIES, type Category, type InventoryItem } from '@/lib/types';
 import type { CostingRow } from '@/lib/costing';
 import { useAppData } from '@/lib/store';
 
@@ -209,6 +209,7 @@ function CostingEditor() {
     goLiveCostingRow,
     setSkuDisabled,
     setSkuSrp,
+    setSkuCategory,
     addSku,
   } = useAppData();
 
@@ -376,6 +377,12 @@ function CostingEditor() {
     }
   }
 
+  async function changeCategory(itemIds: string[], category: Category) {
+    if (!user) return;
+    const result = await setSkuCategory(user, itemIds, category);
+    setNotice(result.ok ? `${result.value} SKU${result.value === 1 ? '' : 's'} set to ${category}.` : result.error);
+  }
+
   async function saveSrp(item: InventoryItem, value: number) {
     if (!user) return;
     const result = await setSkuSrp(user, item.id, value);
@@ -504,6 +511,21 @@ function CostingEditor() {
           </div>
         }
       >
+        <div className="flex flex-wrap items-center gap-2 border-y border-slate-100 bg-slate-50/60 px-5 py-2.5 text-xs text-slate-600">
+          <span>Set the category of the {rows.length} SKU{rows.length === 1 ? '' : 's'} shown:</span>
+          {CATEGORIES.map((option) => (
+            <button
+              key={option}
+              type="button"
+              disabled={rows.length === 0}
+              onClick={() => void changeCategory(rows.map(({ item }) => item.id), option)}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1 font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+            >
+              All {option}
+            </button>
+          ))}
+          <span className="text-slate-400">Use the merchant filter or search above to pick which SKUs.</span>
+        </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -555,6 +577,16 @@ function CostingEditor() {
                         } ${item.disabled ? 'text-slate-400' : 'text-slate-900'}`}
                       >
                         {item.name}
+                        <select
+                          aria-label={`Category of ${item.sku}`}
+                          value={item.category}
+                          onChange={(event) => void changeCategory([item.id], event.target.value as Category)}
+                          className="mt-1 block rounded border border-slate-200 bg-white px-1 py-0.5 text-[11px] font-normal text-slate-600"
+                        >
+                          {CATEGORIES.map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
                         {item.parts?.length ? <span className="mt-0.5 block text-[11px] font-normal leading-snug text-slate-500">{describeParts(item, products)}</span> : null}
                         {item.disabled ? <span className="ml-2 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-600">Disabled</span> : null}
                         <button
