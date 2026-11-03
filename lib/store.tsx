@@ -160,6 +160,7 @@ export interface AppDataValue {
     rows: engine.ProductRow[],
   ) => Promise<ActionResult<{ created: number; updated: number; unchanged: number }>>;
   importSkus: (actor: Actor, rows: engine.SkuRow[], defaultCategory?: InventoryItem['category']) => Promise<ActionResult<{ created: number }>>;
+  setSkuPackage: (actor: Actor, itemId: string, on: boolean) => Promise<ActionResult<boolean>>;
   setSkuCategory: (actor: Actor, itemIds: string[], category: InventoryItem['category']) => Promise<ActionResult<number>>;
   resetDemo: () => void;
   /** Account management. Live mode only (null in the demo). */
@@ -328,6 +329,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       deleteProduct: (actor, id) => run((s) => engine.deleteProduct(s, actor, id, nowISO())),
       importProducts: (actor, merchantId, rows) => run((s) => engine.importProducts(s, actor, merchantId, rows, nowISO())),
       importSkus: (actor, rows, defaultCategory) => run((s) => engine.importSkus(s, actor, rows, nowISO(), defaultCategory)),
+      setSkuPackage: (actor, itemId, on) => run((s) => engine.setSkuPackage(s, actor, itemId, on, nowISO())),
       setSkuCategory: (actor, itemIds, category) => run((s) => engine.setSkuCategory(s, actor, itemIds, category, nowISO())),
       resetDemo: () => commit(createInitialState()),
       remote: false,

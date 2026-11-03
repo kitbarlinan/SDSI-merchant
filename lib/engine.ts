@@ -903,16 +903,22 @@ export function setPickupPrices(
       ? { ...row, pickupPriceHkd: priceOf.get(row.id)!, status: 'draft' as const, approvedBy: undefined, approvedAt: undefined }
       : row,
   );
+  // A reseller package shows its pickup price to people applying, so keep the two the same.
+  const packagePrice = new Map<string, number>();
+  for (const row of rows) if (priceOf.has(row.id)) packagePrice.set(row.itemId, priceOf.get(row.id)!);
   return {
     ok: true,
-    state: logged(
-      state,
-      actor,
-      now,
-      `Pickup price changed on ${changes.length} package${changes.length === 1 ? '' : 's'}`,
-      details,
-      { rows },
-    ),
+    state: {
+      ...logged(
+        state,
+        actor,
+        now,
+        `Pickup price changed on ${changes.length} package${changes.length === 1 ? '' : 's'}`,
+        details,
+        { rows },
+      ),
+      items: state.items.map((item) => (item.package && packagePrice.has(item.id) ? { ...item, package: { ...item.package, priceHkd: packagePrice.get(item.id)! } } : item)),
+    },
     value: changes.length,
   };
 }
@@ -1381,6 +1387,15 @@ export interface NewSkuInput {
   unitPrice?: number;
   /** Older way: pieces inside the SKU. */
   qty?: number;
+  /** Make it a reseller package: buying it makes the buyer a reseller. Needs `parts`. */
+  resellerPackage?: boolean;
+}
+
+/** What a reseller package contains, in words: "5 x Organic Barley Grass (+1 free) + 2 x Spirulina". */
+export function packageInclusions(parts: SkuPart[], products: MasterProduct[]): string {
+  return parts
+    .map((part) => `${part.qty + part.free > 0 && part.qty === 0 ? part.free : part.qty} × ${products.find((p) => p.id === part.productId)?.name ?? 'product'}${part.qty > 0 && part.free > 0 ? ` (+${part.free} free)` : ''}${part.qty === 0 ? ' (free)' : ''}`)
+    .join(' + ');
 }
 
 /**
@@ -1397,6 +1412,7 @@ export function addSku(state: AppState, actor: Actor, input: NewSkuInput, now: s
   const problem = validateSkuCode(sku, state.items);
   if (problem) return fail(problem);
   if (!input.merchantId) return fail('Choose a merchant.');
+  if (input.resellerPackage && !input.parts?.length) return fail('A reseller package must be built from master-list products.');
 
   let name = input.name.trim();
   let unitPrice = input.unitPrice ?? NaN;
@@ -1456,6 +1472,7 @@ export function addSku(state: AppState, actor: Actor, input: NewSkuInput, now: s
     reorderLevel: 10,
     expiryDate: expiry,
     ...(parts ? { parts, masterSrp: roundMoney(unitPrice) } : {}),
+    ...(parts && input.resellerPackage ? { package: { inclusions: packageInclusions(parts, state.products), priceHkd: state.costing.settings.packageHkd } } : {}),
   };
   const row: CostingRow = {
     id: `cst-${String(next).padStart(3, '0')}`,
@@ -1651,6 +1668,28 @@ export function setSkuCategory(state: AppState, actor: Actor, itemIds: string[],
       items: state.items.map((item) => (changeIds.has(item.id) ? { ...item, category } : item)),
     },
     value: changing.length,
+  };
+}
+
+/** Marks a SKU as the reseller package (buying it makes the buyer a reseller), or takes the mark off. */
+export function setSkuPackage(state: AppState, actor: Actor, itemId: string, on: boolean, now: string): Outcome<boolean> {
+  const denied = costingGuard(actor);
+  if (denied) return denied;
+  const item = state.items.find((candidate) => candidate.id === itemId);
+  if (!item) return fail('SKU not found.');
+  if (on === Boolean(item.package)) return fail(on ? `${item.sku} is already a reseller package.` : `${item.sku} is not a reseller package.`);
+  if (on && !item.parts?.length) return fail('Only a SKU built from master-list products can be a reseller package.');
+  const row = state.costing.rows.find((candidate) => candidate.itemId === itemId);
+  const next: InventoryItem = { ...item };
+  if (on) next.package = { inclusions: packageInclusions(item.parts!, state.products), priceHkd: row?.pickupPriceHkd ?? state.costing.settings.packageHkd };
+  else delete next.package;
+  return {
+    ok: true,
+    state: {
+      ...logged(state, actor, now, on ? 'SKU set as reseller package' : 'SKU is no longer a reseller package', [item.sku], {}),
+      items: state.items.map((candidate) => (candidate.id === itemId ? next : candidate)),
+    },
+    value: on,
   };
 }
 

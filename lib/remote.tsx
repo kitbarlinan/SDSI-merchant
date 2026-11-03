@@ -203,6 +203,7 @@ export function RemoteProviders({ children }: { children: ReactNode }) {
       deleteProduct: (_a, id) => call('deleteProduct', { id }),
       importProducts: (_a, merchantId, rows) => call('importProducts', { merchantId, rows }),
       importSkus: (_a, rows, defaultCategory) => call('importSkus', { rows, defaultCategory }),
+      setSkuPackage: (_a, itemId, on) => call('setSkuPackage', { itemId, on }),
       setSkuCategory: (_a, itemIds, category) => call('setSkuCategory', { itemIds, category }),
     };
   }, [data, state, loaded, call]);

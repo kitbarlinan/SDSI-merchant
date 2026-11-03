@@ -210,6 +210,7 @@ function CostingEditor() {
     setSkuDisabled,
     setSkuSrp,
     setSkuCategory,
+    setSkuPackage,
     addSku,
   } = useAppData();
 
@@ -375,6 +376,12 @@ function CostingEditor() {
         },
       });
     }
+  }
+
+  async function togglePackage(item: InventoryItem, on: boolean) {
+    if (!user) return;
+    const result = await setSkuPackage(user, item.id, on);
+    setNotice(result.ok ? (on ? `${item.sku} is now a reseller package. Approve it and go live, then it shows on the Become a reseller page.` : `${item.sku} is no longer a reseller package.`) : result.error);
   }
 
   async function changeCategory(itemIds: string[], category: Category) {
@@ -587,6 +594,12 @@ function CostingEditor() {
                             <option key={option} value={option}>{option}</option>
                           ))}
                         </select>
+                        {item.parts?.length ? (
+                          <label className="mt-1 flex items-center gap-1.5 text-[11px] font-normal text-slate-600">
+                            <input type="checkbox" checked={Boolean(item.package)} aria-label={`Reseller package ${item.sku}`} onChange={(event) => void togglePackage(item, event.target.checked)} className="h-3.5 w-3.5 rounded border-slate-300 text-emerald-600" />
+                            Reseller package
+                          </label>
+                        ) : null}
                         {item.parts?.length ? <span className="mt-0.5 block text-[11px] font-normal leading-snug text-slate-500">{describeParts(item, products)}</span> : null}
                         {item.disabled ? <span className="ml-2 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-600">Disabled</span> : null}
                         <button

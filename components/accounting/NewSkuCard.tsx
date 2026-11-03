@@ -28,6 +28,7 @@ export function NewSkuCard({ onAdded }: { onAdded: (message: string) => void }) 
   const [sku, setSku] = useState('');
   const [name, setName] = useState('');
   const [category, setCategory] = useState<Category>(CATEGORIES[0]);
+  const [isPackage, setIsPackage] = useState(false);
   const [lines, setLines] = useState<Line[]>([blankLine()]);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,12 +40,13 @@ export function NewSkuCard({ onAdded }: { onAdded: (message: string) => void }) 
 
   async function submit() {
     if (!user) return;
-    const result = await addSku(user, { merchantId, sku, name, category, parts });
+    const result = await addSku(user, { merchantId, sku, name, category, parts, resellerPackage: isPackage });
     if (!result.ok) return setError(result.error);
     setError(null);
     onAdded(`${result.value.sku} added as draft (${formatCurrency(result.value.unitPrice)} SRP, ${pieces} pc${pieces === 1 ? '' : 's'}). Approve and go live a package to put it on sale. Receive stock in Inventory.`);
     setSku('');
     setName('');
+    setIsPackage(false);
     setLines([blankLine()]);
   }
 
@@ -142,6 +144,13 @@ export function NewSkuCard({ onAdded }: { onAdded: (message: string) => void }) 
         Net SRP <strong>{formatCurrency(srp)}</strong> · <strong>{pieces}</strong> piece{pieces === 1 ? '' : 's'} inside
         <span className="text-slate-500"> (free pieces cost nothing but still count as pieces). This is the master-list total; if the real SRP is lower, change it in the Costing table after adding.</span>
       </p>
+      <label className="mt-3 flex items-start gap-2 text-sm text-slate-700">
+        <input type="checkbox" checked={isPackage} onChange={(event) => setIsPackage(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-slate-300 text-emerald-600" />
+        <span>
+          This is a <strong>reseller package</strong>
+          <span className="block text-xs text-slate-500">Buying it makes the buyer a reseller (account, discounts, sponsor income). Set its pickup price in Costing, then approve and go live. It then shows on the Become a reseller page.</span>
+        </span>
+      </label>
       {error ? <p role="alert" className="mt-3 text-sm text-rose-600">{error}</p> : null}
       <button type="button" onClick={submit} disabled={!merchantId || !sku || parts.length === 0} className={`mt-3 bg-emerald-600 text-emerald-950 hover:bg-emerald-500 ${btn}`}>
         Add SKU as draft

@@ -50,6 +50,7 @@ export const ACTIONS: Record<string, Handler> = {
   deleteProduct: (st, ac, a, now) => engine.deleteProduct(st, ac, s(a.id), now),
   importProducts: (st, ac, a, now) => engine.importProducts(st, ac, s(a.merchantId), a.rows as never, now),
   importSkus: (st, ac, a, now) => engine.importSkus(st, ac, a.rows as never, now, a.defaultCategory as never),
+  setSkuPackage: (st, ac, a, now) => engine.setSkuPackage(st, ac, s(a.itemId), a.on === true, now),
   setSkuCategory: (st, ac, a, now) => engine.setSkuCategory(st, ac, a.itemIds as never, a.category as never, now),
 };
 
