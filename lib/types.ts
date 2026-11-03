@@ -93,6 +93,8 @@ export interface MasterProduct {
   srp: number;
   /** Optional, YYYY-MM-DD. */
   expiryDate?: string;
+  /** Optional: who the merchant buys this product from. Used to show which supplier sells best. */
+  supplier?: string;
   /** On hand. Stock in and out happens here, per product; SKUs and bundles draw from it. */
   stock: number;
   /** Stock per branch. It always adds up to `stock`. */

@@ -24,6 +24,7 @@ interface Form {
   name: string;
   srp: string;
   expiry: string;
+  supplier: string;
 }
 
 /** The inventory master list: every product per merchant with its INV code, SRP and optional expiry. SKUs are built from it. */
@@ -66,8 +67,8 @@ export function MasterListPanel({ merchantFilter }: { merchantFilter: string }) 
     setBusy(true);
     const srp = Number(form.srp);
     const result = editing
-      ? await updateProduct(user, editing, { code: form.code, name: form.name, srp, expiryDate: form.expiry || null })
-      : await addProduct(user, { merchantId: form.merchantId || (merchantFilter !== 'all' ? merchantFilter : ''), code: form.code, name: form.name, srp, expiryDate: form.expiry || undefined });
+      ? await updateProduct(user, editing, { code: form.code, name: form.name, srp, expiryDate: form.expiry || null, supplier: form.supplier || null })
+      : await addProduct(user, { merchantId: form.merchantId || (merchantFilter !== 'all' ? merchantFilter : ''), code: form.code, name: form.name, srp, expiryDate: form.expiry || undefined, supplier: form.supplier || undefined });
     setBusy(false);
     if (!result.ok) return setMessage({ tone: 'bad', text: result.error });
     const sold = editing ? usedIn(editing) : 0;
@@ -91,7 +92,7 @@ export function MasterListPanel({ merchantFilter }: { merchantFilter: string }) 
   function onSheet(cells: string[][], fileName: string) {
     const read = readColumns(cells, PRODUCT_COLUMNS);
     setMessage(null);
-    setSheet({ fileName, problem: read.problem, rows: read.rows.map((row) => ({ row: row.row, code: row.code, name: row.name, srp: row.srp, expiry: row.expiry })) });
+    setSheet({ fileName, problem: read.problem, rows: read.rows.map((row) => ({ row: row.row, code: row.code, name: row.name, srp: row.srp, expiry: row.expiry, supplier: row.supplier })) });
   }
 
   async function runImport() {
@@ -106,7 +107,7 @@ export function MasterListPanel({ merchantFilter }: { merchantFilter: string }) 
 
   const startEdit = (product: MasterProduct) => {
     setEditing(product.id);
-    setForm({ merchantId: product.merchantId, code: product.code, name: product.name, srp: String(product.srp), expiry: product.expiryDate ?? '' });
+    setForm({ merchantId: product.merchantId, code: product.code, name: product.name, srp: String(product.srp), expiry: product.expiryDate ?? '', supplier: product.supplier ?? '' });
     setMessage(null);
   };
 
@@ -153,6 +154,10 @@ export function MasterListPanel({ merchantFilter }: { merchantFilter: string }) 
                   Expiry (optional)
                   <input type="date" value={form.expiry} onChange={(event) => set('expiry', event.target.value)} className={`mt-1 ${inputClass(false)}`} />
                 </label>
+                <label className="text-xs font-medium text-slate-500 sm:col-span-2">
+                  Supplier (optional)
+                  <input value={form.supplier} onChange={(event) => set('supplier', event.target.value)} placeholder="Who the merchant buys this from" className={`mt-1 ${inputClass(false)}`} />
+                </label>
                 <div className="flex gap-2 sm:col-span-2">
                   <button type="button" disabled={busy || !form.code || !form.name || !form.srp} onClick={save} className={primary}>
                     {editing ? 'Save changes' : 'Add product'}
@@ -163,7 +168,7 @@ export function MasterListPanel({ merchantFilter }: { merchantFilter: string }) 
             ) : (
               <button
                 type="button"
-                onClick={() => setForm({ merchantId: merchantFilter !== 'all' ? merchantFilter : '', code: '', name: '', srp: '', expiry: '' })}
+                onClick={() => setForm({ merchantId: merchantFilter !== 'all' ? merchantFilter : '', code: '', name: '', srp: '', expiry: '', supplier: '' })}
                 className={`mt-3 ${primary}`}
               >
                 Add a product
@@ -173,7 +178,7 @@ export function MasterListPanel({ merchantFilter }: { merchantFilter: string }) 
 
           <Card
             title="Import from Excel"
-            subtitle="Pick the merchant, then upload a sheet with the columns INV CODE, PRODUCT NAME, SRP and EXPIRY (expiry is optional). A code already in the list is updated; an empty expiry keeps the saved one."
+            subtitle="Pick the merchant, then upload a sheet with the columns INV CODE, PRODUCT NAME, SRP, EXPIRY and SUPPLIER (expiry and supplier are optional). A code already in the list is updated; an empty expiry or supplier keeps the saved one."
           >
             <div className="mt-3 space-y-3">
               <label className="block text-xs font-medium text-slate-500">
@@ -189,7 +194,7 @@ export function MasterListPanel({ merchantFilter }: { merchantFilter: string }) 
                 <SheetPicker label="Choose Excel / CSV file" onRead={onSheet} onError={(text) => { setSheet(null); setMessage({ tone: 'bad', text }); }} />
                 <button
                   type="button"
-                  onClick={() => downloadCsv('master-list-template.csv', [['INV CODE', 'PRODUCT NAME', 'SRP', 'EXPIRY'], ['NC-01', 'Shantahl Premium Night Cream', '450', '2027-06-30'], ['KS-01', 'Shantahl Premium Kojic Acid Soap', '1250', '']])}
+                  onClick={() => downloadCsv('master-list-template.csv', [['INV CODE', 'PRODUCT NAME', 'SRP', 'EXPIRY', 'SUPPLIER'], ['NC-01', 'Shantahl Premium Night Cream', '450', '2027-06-30', 'Supplier A'], ['KS-01', 'Shantahl Premium Kojic Acid Soap', '1250', '', '']])}
                   className="text-xs font-medium text-emerald-700 underline"
                 >
                   Download template
@@ -247,6 +252,7 @@ export function MasterListPanel({ merchantFilter }: { merchantFilter: string }) 
                 <th className="px-3 py-2.5">Product</th>
                 {user.role !== 'merchant' ? <th className="px-3 py-2.5">Merchant</th> : null}
                 <th className="px-3 py-2.5 text-right">SRP</th>
+                <th className="px-3 py-2.5">Supplier</th>
                 <th className="px-3 py-2.5">Expiry</th>
                 <th className="px-3 py-2.5 text-right">In SKUs</th>
                 {canEdit ? <th className="px-5 py-2.5 text-right">Actions</th> : null}
@@ -255,7 +261,7 @@ export function MasterListPanel({ merchantFilter }: { merchantFilter: string }) 
             <tbody className="divide-y divide-slate-100">
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-8 text-center text-slate-500">
+                  <td colSpan={8} className="px-5 py-8 text-center text-slate-500">
                     {products.length === 0 ? 'No products yet. Add one above or import an Excel sheet.' : 'No product matches.'}
                   </td>
                 </tr>
@@ -268,6 +274,7 @@ export function MasterListPanel({ merchantFilter }: { merchantFilter: string }) 
                     <td className="px-3 py-3 font-medium text-slate-900">{product.name}</td>
                     {user.role !== 'merchant' ? <td className="px-3 py-3 text-slate-600">{merchantName(product.merchantId)}</td> : null}
                     <td className="px-3 py-3 text-right tabular-nums">{formatCurrency(product.srp)}</td>
+                    <td className="px-3 py-3 text-slate-600">{product.supplier || <span className="text-slate-400">—</span>}</td>
                     <td className="px-3 py-3 text-slate-600">
                       {product.expiryDate ? (
                         <span className="inline-flex items-center gap-2">

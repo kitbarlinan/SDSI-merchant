@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { AlertsPanel } from '@/components/dashboard/AlertsPanel';
 import { BarList } from '@/components/charts/BarList';
+import { SupplierCard } from '@/components/dashboard/SupplierCard';
 import { TrendChart } from '@/components/charts/TrendChart';
 import { StockBadge } from '@/components/inventory/StockBadge';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -294,6 +295,8 @@ function AdminDashboard({
         </Card>
       </div>
 
+      <SupplierCard sales={current} showMerchant={merchantFilter === 'all'} />
+
       <InventoryByMerchant merchants={merchants} items={items} reserved={reserved} />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 [&>*]:min-w-0">
@@ -384,6 +387,8 @@ function MerchantDashboard({
           />
         </Card>
       </div>
+
+      <SupplierCard sales={current} />
 
       <Card
         flush
