@@ -56,7 +56,7 @@ export function BecomeReseller() {
     { icon: 'check' as const, title: `${resellerDiscountPct}% off, every time`, text: 'Your discount applies to every reseller product you order after you join.' },
     { icon: 'wallet' as const, title: 'Earn when your team buys', text: `Share your code. You earn ${tierL1Pct}% on your direct referrals, ${tierL2Pct}% one level down and ${tierL3Pct}% on the third level.` },
     { icon: 'box' as const, title: 'A starter package with products', text: 'Your first package comes with products you can use or sell right away.' },
-    { icon: 'pos' as const, title: 'Pick up at your branch', text: 'Choose SDSI Sheung Wan or Central. Pay at the counter when you collect.' },
+    { icon: 'pos' as const, title: 'Pick up at your branch', text: 'Choose SDSI Sheung Wan or Infinite Naturals (Central). Pay at the counter when you collect.' },
     { icon: 'dashboard' as const, title: 'Your own dashboard', text: 'Track your orders and your tier income in one place.' },
     { icon: 'user' as const, title: 'Your own referral link', text: 'Every reseller gets a personal code and link to invite people under them.' },
   ];

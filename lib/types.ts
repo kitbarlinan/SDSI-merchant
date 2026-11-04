@@ -17,7 +17,7 @@ export type Role = 'admin' | 'cashier' | 'clerk' | 'merchant' | 'customer';
 /** The two counters. Central is the default for anything new. Each branch has its own cashier and its own shelf. */
 export const BRANCHES = [
   { id: 'shueng-wan', name: 'SDSI Sheung Wan', address: '7/F, Room 704, 60–66 Cheong Tai Building, Wing Lok Street, Sheung Wan, Hong Kong' },
-  { id: 'central', name: 'Central', address: '3/F, Shop 345, Worldwide Plaza, 19 Des Voeux Road Central, Hong Kong' },
+  { id: 'central', name: 'Infinite Naturals', address: 'Shop 203, 2/F, Worldwide Plaza, 19 Des Voeux Road Central, Hong Kong' },
 ] as const;
 export type BranchId = (typeof BRANCHES)[number]['id'];
 /** What forms and new records start on. */
