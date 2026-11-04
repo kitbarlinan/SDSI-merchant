@@ -289,7 +289,7 @@ function ReceiveForm() {
           </div>
         ) : null}
         {catalog.length === 0 ? (
-          <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800">This merchant has no products yet. Add them in Inventory → Master list first.</p>
+          <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800">{user.role === 'cashier' ? 'This merchant has no products yet. Ask the admin or the inventory clerk to add them.' : 'This merchant has no products yet. Add them in Inventory → Master list first.'}</p>
         ) : null}
         <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200">
           {shown.map((item) => (

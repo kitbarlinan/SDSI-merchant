@@ -93,7 +93,8 @@ export function InventoryView() {
     { key: 'stock' as const, label: 'Stock', count: 0 },
     { key: 'receiving' as const, label: 'Stock in / out', count: scopedReceipts.filter((r) => r.status === 'pending').length },
     { key: 'rts' as const, label: 'RTS', count: scopedOrders.filter((o) => o.status === 'rts' && !o.returnReceiptId).length },
-    { key: 'master' as const, label: 'Master list', count: 0 },
+    // The cashier only counts and moves stock; the master list (codes, SRP, suppliers) is not theirs to see.
+    ...(user.role === 'cashier' ? [] : [{ key: 'master' as const, label: 'Master list', count: 0 }]),
   ];
 
   return (
@@ -167,7 +168,7 @@ export function InventoryView() {
       </div>
 
       {tab === 'receiving' ? <ReceivingPanel merchantFilter={isMerchant ? 'all' : merchantId} /> : null}
-      {tab === 'master' ? <MasterListPanel merchantFilter={isMerchant ? 'all' : merchantId} /> : null}
+      {tab === 'master' && user.role !== 'cashier' ? <MasterListPanel merchantFilter={isMerchant ? 'all' : merchantId} /> : null}
       {tab === 'rts' ? <RtsPanel merchantFilter={isMerchant ? 'all' : merchantId} /> : null}
 
       {tab === 'stock' ? (
