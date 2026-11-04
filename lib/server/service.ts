@@ -125,7 +125,14 @@ export async function act(db: TxDb, deps: Deps, auth: AuthedUser | null, name: s
       if (actor.role !== 'admin') return { error: 'Only the admin can do this.' as const, status: 403 };
       return adminAction(q, before, name, args, me.id, deps, origin);
     }
-    if (name === 'finishSetup') return { done: true as const, after: before, invites: [] as User[], value: true };
+    // The person is in with a password of their own: from now on the admin no longer sees "send invitation again" for them.
+    if (name === 'finishSetup') {
+      const self = before.state.users.find((user) => user.id === me.id);
+      if (!self || self.joinedAt) return { done: true as const, after: before, invites: [] as User[], value: true };
+      const after: Loaded = { ...before, state: { ...before.state, users: before.state.users.map((user) => (user.id === self.id ? { ...user, joinedAt: deps.now() } : user)) } };
+      await saveDiff(q, before, after);
+      return { done: true as const, after, invites: [] as User[], value: true };
+    }
 
     const handler = ACTIONS[name];
     if (!handler) return { error: 'Unknown action.' as const, status: 400 };

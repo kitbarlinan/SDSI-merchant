@@ -55,6 +55,10 @@ export interface User {
   authId?: string;
   /** Sent to the admin instead of authId: does this person have a sign-in yet? */
   hasLogin?: boolean;
+  /** Set the first time this person is signed in with a password of their own. Server side. */
+  joinedAt?: string;
+  /** Sent to the admin instead of joinedAt: has this person actually signed in yet? */
+  joined?: boolean;
   /** Resellers: shared on the landing page link so new resellers land under them. */
   refCode?: string;
 }

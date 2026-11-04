@@ -116,6 +116,9 @@ export function RemoteProviders({ children }: { children: ReactNode }) {
     };
   }, [ready, load]);
 
+  // Once someone is in with their own password (not on an invitation link that still waits for one), tell the server, so the admin stops seeing "send invitation again" for them.
+  const joinedSent = useRef(false);
+
   const call = useCallback(
     async <T,>(action: string, args: Record<string, unknown>): Promise<ActionResult<T>> => {
       try {
@@ -140,6 +143,12 @@ export function RemoteProviders({ children }: { children: ReactNode }) {
   );
 
   const state = data?.state ?? EMPTY;
+
+  useEffect(() => {
+    if (!me || !session || needPassword || joinedSent.current) return;
+    joinedSent.current = true;
+    void call('finishSetup', {});
+  }, [me, session, needPassword, call]);
 
   const dataValue = useMemo<AppDataValue>(() => {
     return {

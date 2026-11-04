@@ -186,6 +186,12 @@ const A = (id: string) => ({ authId: 'auth-' + id });
   // reseller package flag through the server
   const pkgCashier = await act(db, deps, A('usr-cashier'), 'setSkuPackage', { itemId: 'itm-001', on: true }, 'https://x') as any;
   check('a cashier cannot mark a reseller package', !pkgCashier.ok);
+  // who has really signed in
+  const beforeJoin = await dataFor(db, A('usr-admin')) as any;
+  const joinedBefore = beforeJoin.data.state.users.find((u: any) => u.id === 'usr-cashier2').joined;
+  const fin = await act(db, deps, A('usr-cashier2'), 'finishSetup', {}, 'https://x') as any;
+  const afterJoin = await dataFor(db, A('usr-admin')) as any;
+  check('finishSetup marks the person as active, and only them', fin.ok && !joinedBefore && afterJoin.data.state.users.find((u: any) => u.id === 'usr-cashier2').joined === true && afterJoin.data.state.users.find((u: any) => u.id === smtpFail.value.id).joined === false, afterJoin.data.state.users.map((u: any) => [u.id, u.joined]));
   // deleting a login that never did anything (the "Testing" cashier)
   const smtpUserId = smtpFail.value.id as string;
   const delByCashier = await act(db, deps, A('usr-cashier'), 'deleteUser', { userId: smtpUserId }, 'https://x') as any;

@@ -79,7 +79,7 @@ export function ResellersView() {
                   <td className="py-2 pr-4 text-right tabular-nums">{row.orders}</td>
                   {user.role === 'admin' ? (
                     <td className="py-2 pr-4">
-                      <InviteActions userId={row.user.id} email={row.user.email} />
+                      {row.user.joined ? <span className="text-xs font-medium text-emerald-700">Active</span> : <InviteActions userId={row.user.id} email={row.user.email} />}
                       {row.user.email ? <span className="block text-xs text-slate-500">{row.user.email}</span> : null}
                     </td>
                   ) : null}
