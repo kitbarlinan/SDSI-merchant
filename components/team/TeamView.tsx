@@ -159,12 +159,12 @@ export function TeamView() {
                 </p>
               </div>
               <Badge tone={user.hasLogin ? 'green' : 'amber'}>{user.hasLogin ? 'Invitation sent' : 'Invitation not sent'}</Badge>
-              {user.email && !user.hasLogin ? (
+              {user.email ? (
                 <button type="button" disabled={busy} onClick={() => void getLink(user.id)} className="text-xs font-semibold text-emerald-700 hover:underline disabled:opacity-60">
                   Get invite link
                 </button>
               ) : null}
-              {user.email && !user.hasLogin ? (
+              {user.email ? (
                 <button type="button" disabled={busy} onClick={() => void resend(user.id, user.email)} className="text-xs font-semibold text-emerald-700 hover:underline disabled:opacity-60">
                   Send invitation again
                 </button>

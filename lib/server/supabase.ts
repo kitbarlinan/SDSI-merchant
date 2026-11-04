@@ -29,13 +29,18 @@ export const inviteByEmail: Deps['invite'] = async (email, name, redirectTo) => 
   const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, key, { auth: { persistSession: false, autoRefreshToken: false } });
   const { data, error } = await admin.auth.admin.inviteUserByEmail(email, { data: { name }, redirectTo });
   if (!error && data.user) return data.user.id;
-  // Already has a sign-in (invited before): reuse it.
+  // Already has a sign-in (accepted before): send a password-reset email instead, so "send again" always sends something.
   if (error && /already|registered|exists/i.test(error.message)) {
-    for (let page = 1; page <= 20; page += 1) {
+    let found: string | null = null;
+    for (let page = 1; page <= 20 && !found; page += 1) {
       const list = await admin.auth.admin.listUsers({ page, perPage: 200 });
-      const found = list.data.users.find((user) => user.email?.toLowerCase() === email.toLowerCase());
-      if (found) return found.id;
+      found = list.data.users.find((user) => user.email?.toLowerCase() === email.toLowerCase())?.id ?? null;
       if (list.data.users.length < 200) break;
+    }
+    if (found) {
+      const reset = await admin.auth.resetPasswordForEmail(email, { redirectTo });
+      if (reset.error) throw new Error(reset.error.message);
+      return found;
     }
   }
   throw new Error(error?.message ?? 'Invitation failed.');

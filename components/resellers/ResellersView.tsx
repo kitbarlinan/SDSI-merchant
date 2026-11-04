@@ -3,6 +3,7 @@
 import { useMemo } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card } from '@/components/ui/Card';
+import { InviteActions } from '@/components/team/InviteActions';
 import { StatCard } from '@/components/ui/StatCard';
 import { useAuth } from '@/lib/auth';
 import { formatCurrency, formatDate, formatHkd } from '@/lib/format';
@@ -50,6 +51,7 @@ export function ResellersView() {
                 <th className="py-2 pr-4 font-medium">Sponsor</th>
                 <th className="py-2 pr-4 font-medium">Package</th>
                 <th className="py-2 pr-4 text-right font-medium">Orders</th>
+                {user.role === 'admin' ? <th className="py-2 pr-4 font-medium">Login email</th> : null}
                 {showPeso ? (
                   <>
                     <th className="py-2 pr-4 text-right font-medium">Bought (SRP)</th>
@@ -75,6 +77,12 @@ export function ResellersView() {
                     )}
                   </td>
                   <td className="py-2 pr-4 text-right tabular-nums">{row.orders}</td>
+                  {user.role === 'admin' ? (
+                    <td className="py-2 pr-4">
+                      <InviteActions userId={row.user.id} email={row.user.email} />
+                      {row.user.email ? <span className="block text-xs text-slate-500">{row.user.email}</span> : null}
+                    </td>
+                  ) : null}
                   {showPeso ? (
                     <>
                       <td className="py-2 pr-4 text-right tabular-nums">{formatCurrency(row.purchasesPhp)}</td>
