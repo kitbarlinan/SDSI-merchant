@@ -1,6 +1,6 @@
 import { formatCurrency, formatHkd, roundMoney } from './format';
 import { stockAt } from './inventory';
-import { BRANCHES, DEFAULT_BRANCH, type BranchId } from './types';
+import { BRANCHES, LEGACY_BRANCH, type BranchId } from './types';
 import type {
   InventoryItem,
   Order,
@@ -56,7 +56,7 @@ export function reservedByItem(orders: Order[], branch?: BranchId): Map<string, 
   const reserved = new Map<string, number>();
   for (const order of orders) {
     if (!reservesStock(order)) continue;
-    if (branch && (order.branch ?? DEFAULT_BRANCH) !== branch) continue;
+    if (branch && (order.branch ?? LEGACY_BRANCH) !== branch) continue;
     for (const line of order.lines) {
       reserved.set(line.itemId, (reserved.get(line.itemId) ?? 0) + line.quantity);
     }
@@ -183,7 +183,7 @@ export function tierIncome(
 /** What a user sees: a cashier only the orders of their own branch, everyone else all (their own filter applies elsewhere). */
 export function ordersForUser(orders: Order[], user: { role: string; branchId?: BranchId } | null): Order[] {
   if (!user || user.role !== 'cashier') return orders;
-  return orders.filter((order) => (order.branch ?? DEFAULT_BRANCH) === (user.branchId ?? DEFAULT_BRANCH));
+  return orders.filter((order) => (order.branch ?? LEGACY_BRANCH) === (user.branchId ?? LEGACY_BRANCH));
 }
 
 /** Stock a buyer could get by switching branch: the other branch's shelf minus what it already holds for orders. */
@@ -195,7 +195,7 @@ export function otherBranchStock(
   const other = BRANCHES.find((candidate) => candidate.id !== branch);
   if (!other) return undefined;
   const held = orders
-    .filter((order) => reservesStock(order) && (order.branch ?? DEFAULT_BRANCH) === other.id)
+    .filter((order) => reservesStock(order) && (order.branch ?? LEGACY_BRANCH) === other.id)
     .reduce((sum, order) => sum + order.lines.filter((line) => line.itemId === item.id).reduce((n, line) => n + line.quantity, 0), 0);
   return { branch: other.name, quantity: Math.max(0, stockAt(item, other.id) - held) };
 }

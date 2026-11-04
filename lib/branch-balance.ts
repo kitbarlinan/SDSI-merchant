@@ -8,7 +8,7 @@
 import { roundMoney } from './format';
 import { orderTotal } from './orders';
 import { remittedOrderIds, walletOf } from './remittance';
-import { BRANCHES, DEFAULT_BRANCH, type BranchId, type Merchant, type Order, type Remittance } from './types';
+import { BRANCHES, LEGACY_BRANCH, type BranchId, type Merchant, type Order, type Remittance } from './types';
 
 export type BranchAmounts = Record<BranchId, number>;
 
@@ -19,7 +19,7 @@ const sumOf = (amounts: BranchAmounts): number => roundMoney(Object.values(amoun
 export function netByBranch(orders: Order[]): BranchAmounts {
   const result = zero();
   for (const order of orders) {
-    const branch = order.branch ?? DEFAULT_BRANCH;
+    const branch = order.branch ?? LEGACY_BRANCH;
     result[branch] = roundMoney(result[branch] + orderTotal(order));
   }
   return result;

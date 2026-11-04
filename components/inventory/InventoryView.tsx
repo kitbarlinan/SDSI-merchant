@@ -320,7 +320,7 @@ export function InventoryView() {
                         {formatNumber(item.stock)}
                         {branchSel === 'all' ? (
                           <span className="block text-xs font-normal text-slate-500">
-                            {BRANCHES.map((branch) => `${branch.id === DEFAULT_BRANCH ? 'Sheung Wan' : branch.name} ${formatNumber(stockAt(item, branch.id))}`).join(' · ')}
+                            {BRANCHES.map((branch) => `${branch.id === 'shueng-wan' ? 'Sheung Wan' : branch.name} ${formatNumber(stockAt(item, branch.id))}`).join(' · ')}
                           </span>
                         ) : null}
                       </td>

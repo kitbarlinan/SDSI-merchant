@@ -47,6 +47,8 @@ import {
   type SentEmail,
   BRANCHES,
   DEFAULT_BRANCH,
+  LEGACY_BRANCH,
+  branchName,
   type BranchId,
   type Role,
   type StockReceipt,
@@ -94,7 +96,7 @@ const branchOk = (value: unknown): value is BranchId => BRANCHES.some((branch) =
 /** The admin handles every order; a cashier only the orders of their own branch. */
 export function canHandle(actor: Actor, order: Pick<Order, 'branch'>): boolean {
   if (actor.role !== 'cashier') return true;
-  return (order.branch ?? DEFAULT_BRANCH) === (actor.branchId ?? DEFAULT_BRANCH);
+  return (order.branch ?? LEGACY_BRANCH) === (actor.branchId ?? LEGACY_BRANCH);
 }
 const wrongBranch = 'This order belongs to the other branch. Their cashier handles it.';
 
@@ -503,7 +505,7 @@ export function markPacked(
 
 /** Takes the goods of an order off the shelf. Fails if the shelf does not have enough. */
 function releaseStock(state: AppState, order: Order): { ok: true; items: InventoryItem[]; products: MasterProduct[] } | { ok: false; error: string } {
-  const branch = order.branch ?? DEFAULT_BRANCH;
+  const branch = order.branch ?? LEGACY_BRANCH;
   const need = demandOfLines(state.items, order.lines);
   const names = (id: string) => state.products.find((product) => product.id === id)?.name ?? state.items.find((item) => item.id === id)?.name ?? 'a product';
   for (const [unitId, qty] of need) {
@@ -724,6 +726,36 @@ export function createStockInReceipt(
   return { ok: true, state: { ...state, ...moved, receipts: [receipt, ...state.receipts] }, value: receipt };
 }
 
+/**
+ * Moves stock from one branch's shelf to the other, for example when a delivery was received under the wrong branch.
+ * Admin or inventory clerk only, and it posts at once. It is written as a stock out at the first branch and a stock in
+ * at the second, so the history shows both sides and each branch's count stays right.
+ */
+export function transferStock(
+  state: AppState,
+  actor: Actor,
+  input: {
+    merchantId: string;
+    from: BranchId;
+    to: BranchId;
+    receivedDate: string;
+    note: string;
+    lines: { productId?: string; itemId?: string; quantity: number }[];
+  },
+  now: string,
+): Outcome<StockReceipt> {
+  if (!canApprove(actor)) return fail('Only the admin or the inventory clerk can move stock between branches.');
+  if (!branchOk(input.from) || !branchOk(input.to)) return fail('Choose both branches.');
+  if (input.from === input.to) return fail('Choose two different branches.');
+  const why = input.note.trim() || 'branch correction';
+  const base = { merchantId: input.merchantId, receivedDate: input.receivedDate, lines: input.lines };
+  const out = createStockInReceipt(state, actor, { ...base, kind: 'stock-out', branch: input.from, note: `Transfer to ${branchName(input.to)}: ${why}` }, now);
+  if (!out.ok) return out;
+  const into = createStockInReceipt(out.state, actor, { ...base, kind: 'stock-in', branch: input.to, note: `Transfer from ${branchName(input.from)}: ${why}` }, now);
+  if (!into.ok) return into;
+  return { ok: true, state: into.state, value: out.value };
+}
+
 /** The courier brought an RTS order back. The cashier logs it; approval puts it back on the shelf. */
 export function createReturnReceipt(
   state: AppState,
@@ -755,7 +787,7 @@ export function createReturnReceipt(
     note: input.note.trim(),
     receivedBy: actor.id,
     createdAt: now,
-    branch: order.branch ?? DEFAULT_BRANCH,
+    branch: order.branch ?? LEGACY_BRANCH,
     status: 'pending',
   };
   return {
@@ -794,7 +826,7 @@ function decide(
   let products = state.products;
   if (status === 'approved') {
     const sign = receipt.kind === 'stock-out' ? -1 : 1;
-    const branch = receipt.branch ?? DEFAULT_BRANCH;
+    const branch = receipt.branch ?? LEGACY_BRANCH;
     const add = demandOfLines(state.items, receipt.lines);
     if (sign === -1) {
       const held = reservedUnits(state.orders, state.items, branch);
@@ -1795,7 +1827,7 @@ export function approveReversal(
   let items = state.items;
   let products = state.products;
   const give = (sign: 1 | -1) => {
-    ({ items, products } = moveUnits(state.items, state.products, order.branch ?? DEFAULT_BRANCH, demandOfLines(state.items, order.lines), sign));
+    ({ items, products } = moveUnits(state.items, state.products, order.branch ?? LEGACY_BRANCH, demandOfLines(state.items, order.lines), sign));
   };
 
   if (order.status === 'delivered') {
@@ -1817,7 +1849,7 @@ export function approveReversal(
     const taken = new Map<string, number>();
     for (const line of order.lines) {
       const item = state.items.find((candidate) => candidate.id === line.itemId);
-      if (!item || line.quantity > book.available(item, order.branch ?? DEFAULT_BRANCH, taken)) {
+      if (!item || line.quantity > book.available(item, order.branch ?? LEGACY_BRANCH, taken)) {
         return fail(`Not enough "${line.name}" available at this branch to reserve this order again.`);
       }
       for (const [unitId, qty] of demandOfLines(state.items, [line])) taken.set(unitId, (taken.get(unitId) ?? 0) + qty);

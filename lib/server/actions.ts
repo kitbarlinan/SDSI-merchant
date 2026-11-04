@@ -23,6 +23,7 @@ export const ACTIONS: Record<string, Handler> = {
   markDelivered: (st, ac, a, now) => engine.markDelivered(st, ac, s(a.orderId), a.paymentMethod as never, now),
   markRts: (st, ac, a, now) => engine.markRts(st, ac, s(a.orderId), s(a.reason), now),
   cancelOrder: (st, ac, a, now) => engine.cancelOrder(st, ac, s(a.orderId), s(a.reason), now),
+  transferStock: (st, ac, a, now) => engine.transferStock(st, ac, a.input as never, now),
   receiveStock: (st, ac, a, now) => engine.createStockInReceipt(st, ac, a.input as never, now),
   receiveReturn: (st, ac, a, now) => engine.createReturnReceipt(st, ac, a.input as never, now),
   approveReceipt: (st, ac, a, now) => engine.approveReceipt(st, ac, s(a.receiptId), now),

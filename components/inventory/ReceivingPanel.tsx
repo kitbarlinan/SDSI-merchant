@@ -149,10 +149,11 @@ export function ReceiptRow({ receipt, merchantFilter }: { receipt: StockReceipt;
 
 function ReceiveForm() {
   const { user } = useAuth();
-  const { items, products, merchants, receiveStock } = useAppData();
+  const { items, products, merchants, receiveStock, transferStock } = useAppData();
   const today = useToday() || MOCK_TODAY;
 
-  const [kind, setKind] = useState<'stock-in' | 'stock-out'>('stock-in');
+  const [kind, setKind] = useState<'stock-in' | 'stock-out' | 'transfer'>('stock-in');
+  const [toPick, setToPick] = useState<BranchId>('shueng-wan');
   const [merchantId, setMerchantId] = useState(merchants[0]?.id ?? '');
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [date, setDate] = useState('');
@@ -182,28 +183,25 @@ function ReceiveForm() {
   const branch: BranchId = user.role === 'cashier' ? (user.branchId ?? DEFAULT_BRANCH) : branchPick;
 
   const submit = async () => {
-    const result = await receiveStock(user, {
-      kind,
-      branch,
-      merchantId,
-      receivedDate: date || today,
-      note,
-      lines: catalog.map((item) => ({ ...(products.some((product) => product.id === item.id) ? { productId: item.id } : { itemId: item.id }), quantity: Number(quantities[item.id] || 0) })),
-    });
+    const lines = catalog.map((item) => ({ ...(products.some((product) => product.id === item.id) ? { productId: item.id } : { itemId: item.id }), quantity: Number(quantities[item.id] || 0) }));
+    const result =
+      kind === 'transfer'
+        ? await transferStock(user, { merchantId, from: branch, to: toPick, receivedDate: date || today, note, lines })
+        : await receiveStock(user, { kind, branch, merchantId, receivedDate: date || today, note, lines });
     if (!result.ok) {
       setError(result.error);
       setDone(null);
       return;
     }
     setError(null);
-    setDone(`${result.value.id} ${result.value.status === 'approved' ? 'posted to stock' : 'submitted for approval'}`);
+    setDone(kind === 'transfer' ? `Moved from ${branchName(branch)} to ${branchName(toPick)} (${result.value.id} and its matching stock in)` : `${result.value.id} ${result.value.status === 'approved' ? 'posted to stock' : 'submitted for approval'}`);
     setQuantities({});
     setNote('');
   };
 
   return (
     <Card
-      title={kind === 'stock-in' ? 'Stock in' : 'Stock out'}
+      title={kind === 'stock-in' ? 'Stock in' : kind === 'stock-out' ? 'Stock out' : 'Move stock between branches'}
       subtitle={
         user.role === 'cashier'
           ? 'Choose the product and the quantity. It changes the stock once the admin or inventory clerk approves.'
@@ -212,13 +210,18 @@ function ReceiveForm() {
     >
       <div className="mt-3 space-y-4">
         <div role="group" aria-label="Movement" className="inline-flex rounded-xl border border-slate-200 bg-white p-1">
-          {(['stock-in', 'stock-out'] as const).map((option) => (
+          {(user.role === 'cashier' ? (['stock-in', 'stock-out'] as const) : (['stock-in', 'stock-out', 'transfer'] as const)).map((option) => (
             <button
               key={option}
               type="button"
               aria-pressed={kind === option}
               onClick={() => {
                 setKind(option);
+                // The usual reason to move stock is a delivery counted under the wrong branch: start from Sheung Wan, to Central.
+                if (option === 'transfer') {
+                  setBranchPick('shueng-wan');
+                  setToPick('central');
+                }
                 setQuantities({});
                 setError(null);
                 setDone(null);
@@ -227,7 +230,7 @@ function ReceiveForm() {
                 kind === option ? 'bg-emerald-600 text-emerald-950' : 'text-slate-600 hover:bg-slate-100'
               }`}
             >
-              {option === 'stock-in' ? 'Stock in' : 'Stock out'}
+              {option === 'stock-in' ? 'Stock in' : option === 'stock-out' ? 'Stock out' : 'Move between branches'}
             </button>
           ))}
         </div>
@@ -256,10 +259,11 @@ function ReceiveForm() {
               <span className="mt-1 block rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900">{branchName(branch)}</span>
             </p>
           ) : (
-            <BranchSelect id="receiveBranch" label="Branch" value={branch} onChange={setBranchPick} />
+            <BranchSelect id="receiveBranch" label={kind === 'transfer' ? 'From branch' : 'Branch'} value={branch} onChange={setBranchPick} />
           )}
+          {kind === 'transfer' ? <BranchSelect id="receiveBranchTo" label="To branch" value={toPick} onChange={setToPick} /> : null}
           <label className="text-xs font-medium text-slate-500">
-            {kind === 'stock-in' ? 'Date received' : 'Date taken out'}
+            {kind === 'stock-in' ? 'Date received' : kind === 'stock-out' ? 'Date taken out' : 'Date moved'}
             <input
               type="date"
               value={date || today}
@@ -297,7 +301,7 @@ function ReceiveForm() {
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium text-slate-900">{item.name}</p>
                 <p className="text-xs text-slate-500">
-                  <span className="font-mono">{item.sku}</span> · on hand at {branchName(branch)} {formatNumber(stockAt(item, branch))}
+                  <span className="font-mono">{item.sku}</span> · on hand at {branchName(branch)} {formatNumber(stockAt(item, branch))}{kind === 'transfer' ? ` · at ${branchName(toPick)} ${formatNumber(stockAt(item, toPick))}` : ''}
                 </p>
               </div>
               <input
@@ -320,12 +324,12 @@ function ReceiveForm() {
         ) : null}
 
         <label className="block text-xs font-medium text-slate-500">
-          {kind === 'stock-out' ? 'Reason (required)' : 'Note (optional)'}
+          {kind === 'stock-out' ? 'Reason (required)' : kind === 'transfer' ? 'Note (optional)' : 'Note (optional)'}
           <input
             type="text"
             value={note}
             onChange={(event) => setNote(event.target.value)}
-            placeholder={kind === 'stock-out' ? 'e.g. damaged in the warehouse, expired, sample' : 'e.g. delivery receipt no., condition of boxes'}
+            placeholder={kind === 'stock-out' ? 'e.g. damaged in the warehouse, expired, sample' : kind === 'transfer' ? 'e.g. received under the wrong branch' : 'e.g. delivery receipt no., condition of boxes'}
             className={`mt-1 ${inputClass(false)}`}
           />
         </label>
@@ -337,7 +341,7 @@ function ReceiveForm() {
         ) : null}
         {done ? (
           <p role="status" className="rounded-lg bg-emerald-50 p-2 text-xs text-emerald-800">
-            {done} submitted for approval.
+            {done}.
           </p>
         ) : null}
 
@@ -347,7 +351,7 @@ function ReceiveForm() {
           className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-emerald-950 hover:bg-emerald-500"
         >
           <Icon name="box" className="h-4 w-4" />
-          {user.role === 'cashier' ? 'Submit for approval' : kind === 'stock-in' ? 'Add to stock' : 'Take out of stock'}
+          {user.role === 'cashier' ? 'Submit for approval' : kind === 'stock-in' ? 'Add to stock' : kind === 'stock-out' ? 'Take out of stock' : 'Move the stock'}
         </button>
       </div>
     </Card>

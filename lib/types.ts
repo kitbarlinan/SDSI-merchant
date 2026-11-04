@@ -14,16 +14,19 @@ export const normalizeCategory = (value: unknown): Category =>
 
 export type Role = 'admin' | 'cashier' | 'clerk' | 'merchant' | 'customer';
 
-/** The two counters. SDSI Sheung Wan is the default. Stock is shared; each branch has its own cashier. */
+/** The two counters. Central is the default for anything new. Each branch has its own cashier and its own shelf. */
 export const BRANCHES = [
   { id: 'shueng-wan', name: 'SDSI Sheung Wan', address: '7/F, Room 704, 60–66 Cheong Tai Building, Wing Lok Street, Sheung Wan, Hong Kong' },
   { id: 'central', name: 'Central', address: '3/F, Shop 345, Worldwide Plaza, 19 Des Voeux Road Central, Hong Kong' },
 ] as const;
 export type BranchId = (typeof BRANCHES)[number]['id'];
-export const DEFAULT_BRANCH: BranchId = 'shueng-wan';
-export const branchName = (id: BranchId | undefined): string => BRANCHES.find((branch) => branch.id === (id ?? DEFAULT_BRANCH))!.name;
+/** What forms and new records start on. */
+export const DEFAULT_BRANCH: BranchId = 'central';
+/** Records saved before branches existed (no branch on them) belong to Sheung Wan. This never changes, so old data keeps its meaning. */
+export const LEGACY_BRANCH: BranchId = 'shueng-wan';
+export const branchName = (id: BranchId | undefined): string => BRANCHES.find((branch) => branch.id === (id ?? LEGACY_BRANCH))!.name;
 
-export const branchAddress = (id: BranchId | undefined): string => BRANCHES.find((branch) => branch.id === (id ?? DEFAULT_BRANCH))!.address;
+export const branchAddress = (id: BranchId | undefined): string => BRANCHES.find((branch) => branch.id === (id ?? LEGACY_BRANCH))!.address;
 
 /** A message the app sent by email. In the demo nothing leaves the app: it is only listed. */
 export interface SentEmail {
@@ -229,7 +232,7 @@ export interface Order {
   tiers?: TierShare[];
   /** The reseller this order is for (counter sale of the package). */
   buyerId?: string;
-  /** Pickup / handling branch. Missing = SDSI Sheung Wan. */
+  /** Pickup / handling branch. Missing = SDSI Sheung Wan (records from before branches). */
   branch?: BranchId;
   /** Someone applying to become a reseller from the landing page. Their account is made when the cashier delivers. */
   applicant?: { name: string; email: string; mobile: string; sponsorId?: string };
@@ -288,7 +291,7 @@ export interface StockReceipt {
   note: string;
   receivedBy: string;
   createdAt: string;
-  /** The branch whose shelf the goods go to or come from. Missing = SDSI Sheung Wan. */
+  /** The branch whose shelf the goods go to or come from. Missing = SDSI Sheung Wan (records from before branches). */
   branch?: BranchId;
   status: ReceiptStatus;
   decidedBy?: string;

@@ -113,6 +113,10 @@ export interface AppDataValue {
       branch?: BranchId;
     },
   ) => Promise<ActionResult<StockReceipt>>;
+  transferStock: (
+    actor: Actor,
+    input: { merchantId: string; from: BranchId; to: BranchId; receivedDate: string; note: string; lines: { productId?: string; itemId?: string; quantity: number }[] },
+  ) => Promise<ActionResult<StockReceipt>>;
   receiveReturn: (
     actor: Actor,
     input: { orderId: string; receivedDate: string; note: string },
@@ -292,6 +296,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         run((s) => engine.cancelOrder(s, actor, orderId, reason, nowISO())),
       receiveStock: (actor, input) =>
         run((s) => engine.createStockInReceipt(s, actor, input, nowISO())),
+      transferStock: (actor, input) => run((s) => engine.transferStock(s, actor, input, nowISO())),
       receiveReturn: (actor, input) =>
         run((s) => engine.createReturnReceipt(s, actor, input, nowISO())),
       approveReceipt: (actor, receiptId) =>

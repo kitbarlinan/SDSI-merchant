@@ -1,6 +1,6 @@
 import { COVER_WARNING_DAYS, EXPIRY_WARNING_DAYS } from './brand';
 import { addDays, diffDays } from './period';
-import { DEFAULT_BRANCH, type BranchId, type InventoryItem, type SaleLine, type StockStatus } from './types';
+import { LEGACY_BRANCH, type BranchId, type InventoryItem, type SaleLine, type StockStatus } from './types';
 
 export function getStockStatus(item: InventoryItem): StockStatus {
   if (item.stock <= 0) return 'out';
@@ -10,7 +10,7 @@ export function getStockStatus(item: InventoryItem): StockStatus {
 
 /** Units of an item on one branch's shelf. */
 export const stockAt = (item: InventoryItem, branch: BranchId): number =>
-  item.branchStock?.[branch] ?? (branch === DEFAULT_BRANCH ? item.stock : 0);
+  item.branchStock?.[branch] ?? (branch === LEGACY_BRANCH ? item.stock : 0);
 
 /** Moves stock on one branch (sign +1 in, -1 out), keeping the total in step. */
 export function moveStock(items: InventoryItem[], branch: BranchId, qty: Map<string, number>, sign: 1 | -1): InventoryItem[] {

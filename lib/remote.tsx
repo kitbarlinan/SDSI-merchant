@@ -186,6 +186,7 @@ export function RemoteProviders({ children }: { children: ReactNode }) {
       markRts: (_a, orderId, reason) => call('markRts', { orderId, reason }),
       cancelOrder: (_a, orderId, reason) => call('cancelOrder', { orderId, reason }),
       receiveStock: (_a, input) => call('receiveStock', { input }),
+      transferStock: (_a, input) => call('transferStock', { input }),
       receiveReturn: (_a, input) => call('receiveReturn', { input }),
       approveReceipt: (_a, receiptId) => call('approveReceipt', { receiptId }),
       rejectReceipt: (_a, receiptId, reason) => call('rejectReceipt', { receiptId, reason }),

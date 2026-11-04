@@ -4,7 +4,7 @@
  * Server only.
  */
 import type { AppState } from '../engine';
-import { DEFAULT_BRANCH, type InventoryItem, type MasterProduct, type Merchant, type Order, type PackageSale, type User } from '../types';
+import { LEGACY_BRANCH, type InventoryItem, type MasterProduct, type Merchant, type Order, type PackageSale, type User } from '../types';
 
 export interface Scoped {
   state: AppState;
@@ -136,11 +136,11 @@ export function scopeFor(me: User, state: AppState, merchantList: Merchant[]): S
   }
 
   // Staff: the cashier works one branch, the clerk sees all orders but no payouts.
-  const branch = me.branchId ?? DEFAULT_BRANCH;
+  const branch = me.branchId ?? LEGACY_BRANCH;
   const orders =
     me.role === 'cashier'
       ? state.orders.flatMap((order) =>
-          (order.branch ?? DEFAULT_BRANCH) === branch ? [order] : reserving(order) ? [redactOrder(order)] : [],
+          (order.branch ?? LEGACY_BRANCH) === branch ? [order] : reserving(order) ? [redactOrder(order)] : [],
         )
       : state.orders;
   return {

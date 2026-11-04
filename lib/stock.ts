@@ -5,13 +5,13 @@
  *
  * A stock unit is therefore either a master-list product (id prd-…) or an older SKU (id itm-…).
  */
-import { BRANCHES, DEFAULT_BRANCH, type BranchId, type InventoryItem, type MasterProduct, type Order, type SaleLine } from './types';
+import { BRANCHES, LEGACY_BRANCH, type BranchId, type InventoryItem, type MasterProduct, type Order, type SaleLine } from './types';
 
 type Holder = { stock: number; branchStock?: Record<BranchId, number> };
 
 /** On hand on one branch's shelf. Missing split = everything is at SDSI Sheung Wan. */
 export const holderAt = (holder: Holder, branch: BranchId): number =>
-  holder.branchStock?.[branch] ?? (branch === DEFAULT_BRANCH ? holder.stock : 0);
+  holder.branchStock?.[branch] ?? (branch === LEGACY_BRANCH ? holder.stock : 0);
 
 export const emptySplit = (): Record<BranchId, number> => ({ 'shueng-wan': 0, central: 0 });
 
@@ -47,7 +47,7 @@ const reserving = (order: Order) => order.status === 'pending' || order.status =
 
 /** Stock units promised to pending / packed orders (still on the shelf). One branch, or all. */
 export function reservedUnits(orders: Order[], items: Pick<InventoryItem, 'id' | 'parts'>[], branch?: BranchId): Map<string, number> {
-  const reservedOrders = orders.filter((order) => reserving(order) && (!branch || (order.branch ?? DEFAULT_BRANCH) === branch));
+  const reservedOrders = orders.filter((order) => reserving(order) && (!branch || (order.branch ?? LEGACY_BRANCH) === branch));
   return demandOfLines(items, reservedOrders.flatMap((order) => order.lines));
 }
 
@@ -126,7 +126,7 @@ export function stockUnits(items: InventoryItem[], products: MasterProduct[]): I
       unitCost: 0,
       unitPrice: product.srp,
       stock: product.stock,
-      branchStock: product.branchStock ?? { ...emptySplit(), [DEFAULT_BRANCH]: product.stock },
+      branchStock: product.branchStock ?? { ...emptySplit(), [LEGACY_BRANCH]: product.stock },
       reorderLevel: product.reorderLevel,
       expiryDate: product.expiryDate ?? '2099-12-31',
     }),
@@ -172,6 +172,6 @@ export function recentUnitsByUnit(
 export const normalizeProduct = (product: MasterProduct): MasterProduct => ({
   ...product,
   stock: product.stock ?? 0,
-  branchStock: product.branchStock ?? { ...emptySplit(), [DEFAULT_BRANCH]: product.stock ?? 0 },
+  branchStock: product.branchStock ?? { ...emptySplit(), [LEGACY_BRANCH]: product.stock ?? 0 },
   reorderLevel: product.reorderLevel ?? 10,
 });
