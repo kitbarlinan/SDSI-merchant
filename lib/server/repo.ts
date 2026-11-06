@@ -3,7 +3,7 @@
  * Server only. Runs inside a transaction that holds an advisory lock, so two people acting at the
  * same moment are handled one after the other and never overwrite each other.
  */
-import { DEFAULT_COSTING_SETTINGS } from '../costing';
+import { DEFAULT_COSTING_SETTINGS, normalizeSettings } from '../costing';
 import type { AppState } from '../engine';
 import { normalizeCategory, type Merchant } from '../types';
 import { normalizeProduct } from '../stock';
@@ -58,7 +58,7 @@ export async function loadAll(q: Db): Promise<Loaded> {
   for (const row of rows) {
     const data = row.data as Rec;
     if (row.kind === 'merchant') merchants.push(data as unknown as Merchant);
-    else if (row.kind === 'costing') state.costing = data as unknown as AppState['costing'];
+    else if (row.kind === 'costing') { const c = data as unknown as AppState['costing']; state.costing = { ...c, settings: normalizeSettings(c.settings as unknown as Record<string, unknown>) }; }
     else if (row.kind === 'meta' && row.id === 'poSeq') state.poSeq = Number((data as { value?: number }).value ?? 0);
     else if (row.kind in LISTS) buckets.set(row.kind, [...(buckets.get(row.kind) ?? []), data]);
   }

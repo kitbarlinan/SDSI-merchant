@@ -23,7 +23,7 @@ export interface LedgerRow {
 
 const sumTiers = (tiers: TierShare[]) => roundMoney(tiers.reduce((total, tier) => total + tier.php, 0));
 
-export function resellerLedger(orders: Order[], sales: PackageSale[], items: InventoryItem[], markupPct: number): LedgerRow[] {
+export function resellerLedger(orders: Order[], sales: PackageSale[], items: InventoryItem[], markupPct: number, extraPct = 0): LedgerRow[] {
   const packageIds = new Set(items.filter((item) => item.package).map((item) => item.id));
   const rows: LedgerRow[] = sales.map((sale) => ({
     kind: 'Package',
@@ -60,7 +60,7 @@ export function resellerLedger(orders: Order[], sales: PackageSale[], items: Inv
       topUpPhp: topUp,
       discountPhp: discount,
       tiers,
-      netPhp: roundMoney(topUp - discount - sumTiers(tiers)),
+      netPhp: roundMoney(topUp - discount - sumTiers(tiers) - (srp * extraPct) / 100),
       counted: order.status === 'delivered',
     });
   }

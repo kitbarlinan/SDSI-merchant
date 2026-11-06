@@ -11,6 +11,7 @@ import {
   computeCosting,
   validatePickupPrice,
   validateSettings,
+  skuIncome,
   type CostingSettings,
 } from '@/lib/costing';
 import { formatCurrency, formatDateTime, formatHkd } from '@/lib/format';
@@ -212,6 +213,7 @@ function CostingEditor() {
     setSkuCategory,
     setSkuPackage,
     addSku,
+    orders,
   } = useAppData();
 
   const [prices, setPrices] = useState<Record<string, string>>({});
@@ -225,6 +227,25 @@ function CostingEditor() {
   const [srpError, setSrpError] = useState<string | null>(null);
 
   const saved = costing.settings;
+
+  // Income earned: every delivered unit of an approved or live SKU brings in its net top-up. Packages count in package sales.
+  const earned = useMemo(() => {
+    const byItem = new Map<string, { units: number; php: number }>();
+    const counted = new Set(costing.rows.filter((r) => r.status !== 'draft').map((r) => r.itemId));
+    const packageIds = new Set(items.filter((i) => i.package).map((i) => i.id));
+    let total = 0;
+    for (const order of orders) {
+      if (order.status !== 'delivered') continue;
+      for (const line of order.lines) {
+        if (!counted.has(line.itemId) || packageIds.has(line.itemId)) continue;
+        const php = skuIncome(line.total, costing.settings).netTopUpPhp;
+        const cur = byItem.get(line.itemId) ?? { units: 0, php: 0 };
+        byItem.set(line.itemId, { units: cur.units + line.quantity, php: cur.php + php });
+        total += php;
+      }
+    }
+    return { byItem, total: Math.round(total * 100) / 100 };
+  }, [orders, items, costing.rows, costing.settings]);
 
   // Settings as they would be after saving. A box that is empty or not valid keeps the saved value.
   const settingErrors: Partial<Record<keyof CostingSettings, string>> = {};
@@ -533,6 +554,9 @@ function CostingEditor() {
           ))}
           <span className="text-slate-400">Use the merchant filter or search above to pick which SKUs.</span>
         </div>
+        <div className="border-b border-slate-100 bg-emerald-50/60 px-5 py-2.5 text-xs text-emerald-800">
+          Net income from delivered orders (approved and live SKUs, packages excluded): <strong>{formatCurrency(earned.total)}</strong>
+        </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -549,6 +573,15 @@ function CostingEditor() {
                 <th className="px-3 py-3 text-right">CF ({preview.cfRatePct}%, min {preview.cfMinHkd})</th>
                 <th className="px-3 py-3 text-right">Net COD (HKD)</th>
                 <th className="px-3 py-3 text-right">Net remittance (PHP)</th>
+                <th className="px-3 py-3 text-right">SDSI gross top-up</th>
+                <th className="px-3 py-3 text-right">Reseller discount {preview.resellerDiscountPct}%</th>
+                <th className="px-3 py-3 text-right">Referrer {preview.referrerPct}%</th>
+                <th className="px-3 py-3 text-right">Tier (1-2) {preview.tierL1Pct + preview.tierL2Pct}%</th>
+                <th className="px-3 py-3 text-right">System fees {preview.systemFeePct}%</th>
+                <th className="px-3 py-3 text-right">Net top-up (income)</th>
+                <th className="px-3 py-3 text-right">Net %</th>
+                <th className="px-3 py-3 text-right">Delivered (pcs)</th>
+                <th className="px-3 py-3 text-right">Income earned (PHP)</th>
                 <th className="px-3 py-3 text-left">Status</th>
                 <th className="px-3 py-3" />
               </tr>
@@ -556,7 +589,7 @@ function CostingEditor() {
             <tbody className="divide-y divide-slate-100">
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={14} className="px-5 py-10 text-center text-slate-500">
+                  <td colSpan={23} className="px-5 py-10 text-center text-slate-500">
                     No costing rows match.
                   </td>
                 </tr>
@@ -704,6 +737,15 @@ function CostingEditor() {
                         {result.netCodHkd === null ? '—' : result.netCodHkd.toFixed(2)}
                       </td>
                       <td className="px-3 py-3 text-right">{formatCurrency(result.netRemittancePhp)}</td>
+                      <td className="px-3 py-3 text-right">{formatCurrency(skuIncome(result.netSrpPhp, preview).grossTopUpPhp)}</td>
+                      <td className="px-3 py-3 text-right">{formatCurrency(skuIncome(result.netSrpPhp, preview).resellerPhp)}</td>
+                      <td className="px-3 py-3 text-right">{formatCurrency(skuIncome(result.netSrpPhp, preview).referrerPhp)}</td>
+                      <td className="px-3 py-3 text-right">{formatCurrency(skuIncome(result.netSrpPhp, preview).tierPhp)}</td>
+                      <td className="px-3 py-3 text-right">{formatCurrency(skuIncome(result.netSrpPhp, preview).systemFeePhp)}</td>
+                      <td className="px-3 py-3 text-right font-semibold text-emerald-700">{formatCurrency(skuIncome(result.netSrpPhp, preview).netTopUpPhp)}</td>
+                      <td className="px-3 py-3 text-right">{skuIncome(result.netSrpPhp, preview).netPct}%</td>
+                      <td className="px-3 py-3 text-right">{item.package ? '—' : earned.byItem.get(item.id)?.units ?? 0}</td>
+                      <td className="px-3 py-3 text-right font-semibold">{item.package ? '—' : formatCurrency(earned.byItem.get(item.id)?.php ?? 0)}</td>
                       <td className="min-w-[10rem] px-3 py-3">
                         {(() => {
                           const dirty = changed || Boolean(error);

@@ -16,7 +16,7 @@ export function ResellersView() {
   const { users, items, orders, packageSales, costing, outbox } = useAppData();
   const { settings } = costing;
   const nameOf = (id: string) => users.find((candidate) => candidate.id === id)?.name ?? id;
-  const ledger = useMemo(() => resellerLedger(orders, packageSales, items, settings.markupPct), [orders, packageSales, items, settings.markupPct]);
+  const ledger = useMemo(() => resellerLedger(orders, packageSales, items, settings.markupPct, settings.referrerPct + settings.systemFeePct), [orders, packageSales, items, settings.markupPct, settings.referrerPct, settings.systemFeePct]);
   const summaries = useMemo(() => resellerSummaries(users, ledger, packageSales, orders), [users, ledger, packageSales, orders]);
   if (!user) return null;
   const showPeso = user.role === 'admin';
@@ -24,13 +24,13 @@ export function ResellersView() {
   const counted = ledger.filter((row) => row.counted);
   const sum = (pick: (row: (typeof ledger)[number]) => number) => counted.reduce((total, row) => total + pick(row), 0);
   const tierPaid = sum((row) => row.tiers.reduce((t, tier) => t + tier.php, 0));
-  const tierPct = settings.tierL1Pct + settings.tierL2Pct + settings.tierL3Pct;
+  const tierPct = settings.tierL1Pct + settings.tierL2Pct;
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Resellers"
-        description={`Buying the reseller package (${formatHkd(settings.packageHkd)}) makes someone a reseller. Every purchase after that has ${settings.resellerDiscountPct}% off, and ${tierPct}% of the SRP goes to the 3 sponsors above (L1 ${settings.tierL1Pct}% · L2 ${settings.tierL2Pct}% · L3 ${settings.tierL3Pct}%). All of it comes out of SDSI's ${settings.markupPct}% top-up.`}
+        description={`Buying the reseller package (${formatHkd(settings.packageHkd)}) makes someone a reseller. Every purchase after that has ${settings.resellerDiscountPct}% off, and ${tierPct}% of the SRP goes to the 2 sponsors above (L1 ${settings.tierL1Pct}% · L2 ${settings.tierL2Pct}%). All of it comes out of SDSI's ${settings.markupPct}% top-up.`}
       />
 
       {showPeso ? (

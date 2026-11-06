@@ -20,7 +20,7 @@ const STEPS = [
 /** Public page: no sign-in. Someone who wants to become a reseller picks a package and leaves their details. */
 export function BecomeReseller() {
   const { items, products, costing, orders, applyForReseller } = useAppData();
-  const { resellerDiscountPct, tierL1Pct, tierL2Pct, tierL3Pct } = costing.settings;
+  const { resellerDiscountPct, tierL1Pct, tierL2Pct } = costing.settings;
   const packages = useMemo(() => items.filter((item) => item.package && isSellable(item, costing)), [items, costing]);
 
   const [itemId, setItemId] = useState('');
@@ -54,7 +54,7 @@ export function BecomeReseller() {
 
   const benefits = [
     { icon: 'check' as const, title: `${resellerDiscountPct}% off, every time`, text: 'Your discount applies to every reseller product you order after you join.' },
-    { icon: 'wallet' as const, title: 'Earn when your team buys', text: `Share your code. You earn ${tierL1Pct}% on your direct referrals, ${tierL2Pct}% one level down and ${tierL3Pct}% on the third level.` },
+    { icon: 'wallet' as const, title: 'Earn when your team buys', text: `Share your code. You earn ${tierL1Pct}% on your direct referrals, ${tierL2Pct}% one level down .` },
     { icon: 'box' as const, title: 'A starter package with products', text: 'Your first package comes with products you can use or sell right away.' },
     { icon: 'pos' as const, title: 'Pick up at your branch', text: 'Choose SDSI Sheung Wan or Infinite Naturals (Central). Pay at the counter when you collect.' },
     { icon: 'dashboard' as const, title: 'Your own dashboard', text: 'Track your orders and your tier income in one place.' },

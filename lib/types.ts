@@ -373,7 +373,7 @@ export interface Remittance {
 
 /** Tier income of one upline reseller on one purchase. */
 export interface TierShare {
-  level: 1 | 2 | 3;
+  level: 1 | 2;
   userId: string;
   pct: number;
   php: number;
@@ -393,7 +393,7 @@ export interface PackageSale {
   grossPhp: number;
   resellerPhp: number;
   /** Tier income paid to the upline, level 1 to 3. */
-  tiers: { level: 1 | 2 | 3; userId: string; pct: number; php: number }[];
+  tiers: { level: 1 | 2; userId: string; pct: number; php: number }[];
   netPhp: number;
   paymentMethod?: PaymentMethod;
   /** The package order this sale came from. */

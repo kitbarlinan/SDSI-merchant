@@ -39,10 +39,13 @@ export interface CostingSettings {
   packageHkd: number;
   /** SRP basis of the package in PHP. The mark-up, the reseller share and the tier income are worked out on it. */
   packageSrpPhp: number;
-  /** Tier income of the upline, percent of the package SRP. Level 1, 2 and 3 above the buyer. Paid out of SDSI's top-up. */
+  /** Tier income of the upline, percent of the package SRP. Level 1 and 2 above the buyer. Paid out of SDSI's top-up. */
   tierL1Pct: number;
   tierL2Pct: number;
-  tierL3Pct: number;
+  /** Referrer share, percent of the SRP basis. Taken out of SDSI's top-up. */
+  referrerPct: number;
+  /** System fee, percent of the SRP basis. Taken out of SDSI's top-up. */
+  systemFeePct: number;
 }
 
 /** Values from the costing sheet. The exchange rate matches the sheet's 1,485 PHP = 182.36 HKD. */
@@ -53,12 +56,13 @@ export const DEFAULT_COSTING_SETTINGS: CostingSettings = {
   shippingFeeHkd: 34,
   cfRatePct: 2.5,
   cfMinHkd: 5,
-  resellerDiscountPct: 15,
+  resellerDiscountPct: 10,
   packageHkd: 350,
   packageSrpPhp: 990,
   tierL1Pct: 2,
   tierL2Pct: 2,
-  tierL3Pct: 1,
+  referrerPct: 5,
+  systemFeePct: 1,
 };
 
 /**
@@ -258,11 +262,11 @@ export function resellerCharges(
   };
 }
 
-/** Tier income of a purchase: each active sponsor above the buyer gets a percent of the SRP, levels 1 to 3. */
+/** Tier income of a purchase: each active sponsor above the buyer gets a percent of the SRP, levels 1 and 2. */
 export function orderTiers(settings: CostingSettings, upline: string[], srpPhp: number): TierShare[] {
-  const pcts = [settings.tierL1Pct, settings.tierL2Pct, settings.tierL3Pct];
-  return upline.slice(0, 3).map((userId, index) => ({
-    level: (index + 1) as 1 | 2 | 3,
+  const pcts = [settings.tierL1Pct, settings.tierL2Pct];
+  return upline.slice(0, 2).map((userId, index) => ({
+    level: (index + 1) as 1 | 2,
     userId,
     pct: pcts[index],
     php: roundMoney((srpPhp * pcts[index]) / 100),
@@ -330,7 +334,8 @@ const RANGES: Record<keyof CostingSettings, { label: string; min: number; max: n
   packageSrpPhp: { label: 'Package SRP', min: 0, max: 1_000_000 },
   tierL1Pct: { label: 'Tier level 1 %', min: 0, max: 50 },
   tierL2Pct: { label: 'Tier level 2 %', min: 0, max: 50 },
-  tierL3Pct: { label: 'Tier level 3 %', min: 0, max: 50 },
+  referrerPct: { label: 'Referrer %', min: 0, max: 50 },
+  systemFeePct: { label: 'System fee %', min: 0, max: 50 },
 };
 
 export const SETTING_LABEL: Record<keyof CostingSettings, string> = {
@@ -345,7 +350,8 @@ export const SETTING_LABEL: Record<keyof CostingSettings, string> = {
   packageSrpPhp: 'Reseller package SRP basis (PHP)',
   tierL1Pct: 'Tier income level 1 (% of package SRP)',
   tierL2Pct: 'Tier income level 2 (% of package SRP)',
-  tierL3Pct: 'Tier income level 3 (% of package SRP)',
+  referrerPct: 'Referrer (% of SRP basis)',
+  systemFeePct: 'System fees (% of SRP basis)',
 };
 
 export function validateSettings(patch: Partial<CostingSettings>): string | null {
@@ -382,7 +388,9 @@ export interface PackageBreakdown {
   grossPhp: number;
   resellerPhp: number;
   tierPoolPhp: number;
-  tiers: { level: 1 | 2 | 3; userId: string; pct: number; php: number }[];
+  referrerPhp: number;
+  systemFeePhp: number;
+  tiers: { level: 1 | 2; userId: string; pct: number; php: number }[];
   /** SDSI's net: gross top-up, less the reseller share and the tier income actually paid. */
   netPhp: number;
 }
@@ -394,31 +402,35 @@ export interface PackageBreakdown {
  */
 export function packageBreakdown(settings: CostingSettings, upline: string[]): PackageBreakdown {
   const srp = settings.packageSrpPhp;
-  const pcts = [settings.tierL1Pct, settings.tierL2Pct, settings.tierL3Pct];
-  const tiers = upline.slice(0, 3).map((userId, index) => ({
-    level: (index + 1) as 1 | 2 | 3,
+  const pcts = [settings.tierL1Pct, settings.tierL2Pct];
+  const tiers = upline.slice(0, 2).map((userId, index) => ({
+    level: (index + 1) as 1 | 2,
     userId,
     pct: pcts[index],
     php: roundMoney((srp * pcts[index]) / 100),
   }));
   const grossPhp = roundMoney((srp * settings.markupPct) / 100);
   const resellerPhp = roundMoney((srp * settings.resellerDiscountPct) / 100);
+  const referrerPhp = roundMoney((srp * settings.referrerPct) / 100);
+  const systemFeePhp = roundMoney((srp * settings.systemFeePct) / 100);
   const paid = roundMoney(tiers.reduce((sum, tier) => sum + tier.php, 0));
   return {
     grossPhp,
     resellerPhp,
     tierPoolPhp: roundMoney((srp * pcts.reduce((a, b) => a + b, 0)) / 100),
+    referrerPhp,
+    systemFeePhp,
     tiers,
-    netPhp: roundMoney(grossPhp - resellerPhp - paid),
+    netPhp: roundMoney(grossPhp - resellerPhp - referrerPhp - systemFeePhp - paid),
   };
 }
 
-/** The active resellers above a buyer, nearest first, up to 3 levels. A sponsor who is not active yet is skipped. */
+/** The active resellers above a buyer, nearest first, up to 2 levels. A sponsor who is not active yet is skipped. */
 export function uplineOf(users: User[], activeIds: Set<string>, buyerId: string): string[] {
   const chain: string[] = [];
   const seen = new Set<string>([buyerId]);
   let current = users.find((user) => user.id === buyerId)?.sponsorId;
-  while (current && !seen.has(current) && chain.length < 3) {
+  while (current && !seen.has(current) && chain.length < 2) {
     seen.add(current);
     if (activeIds.has(current)) chain.push(current);
     current = users.find((user) => user.id === current)?.sponsorId;
@@ -452,4 +464,48 @@ export function makePackageSale(
     tiers: split.tiers,
     netPhp: split.netPhp,
   };
+}
+
+/** Income sheet of one SKU, worked out on its Net SRP (990 -> top-up 495, reseller 99, referrer 49.5, tier 39.6, fees 9.9, net 297). */
+export interface SkuIncome {
+  grossTopUpPhp: number;
+  resellerPhp: number;
+  referrerPhp: number;
+  tierPhp: number;
+  systemFeePhp: number;
+  deductionsPhp: number;
+  netTopUpPhp: number;
+  /** Net top-up as a percent of the Net SRP. */
+  netPct: number;
+}
+
+export function skuIncome(netSrpPhp: number, settings: CostingSettings): SkuIncome {
+  const part = (pct: number) => roundMoney((netSrpPhp * pct) / 100);
+  const grossTopUpPhp = part(settings.markupPct);
+  const resellerPhp = part(settings.resellerDiscountPct);
+  const referrerPhp = part(settings.referrerPct);
+  const tierPhp = part(settings.tierL1Pct + settings.tierL2Pct);
+  const systemFeePhp = part(settings.systemFeePct);
+  const deductionsPhp = roundMoney(resellerPhp + referrerPhp + tierPhp + systemFeePhp);
+  const netTopUpPhp = roundMoney(grossTopUpPhp - deductionsPhp);
+  return {
+    grossTopUpPhp,
+    resellerPhp,
+    referrerPhp,
+    tierPhp,
+    systemFeePhp,
+    deductionsPhp,
+    netTopUpPhp,
+    netPct: netSrpPhp > 0 ? roundMoney((netTopUpPhp / netSrpPhp) * 100) : 0,
+  };
+}
+
+/** Settings from storage may lack newer fields (or hold removed ones): fill from the defaults. */
+export function normalizeSettings(saved: Record<string, unknown> | undefined): CostingSettings {
+  const next = { ...DEFAULT_COSTING_SETTINGS } as unknown as Record<string, number>;
+  for (const key of Object.keys(DEFAULT_COSTING_SETTINGS)) {
+    const value = saved?.[key];
+    if (typeof value === 'number' && Number.isFinite(value)) next[key] = value;
+  }
+  return next as unknown as CostingSettings;
 }

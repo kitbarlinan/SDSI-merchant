@@ -13,15 +13,17 @@ export function PackageIncomeCard() {
   const { costing, packageSales, orders, items } = useAppData();
   const { settings } = costing;
   const srp = settings.packageSrpPhp;
-  const sample = packageBreakdown(settings, ['sample-1', 'sample-2', 'sample-3']);
-  const counted = resellerLedger(orders, packageSales, items, settings.markupPct).filter((row) => row.counted);
+  const sample = packageBreakdown(settings, ['sample-1', 'sample-2']);
+  const counted = resellerLedger(orders, packageSales, items, settings.markupPct, settings.referrerPct + settings.systemFeePct).filter((row) => row.counted);
   const sum = (pick: (row: (typeof counted)[number]) => number) => counted.reduce((total, row) => total + pick(row), 0);
   const srpTotal = sum((row) => row.srpPhp);
   const tierPaid = sum((row) => row.tiers.reduce((t, tier) => t + tier.php, 0));
   const rows: [string, number, number][] = [
     ['Top-up (gross)', sample.grossPhp, srp],
     [`Reseller ${settings.resellerDiscountPct}%`, -sample.resellerPhp, srp],
-    [`Tier income ${settings.tierL1Pct + settings.tierL2Pct + settings.tierL3Pct}% (L1 ${settings.tierL1Pct} / L2 ${settings.tierL2Pct} / L3 ${settings.tierL3Pct})`, -sample.tierPoolPhp, srp],
+    [`Referrer ${settings.referrerPct}%`, -sample.referrerPhp, srp],
+    [`System fees ${settings.systemFeePct}%`, -sample.systemFeePhp, srp],
+    [`Tier income ${settings.tierL1Pct + settings.tierL2Pct}% (L1 ${settings.tierL1Pct} / L2 ${settings.tierL2Pct})`, -sample.tierPoolPhp, srp],
     ['SDSI net', sample.netPhp, srp],
   ];
   const actual: [string, number][] = [
