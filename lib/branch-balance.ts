@@ -6,9 +6,9 @@
  * checked against the single payout: Sheung Wan + Central = the merchant's total.
  */
 import { roundMoney } from './format';
-import { orderTotal } from './orders';
-import { remittedOrderIds, walletOf } from './remittance';
-import { BRANCHES, LEGACY_BRANCH, type BranchId, type Merchant, type Order, type Remittance } from './types';
+import { orderCurrency, orderPay } from './orders';
+import { remittanceCurrency, remittedOrderIds, walletOf } from './remittance';
+import { BRANCHES, LEGACY_BRANCH, type BranchId, type Currency, type Merchant, type Order, type Remittance } from './types';
 
 export type BranchAmounts = Record<BranchId, number>;
 
@@ -20,7 +20,7 @@ export function netByBranch(orders: Order[]): BranchAmounts {
   const result = zero();
   for (const order of orders) {
     const branch = order.branch ?? LEGACY_BRANCH;
-    result[branch] = roundMoney(result[branch] + orderTotal(order));
+    result[branch] = roundMoney(result[branch] + orderPay(order));
   }
   return result;
 }
@@ -54,7 +54,10 @@ export interface MerchantBalance {
   checks: { label: string; ok: boolean; detail: string }[];
 }
 
-export function merchantBalances(merchants: Merchant[], orders: Order[], remittances: Remittance[]): MerchantBalance[] {
+/** In one money: HKD (orders delivered with a rate) or PHP (older orders). */
+export function merchantBalances(merchants: Merchant[], allOrders: Order[], allRemittances: Remittance[], currency: Currency = 'PHP'): MerchantBalance[] {
+  const orders = allOrders.filter((order) => orderCurrency(order) === currency);
+  const remittances = allRemittances.filter((remittance) => remittanceCurrency(remittance) === currency);
   const taken = remittedOrderIds(remittances);
   return merchants.map((merchant) => {
     const delivered = orders.filter((order) => order.merchantId === merchant.id && order.status === 'delivered');
@@ -63,7 +66,7 @@ export function merchantBalances(merchants: Merchant[], orders: Order[], remitta
     const earnedByBranch = netByBranch(delivered);
     const closedByBranch = netByBranch(closedOrders);
     const openByBranch = netByBranch(openOrders);
-    const wallet = walletOf(merchant.id, orders, remittances);
+    const wallet = walletOf(merchant.id, orders, remittances, currency);
     const mine = remittances.filter((remittance) => remittance.merchantId === merchant.id);
     const remittanceNet = roundMoney(mine.reduce((total, remittance) => total + remittance.netPayable, 0));
     const splitTotal = roundMoney(mine.reduce((total, remittance) => total + sumOf(remittanceByBranch(remittance, orders)), 0));

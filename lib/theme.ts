@@ -10,6 +10,7 @@ export const PAYMENT_COLORS: Record<PaymentMethod, string> = {
   Cash: '#64748b',
   'Bank Transfer': '#7c3aed',
   'Debit / Credit Card': '#db2777',
+  Wallet: '#0d9488',
 };
 
 export const TERMS_COLORS: Record<OrderTerms, string> = {

@@ -98,7 +98,7 @@ export function scopeFor(me: User, state: AppState, merchantList: Merchant[]): S
   // A reseller sees only the merchants they brought in, with the numbers worked out here (they cannot see those orders).
   const referrals = (state.costing.referrals ?? [])
     .filter((link) => link.userId === me.id)
-    .map((link) => ({ ...link, stats: referralStats(state.orders, link.merchantId, state.costing.settings.referrerPct) }));
+    .map((link) => ({ ...link, stats: referralStats(state.orders, link.merchantId, state.costing.settings.referrerPct, state.costing.settings.fxPhpPerHkd) }));
   const costing = { ...state.costing, settings: { ...state.costing.settings, markupPct: 0 }, log: [], referrals };
 
   const earnings = earningsOf(me, state);

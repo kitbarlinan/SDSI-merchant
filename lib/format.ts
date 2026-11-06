@@ -74,3 +74,7 @@ export function nowISO(): string {
 
 const hkdFormatter = new Intl.NumberFormat('en-HK', { style: 'currency', currency: 'HKD' });
 export const formatHkd = (value: number): string => hkdFormatter.format(value);
+
+/** Amount in the given money. */
+export const formatMoney = (value: number, currency: 'PHP' | 'HKD' = 'PHP'): string =>
+  currency === 'HKD' ? hkdFormatter.format(value) : formatCurrency(value);

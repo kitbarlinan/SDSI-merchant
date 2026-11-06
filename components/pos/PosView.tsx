@@ -186,7 +186,7 @@ export function PosView() {
               onChange={(event) => setMethod(event.target.value as PaymentMethod)}
               className={inputClass(false)}
             >
-              {PAYMENT_METHODS.map((option) => (
+              {PAYMENT_METHODS.filter((option) => option !== 'Wallet').map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>

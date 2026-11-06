@@ -125,7 +125,7 @@ function ResellerProgramCard({ onChanged }: { onChanged: (message: string) => vo
   return (
     <Card
       title="Reseller program"
-      subtitle={`Products in the program give active resellers ${resellerDiscountPct}% off (a percent of the SRP, shown in HKD). The discount is charged to the merchant (TheYellowBasket's top-up stays as is). Turn a merchant on, then switch single SKUs on or off. Package price and tier income % are in the settings above.`}
+      subtitle={`Products in the program give active resellers ${resellerDiscountPct}% off (a percent of the pickup price in HKD). The discount is charged to the merchant (TheYellowBasket's top-up stays as is). Turn a merchant on, then switch single SKUs on or off. Package price and tier income % are in the settings above.`}
     >
       <ul className="mt-3 divide-y divide-slate-100 text-sm">
         {merchants.map((merchant) => {
@@ -482,7 +482,7 @@ function CostingEditor() {
           })}
         </div>
         <p className="mt-3 text-xs text-slate-500">
-          The exchange rate is the one used to get 182.36 HKD from 1,485 PHP in the sheet. Update it
+          The exchange rate is the one used to get the basis in HKD from 1,485 PHP in the sheet (1,485 ÷ 8.0388 = 184.73). Update it
           whenever the rate changes. The collection fee is (pickup price + SF) × CF rate, rounded to a
           whole HKD, never below the minimum.
         </p>
@@ -572,13 +572,15 @@ function CostingEditor() {
                 <th className="px-3 py-3 text-right">SF</th>
                 <th className="px-3 py-3 text-right">CF ({preview.cfRatePct}%, min {preview.cfMinHkd})</th>
                 <th className="px-3 py-3 text-right">Net COD (HKD)</th>
-                <th className="px-3 py-3 text-right">Net remittance (PHP)</th>
+                <th className="px-3 py-3 text-right">Gross remittance to merchant (PHP)</th>
                 <th className="px-3 py-3 text-right">TheYellowBasket top-up</th>
-                <th className="px-3 py-3 text-right">Reseller discount {preview.resellerDiscountPct}%</th>
+                <th className="px-3 py-3 text-right text-rose-600">Reseller discount {preview.resellerDiscountPct}% of pickup (HKD)</th>
+                <th className="px-3 py-3 text-right text-rose-600">Reseller discount conversion (PHP)</th>
                 <th className="px-3 py-3 text-right">Referrer {preview.referrerPct}%</th>
                 <th className="px-3 py-3 text-right">Tier (1-2) {preview.tierL1Pct + preview.tierL2Pct}%</th>
                 <th className="px-3 py-3 text-right">System fees {preview.systemFeePct}%</th>
                 <th className="px-3 py-3 text-right">Net remittance to merchant (PHP)</th>
+                <th className="px-3 py-3 text-right text-rose-600">Payout (HKD)</th>
                 <th className="px-3 py-3 text-right">Delivered (pcs)</th>
                 <th className="px-3 py-3 text-right">TheYellowBasket income (PHP)</th>
                 <th className="px-3 py-3 text-left">Status</th>
@@ -588,7 +590,7 @@ function CostingEditor() {
             <tbody className="divide-y divide-slate-100">
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={22} className="px-5 py-10 text-center text-slate-500">
+                  <td colSpan={24} className="px-5 py-10 text-center text-slate-500">
                     No costing rows match.
                   </td>
                 </tr>
@@ -736,12 +738,14 @@ function CostingEditor() {
                         {result.netCodHkd === null ? '—' : result.netCodHkd.toFixed(2)}
                       </td>
                       <td className="px-3 py-3 text-right">{formatCurrency(result.netRemittancePhp)}</td>
-                      <td className="px-3 py-3 text-right">{formatCurrency(skuIncome(result.netSrpPhp, preview).grossTopUpPhp)}</td>
-                      <td className="px-3 py-3 text-right">{formatCurrency(skuIncome(result.netSrpPhp, preview).resellerPhp)}</td>
-                      <td className="px-3 py-3 text-right">{formatCurrency(skuIncome(result.netSrpPhp, preview).referrerPhp)}</td>
-                      <td className="px-3 py-3 text-right">{formatCurrency(skuIncome(result.netSrpPhp, preview).tierPhp)}</td>
-                      <td className="px-3 py-3 text-right">{formatCurrency(skuIncome(result.netSrpPhp, preview).systemFeePhp)}</td>
-                      <td className="px-3 py-3 text-right font-semibold text-emerald-700">{formatCurrency(skuIncome(result.netSrpPhp, preview).merchantNetPhp)}</td>
+                      <td className="px-3 py-3 text-right">{formatCurrency(skuIncome(result.netSrpPhp, preview, result.pickupPriceHkd).grossTopUpPhp)}</td>
+                      <td className="px-3 py-3 text-right">{skuIncome(result.netSrpPhp, preview, result.pickupPriceHkd).resellerHkd.toFixed(2)}</td>
+                      <td className="px-3 py-3 text-right">{formatCurrency(skuIncome(result.netSrpPhp, preview, result.pickupPriceHkd).resellerPhp)}</td>
+                      <td className="px-3 py-3 text-right">{formatCurrency(skuIncome(result.netSrpPhp, preview, result.pickupPriceHkd).referrerPhp)}</td>
+                      <td className="px-3 py-3 text-right">{formatCurrency(skuIncome(result.netSrpPhp, preview, result.pickupPriceHkd).tierPhp)}</td>
+                      <td className="px-3 py-3 text-right">{formatCurrency(skuIncome(result.netSrpPhp, preview, result.pickupPriceHkd).systemFeePhp)}</td>
+                      <td className="px-3 py-3 text-right font-semibold text-emerald-700">{formatCurrency(skuIncome(result.netSrpPhp, preview, result.pickupPriceHkd).merchantNetPhp)}</td>
+                      <td className="px-3 py-3 text-right font-semibold text-rose-600">{formatHkd(skuIncome(result.netSrpPhp, preview, result.pickupPriceHkd).payoutHkd)}</td>
                       <td className="px-3 py-3 text-right">{item.package ? '—' : earned.byItem.get(item.id)?.units ?? 0}</td>
                       <td className="px-3 py-3 text-right font-semibold">{item.package ? '—' : formatCurrency(earned.byItem.get(item.id)?.php ?? 0)}</td>
                       <td className="min-w-[10rem] px-3 py-3">

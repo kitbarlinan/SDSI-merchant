@@ -5,7 +5,7 @@
  * NOTE: the permission checks here only protect the demo. Once this moves to Supabase the same
  * rules must be enforced on the server (row level security / server actions).
  */
-import { roundMoney } from './format';
+import { formatHkd, roundMoney } from './format';
 import {
   computeCosting,
   orderCharges,
@@ -29,6 +29,7 @@ import {
 import { provisionReseller, refCodeOf, validateCredentials } from './accounts';
 import { demandOfLines, emptySplit, expiryOf, holderAt, makeStockBook, moveUnits, reservedUnits } from './stock';
 import { orderTotal } from './orders';
+import { walletHkd } from './wallet';
 import { buildWeekRemittances, remittedOrderIds, weekEndOf, weekStartOf } from './remittance';
 import {
   PAYMENT_METHODS,
@@ -252,6 +253,8 @@ export interface ResellerOrderInput {
   lines: { itemId: string; quantity: number }[];
   /** Which branch handles the pickup. Default SDSI Sheung Wan. */
   branch?: BranchId;
+  /** Pay from the reseller's wallet (HKD). Refused when the balance is not enough. */
+  payFromWallet?: boolean;
 }
 
 export const isActiveReseller = (state: AppState, userId: string): boolean =>
@@ -404,6 +407,13 @@ export function placeResellerOrder(
     if (tiers.length > 0) order.tiers = tiers;
     created.push(order);
   }
+  if (input.payFromWallet) {
+    const total = roundMoney(created.reduce((sum, order) => sum + (order.amountHkd ?? 0), 0));
+    const wallet = walletHkd(actor.id, state.orders, state.packageSales, state.costing);
+    if (!active) return fail('The package cannot be paid from a wallet.');
+    if (wallet.availableHkd < total) return fail(`Your wallet has ${formatHkd(Math.max(0, wallet.availableHkd))} available, this order is ${formatHkd(total)}. Choose another way to pay.`);
+    for (const order of created) order.payFromWallet = true;
+  }
   return { ok: true, state: { ...state, poSeq, orders: [...created.reverse(), ...state.orders] }, value: created };
 }
 
@@ -430,6 +440,7 @@ export function checkoutWalkIn(
 ): Outcome<Order[]> {
   if (!isStaff(actor)) return fail('Only the cashier or admin can run the counter.');
   if (!PAYMENT_METHODS.includes(input.paymentMethod)) return fail('Choose a payment method.');
+  if (input.paymentMethod === 'Wallet') return fail('The wallet is for reseller orders: it is charged when the cashier delivers the order.');
   const packageLines = input.lines.filter((line) => isPackageLine(state, line.itemId));
   let packageBuyer: User | undefined;
   let newUser: User | undefined;
@@ -492,6 +503,7 @@ export function checkoutWalkIn(
     deliveredAt: now,
     handledBy: actor.id,
     paymentMethod: input.paymentMethod,
+    fxRate: state.costing.settings.fxPhpPerHkd,
     topUpRate: state.costing.settings.markupPct,
     pickupHkd: charges.pickupHkd,
     amountHkd: charges.pickupHkd,
@@ -621,11 +633,19 @@ export function markDelivered(
     base = { ...state, items: released.items, products: released.products };
   }
 
+  if (paymentMethod === 'Wallet') {
+    const buyerId = order.buyerId ?? '';
+    if (order.source !== 'reseller' || !buyerId || hasPackage(state, order)) return fail('Only a reseller order for products can be charged to a wallet.');
+    const need = order.amountHkd ?? 0;
+    const wallet = walletHkd(buyerId, state.orders, state.packageSales, state.costing, order.id);
+    if (wallet.availableHkd < need) return fail(`Not enough in the wallet: ${formatHkd(Math.max(0, wallet.availableHkd))} available, ${formatHkd(need)} needed. Choose another payment method.`);
+  }
   const next = updateOrder(base, orderId, {
     status: 'delivered',
     deliveredAt: now,
     handledBy: actor.id,
     paymentMethod,
+    fxRate: state.costing.settings.fxPhpPerHkd,
     topUpRate: state.costing.settings.markupPct,
     deductions: orderDeductions(order, state.items, state.costing) ?? undefined,
   });
@@ -1895,7 +1915,7 @@ export function approveReversal(
   };
 
   if (order.status === 'delivered') {
-    change = { ...change, deliveredAt: undefined, paymentMethod: undefined, topUpRate: undefined, deductions: undefined };
+    change = { ...change, deliveredAt: undefined, paymentMethod: undefined, topUpRate: undefined, deductions: undefined, fxRate: undefined };
     if (target === 'cancelled') {
       change = { ...change, cancelledAt: now, cancelReason: `Sale voided (${request.id})` };
     }

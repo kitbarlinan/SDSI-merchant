@@ -10,8 +10,10 @@
  */
 import { roundMoney } from './format';
 import { addDays, weekdayOf } from './period';
-import { orderNet } from './orders';
-import type { Order, Remittance } from './types';
+import { orderCurrency, orderPay } from './orders';
+import type { Currency, Order, Remittance } from './types';
+
+export const remittanceCurrency = (remittance: Remittance): Currency => remittance.currency ?? 'PHP';
 
 /** Monday of the week that contains the date. */
 export const weekStartOf = (date: string): string => addDays(date, -((weekdayOf(date) + 6) % 7));
@@ -55,16 +57,20 @@ export function buildWeekRemittances(
   closedBy: string,
   closedAt: string,
 ): Remittance[] {
+  // One remittance per merchant and money: orders delivered with a rate are paid in HKD, older ones in PHP.
   const byMerchant = new Map<string, Order[]>();
   for (const order of deliveredInWeek(orders, weekStart)) {
-    byMerchant.set(order.merchantId, [...(byMerchant.get(order.merchantId) ?? []), order]);
+    const key = `${order.merchantId}|${orderCurrency(order)}`;
+    byMerchant.set(key, [...(byMerchant.get(key) ?? []), order]);
   }
   return [...byMerchant.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([merchantId, list], index) => {
-      const netPayable = roundMoney(list.reduce((sum, order) => sum + orderNet(order), 0));
+    .map(([key, list], index) => {
+      const [merchantId, currency] = key.split('|') as [string, Currency];
+      const netPayable = roundMoney(list.reduce((sum, order) => sum + orderPay(order), 0));
       return {
         id: `RMT-${String(firstNumber + index).padStart(6, '0')}`,
+        ...(currency === 'HKD' ? { currency } : {}),
         merchantId,
         weekStart,
         weekEnd: weekEndOf(weekStart),
@@ -97,13 +103,14 @@ export interface Wallet {
   awaitingRelease: number;
 }
 
-export function walletOf(merchantId: string, orders: Order[], remittances: Remittance[]): Wallet {
+/** The wallet in one money: HKD for orders delivered with a rate, PHP for the older ones. */
+export function walletOf(merchantId: string, orders: Order[], remittances: Remittance[], currency: Currency = 'PHP'): Wallet {
   const earned = roundMoney(
     orders
-      .filter((order) => order.merchantId === merchantId && order.status === 'delivered')
-      .reduce((sum, order) => sum + orderNet(order), 0),
+      .filter((order) => order.merchantId === merchantId && order.status === 'delivered' && orderCurrency(order) === currency)
+      .reduce((sum, order) => sum + orderPay(order), 0),
   );
-  const mine = remittances.filter((remittance) => remittance.merchantId === merchantId);
+  const mine = remittances.filter((remittance) => remittance.merchantId === merchantId && remittanceCurrency(remittance) === currency);
   const released = mine.filter((remittance) => remittance.status === 'released');
   const releasedNet = released.reduce((sum, remittance) => sum + remittance.netPayable, 0);
   return {
@@ -121,6 +128,7 @@ export function walletOf(merchantId: string, orders: Order[], remittances: Remit
 /** A week that is not closed yet: still running, or finished and waiting for the cutoff. */
 export interface OpenWeek {
   merchantId: string;
+  currency: Currency;
   weekStart: string;
   weekEnd: string;
   orderIds: string[];
@@ -137,18 +145,19 @@ export function openWeeks(orders: Order[], remittances: Remittance[], today: str
   for (const order of orders) {
     const day = deliveredDay(order);
     if (!day || taken.has(order.id)) continue;
-    const key = `${order.merchantId}|${weekStartOf(day)}`;
+    const key = `${order.merchantId}|${weekStartOf(day)}|${orderCurrency(order)}`;
     groups.set(key, [...(groups.get(key) ?? []), order]);
   }
   return [...groups.entries()]
     .map(([key, list]) => {
-      const [merchantId, weekStart] = key.split('|');
+      const [merchantId, weekStart, currency] = key.split('|') as [string, string, Currency];
       return {
         merchantId,
+        currency,
         weekStart,
         weekEnd: weekEndOf(weekStart),
         orderIds: list.map((order) => order.id).sort(),
-        netPayable: roundMoney(list.reduce((sum, order) => sum + orderNet(order), 0)),
+        netPayable: roundMoney(list.reduce((sum, order) => sum + orderPay(order), 0)),
         running: weekEndOf(weekStart) >= today,
       };
     })

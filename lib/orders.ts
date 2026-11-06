@@ -40,6 +40,13 @@ export const orderTotal = (order: Order): number =>
 /** What the merchant is paid for the order: the SRP less the reseller program deductions charged to them. */
 export const orderNet = (order: Order): number => roundMoney(orderTotal(order) - (order.deductions?.totalPhp ?? 0));
 
+/** Money the merchant is paid in for this order: HKD for orders delivered with a rate, PHP for older ones. */
+export const orderCurrency = (order: Order): 'PHP' | 'HKD' => (order.fxRate ? 'HKD' : 'PHP');
+
+/** What the merchant is paid for the order, in its own money (HKD when it has a rate). */
+export const orderPay = (order: Order): number =>
+  order.fxRate ? roundMoney(orderNet(order) / order.fxRate) : orderNet(order);
+
 export const orderUnits = (order: Order): number =>
   order.lines.reduce((sum, line) => sum + line.quantity, 0);
 
@@ -152,6 +159,8 @@ export interface TierRow {
   name: string;
   level: number;
   php: number;
+  /** The same in HKD, at the rate of that order or package. */
+  hkd: number;
   date: string;
   /** Orders count once delivered. Packages always count. */
   earned: boolean;
@@ -162,24 +171,30 @@ export function tierIncome(
   sales: PackageSale[],
   orders: Order[],
   userId: string,
-): { total: number; pending: number; rows: TierRow[] } {
+  /** PHP per HKD, for records without a rate of their own. */
+  fx = 0,
+): { total: number; pending: number; totalHkd: number; pendingHkd: number; rows: TierRow[] } {
+  const hkdOf = (php: number, rate?: number) => ((rate ?? fx) > 0 ? roundMoney(php / (rate ?? fx)) : 0);
   const rows: TierRow[] = [];
   for (const sale of sales) {
     // A package that came from an order is counted once, on the sale.
     for (const tier of sale.tiers) {
-      if (tier.userId === userId) rows.push({ kind: 'package', ref: sale.id, name: sale.resellerName, level: tier.level, php: tier.php, date: sale.createdAt.slice(0, 10), earned: true });
+      if (tier.userId === userId) rows.push({ kind: 'package', ref: sale.id, name: sale.resellerName, level: tier.level, php: tier.php, hkd: hkdOf(tier.php, sale.fxRate), date: sale.createdAt.slice(0, 10), earned: true });
     }
   }
   for (const order of orders) {
     if (order.status === 'cancelled' || order.status === 'rts') continue;
     for (const tier of order.tiers ?? []) {
-      if (tier.userId === userId) rows.push({ kind: 'order', ref: order.id, name: order.customerName ?? 'Walk-in', level: tier.level, php: tier.php, date: order.createdAt.slice(0, 10), earned: order.status === 'delivered' });
+      if (tier.userId === userId) rows.push({ kind: 'order', ref: order.id, name: order.customerName ?? 'Walk-in', level: tier.level, php: tier.php, hkd: hkdOf(tier.php, order.fxRate), date: order.createdAt.slice(0, 10), earned: order.status === 'delivered' });
     }
   }
   const sum = (list: TierRow[]) => roundMoney(list.reduce((total, row) => total + row.php, 0));
+  const sumHkd = (list: TierRow[]) => roundMoney(list.reduce((total, row) => total + row.hkd, 0));
   return {
     total: sum(rows.filter((row) => row.earned)),
     pending: sum(rows.filter((row) => !row.earned)),
+    totalHkd: sumHkd(rows.filter((row) => row.earned)),
+    pendingHkd: sumHkd(rows.filter((row) => !row.earned)),
     rows: rows.sort((a, b) => b.date.localeCompare(a.date)),
   };
 }

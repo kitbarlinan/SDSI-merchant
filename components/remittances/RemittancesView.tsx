@@ -10,10 +10,11 @@ import { inputClass } from '@/components/ui/Field';
 import { MerchantFilter } from '@/components/ui/MerchantFilter';
 import { StatCard } from '@/components/ui/StatCard';
 import { useAuth } from '@/lib/auth';
-import { formatCurrency, formatDate, formatNumber } from '@/lib/format';
+import { formatCurrency, formatDate, formatHkd, formatMoney, formatNumber } from '@/lib/format';
 import { MOCK_TODAY } from '@/lib/mock-data';
 import { orderTotal } from '@/lib/orders';
-import { closableWeeks, openWeeks, payoutDueDate, walletOf, weekEndOf } from '@/lib/remittance';
+import { orderPay } from '@/lib/orders';
+import { closableWeeks, openWeeks, payoutDueDate, remittanceCurrency, walletOf, weekEndOf } from '@/lib/remittance';
 import { useAppData } from '@/lib/store';
 import type { Remittance } from '@/lib/types';
 import { useToday } from '@/lib/use-today';
@@ -36,6 +37,7 @@ function RemittanceRow({ remittance, showMerchant }: { remittance: Remittance; s
   const [reference, setReference] = useState('');
   const [error, setError] = useState<string | null>(null);
 
+  const money = (value: number) => formatMoney(value, remittanceCurrency(remittance));
   const merchant = merchants.find((candidate) => candidate.id === remittance.merchantId);
   const list = useMemo(
     () => remittance.orderIds.map((id) => orders.find((order) => order.id === id)).filter((order) => !!order),
@@ -100,18 +102,18 @@ function RemittanceRow({ remittance, showMerchant }: { remittance: Remittance; s
             <p className="mt-0.5 text-xs text-amber-700">No bank account on file for this merchant. Ask the admin to add it under Team & accounts.</p>
           ) : null}
           <p className="mt-0.5 text-xs text-slate-500">
-            By branch: {BRANCHES.map((branch) => `${branch.name} ${formatCurrency(split[branch.id])}`).join(' + ')} = {formatCurrency(remittance.netPayable)}
+            By branch: {BRANCHES.map((branch) => `${branch.name} ${money(split[branch.id])}`).join(' + ')} = {money(remittance.netPayable)}
           </p>
         </div>
         <div className="flex items-center gap-5 text-right">
           <div>
             <p className="text-xs text-slate-500">Net payable</p>
-            <p className="font-medium">{formatCurrency(remittance.netPayable)}</p>
+            <p className="font-medium">{money(remittance.netPayable)}</p>
           </div>
           <div>
             <p className="text-xs text-slate-500">SF advance</p>
             <p className="font-medium text-rose-700">
-              {remittance.deductionPhp > 0 ? `− ${formatCurrency(remittance.deductionPhp)}` : released ? '—' : 'not set'}
+              {remittance.deductionPhp > 0 ? `− ${money(remittance.deductionPhp)}` : released ? '—' : 'not set'}
             </p>
           </div>
           {released && remittance.adjustmentPhp !== 0 ? (
@@ -119,14 +121,14 @@ function RemittanceRow({ remittance, showMerchant }: { remittance: Remittance; s
               <p className="text-xs text-slate-500">Adjustment</p>
               <p className="font-medium text-blue-700">
                 {remittance.adjustmentPhp > 0 ? '+ ' : '− '}
-                {formatCurrency(Math.abs(remittance.adjustmentPhp))}
+                {money(Math.abs(remittance.adjustmentPhp))}
               </p>
             </div>
           ) : null}
           <div>
             <p className="text-xs text-slate-500">Payout</p>
             <p className="font-semibold text-emerald-700">
-              {released || submitted ? formatCurrency(remittance.payoutPhp) : formatCurrency(remittance.netPayable)}
+              {released || submitted ? money(remittance.payoutPhp) : money(remittance.netPayable)}
               {released || submitted ? '' : '*'}
             </p>
           </div>
@@ -280,8 +282,8 @@ function RemittanceRow({ remittance, showMerchant }: { remittance: Remittance; s
             </label>
           </div>
           <p className="text-sm text-slate-700">
-            Net payable {formatCurrency(remittance.netPayable)} − SF advance {formatCurrency(Number.isFinite(deductionValue) ? deductionValue : 0)} ± adjustment {formatCurrency(Number.isFinite(adjustmentValue) ? adjustmentValue : 0)} ={' '}
-            <span className="font-semibold text-emerald-700">payout {formatCurrency(payoutPreview)}</span>
+            Net payable {money(remittance.netPayable)} − SF advance {money(Number.isFinite(deductionValue) ? deductionValue : 0)} ± adjustment {money(Number.isFinite(adjustmentValue) ? adjustmentValue : 0)} ={' '}
+            <span className="font-semibold text-emerald-700">payout {money(payoutPreview)}</span>
           </p>
           {error ? (
             <p role="alert" className="text-xs text-rose-600">
@@ -310,7 +312,7 @@ function RemittanceRow({ remittance, showMerchant }: { remittance: Remittance; s
               <span className="font-mono">{order!.id}</span>
               <span className="text-slate-500">{order!.customerName ?? 'Walk-in client'}</span>
               <span className="text-slate-500">{order!.deliveredAt ? formatDate(order!.deliveredAt.slice(0, 10)) : ''}</span>
-              <span className="font-medium">{formatCurrency(orderTotal(order!))}</span>
+              <span className="font-medium">{money(orderPay(order!))}</span>
             </li>
           ))}
         </ul>
@@ -338,7 +340,7 @@ export function RemittancesView() {
     const ids = scopeId === 'all' ? merchants.map((merchant) => merchant.id) : [scopeId];
     const total = { earned: 0, balance: 0, paidOut: 0, deducted: 0, adjustments: 0, awaitingRelease: 0 };
     for (const id of ids) {
-      const w = walletOf(id, orders, remittances);
+      const w = walletOf(id, orders, remittances, 'HKD');
       total.earned += w.earned;
       total.balance += w.balance;
       total.paidOut += w.paidOut;
@@ -347,6 +349,12 @@ export function RemittancesView() {
       total.awaitingRelease += w.awaitingRelease;
     }
     return total;
+  }, [scopeId, merchants, orders, remittances]);
+
+  // Orders delivered before the HKD change are still owed in PHP.
+  const legacy = useMemo(() => {
+    const ids = scopeId === 'all' ? merchants.map((merchant) => merchant.id) : [scopeId];
+    return ids.reduce((sum, id) => sum + walletOf(id, orders, remittances, 'PHP').balance, 0);
   }, [scopeId, merchants, orders, remittances]);
 
   const open = useMemo(
@@ -387,28 +395,34 @@ export function RemittancesView() {
           variant="primary"
           icon="wallet"
           label="Wallet balance"
-          value={formatCurrency(wallet.balance)}
+          value={formatHkd(wallet.balance)}
           hint="Net payable not yet released"
         />
         <StatCard
           icon="clock"
           label="Closed, awaiting release"
-          value={formatCurrency(wallet.awaitingRelease)}
+          value={formatHkd(wallet.awaitingRelease)}
           hint="Payout after the SF advance"
         />
         <StatCard
           icon="check"
           label="Total paid out"
-          value={formatCurrency(wallet.paidOut)}
+          value={formatHkd(wallet.paidOut)}
           hint="Released to the merchant"
         />
         <StatCard
           icon="truck"
           label="SF advance deducted"
-          value={formatCurrency(wallet.deducted)}
+          value={formatHkd(wallet.deducted)}
           hint="Actual SF PH to HK, advanced by TheYellowBasket"
         />
       </div>
+
+      {legacy > 0.004 ? (
+        <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-700">
+          Earlier balance, from orders delivered before payouts moved to HKD: <strong>{formatCurrency(legacy)}</strong> (PHP). New orders are paid out in HKD.
+        </p>
+      ) : null}
 
       {user.role === 'admin' ? (
         <Card title="Weekly cutoff" subtitle="Close a finished week to create each merchant's remittance. Closed weeks are locked: no undo.">
@@ -467,7 +481,7 @@ export function RemittancesView() {
                   <div className="flex items-center gap-4 text-right">
                     <div>
                       <p className="text-xs text-slate-500">Net payable so far</p>
-                      <p className="font-medium">{formatCurrency(week.netPayable)}</p>
+                      <p className="font-medium">{formatMoney(week.netPayable, week.currency)}</p>
                     </div>
                     <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700">
                       {week.running ? 'Week running' : 'Ready to close'}

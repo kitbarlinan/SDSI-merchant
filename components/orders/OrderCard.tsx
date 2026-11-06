@@ -50,7 +50,7 @@ export function OrderCard({
 
   const [panel, setPanel] = useState<Panel>(null);
   const [waybill, setWaybill] = useState('');
-  const [method, setMethod] = useState<PaymentMethod>('Cash');
+  const [method, setMethod] = useState<PaymentMethod>(order.payFromWallet ? 'Wallet' : 'Cash');
   const [reason, setReason] = useState(CANCEL_REASONS[0]);
   const [otherReason, setOtherReason] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -380,7 +380,7 @@ export function OrderCard({
               {panel === 'deliver' ? (
                 <div className="space-y-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
                   <p className="text-sm font-medium text-emerald-900">
-                    Collect {orderAmountLabel(order)} from the customer
+                    {method === 'Wallet' ? `Charge ${orderAmountLabel(order)} to the reseller's wallet` : `Collect ${orderAmountLabel(order)} from the customer`}
                   </p>
                   <label className="block text-xs font-medium text-emerald-900">
                     Paid via
@@ -389,7 +389,7 @@ export function OrderCard({
                       onChange={(event) => setMethod(event.target.value as PaymentMethod)}
                       className={`mt-1 ${inputClass(false)}`}
                     >
-                      {PAYMENT_METHODS.map((option) => (
+                      {PAYMENT_METHODS.filter((option) => option !== 'Wallet' || (order.source === 'reseller' && Boolean(order.buyerId))).map((option) => (
                         <option key={option} value={option}>
                           {option}
                         </option>

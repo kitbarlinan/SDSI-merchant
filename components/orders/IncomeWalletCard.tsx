@@ -2,29 +2,29 @@
 
 import { useMemo } from 'react';
 import { Card } from '@/components/ui/Card';
-import { formatCurrency, formatDate } from '@/lib/format';
+import { formatDate, formatHkd } from '@/lib/format';
 import { tierIncome } from '@/lib/orders';
 import { referralRows } from '@/lib/referral';
 import { useAppData } from '@/lib/store';
+import { walletHkd } from '@/lib/wallet';
 import type { Order, PackageSale } from '@/lib/types';
 
 /** A reseller's income wallet: the total, and where each peso came from (tier income, referral bonus). */
 export function IncomeWalletCard({ userId, sales, orders, refCode }: { userId: string; sales: PackageSale[]; orders: Order[]; refCode?: string }) {
   const { costing, merchants } = useAppData();
-  const tier = useMemo(() => tierIncome(sales, orders, userId), [sales, orders, userId]);
+  const tier = useMemo(() => tierIncome(sales, orders, userId, costing.settings.fxPhpPerHkd), [sales, orders, userId, costing.settings.fxPhpPerHkd]);
+  const wallet = useMemo(() => walletHkd(userId, orders, sales, costing), [userId, orders, sales, costing]);
   const referral = useMemo(() => referralRows(costing, merchants, orders, userId), [costing, merchants, orders, userId]);
-  const referralEarned = referral.reduce((n, r) => n + r.earnedPhp, 0);
-  const referralPending = referral.reduce((n, r) => n + r.pendingPhp, 0);
-  const total = tier.total + referralEarned;
-  const pending = tier.pending + referralPending;
+  const referralPending = referral.reduce((n, r) => n + r.pendingHkd, 0);
+  const pending = tier.pendingHkd + referralPending;
   const { tierL1Pct, tierL2Pct, referrerPct } = costing.settings;
 
   const source = (title: string, hint: string, earned: number, onTheWay: number, tone: string) => (
     <div className={`rounded-xl border p-4 ${tone}`}>
       <p className="text-sm font-semibold text-slate-800">{title}</p>
       <p className="text-xs text-slate-500">{hint}</p>
-      <p className="mt-2 text-xl font-semibold text-slate-900">{formatCurrency(earned)}</p>
-      <p className="text-xs text-slate-500">+ {formatCurrency(onTheWay)} on the way</p>
+      <p className="mt-2 text-xl font-semibold text-slate-900">{formatHkd(earned)}</p>
+      <p className="text-xs text-slate-500">+ {formatHkd(onTheWay)} on the way</p>
     </div>
   );
 
@@ -38,14 +38,18 @@ export function IncomeWalletCard({ userId, sales, orders, refCode }: { userId: s
       ) : null}
 
       <div className="mt-3 rounded-2xl bg-emerald-500 px-5 py-4 text-emerald-950">
-        <p className="text-xs font-medium uppercase tracking-wide text-emerald-950/70">Total earned</p>
-        <p className="text-3xl font-semibold text-emerald-950">{formatCurrency(total)}</p>
-        <p className="text-xs text-emerald-950/70">+ {formatCurrency(pending)} on the way (not delivered yet)</p>
+        <p className="text-xs font-medium uppercase tracking-wide text-emerald-950/70">Wallet balance</p>
+        <p className="text-3xl font-semibold text-emerald-950">{formatHkd(wallet.balanceHkd)}</p>
+        <p className="text-xs text-emerald-950/70">
+          Earned {formatHkd(wallet.tierHkd + wallet.referralHkd)}
+          {wallet.spentHkd > 0 ? ` − paid from wallet ${formatHkd(wallet.spentHkd)}` : ''} · + {formatHkd(pending)} on the way (not delivered yet)
+          {wallet.heldHkd > 0 ? ` · ${formatHkd(wallet.heldHkd)} held for open orders` : ''}
+        </p>
       </div>
 
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        {source('Tier income', `${tierL1Pct}% from your direct team, ${tierL2Pct}% from the level below`, tier.total, tier.pending, 'border-sky-200 bg-sky-50/60')}
-        {source('Referral bonus', `${referrerPct}% of the sales of merchants you brought in`, referralEarned, referralPending, 'border-amber-200 bg-amber-50/60')}
+        {source('Tier income', `${tierL1Pct}% from your direct team, ${tierL2Pct}% from the level below`, wallet.tierHkd, tier.pendingHkd, 'border-sky-200 bg-sky-50/60')}
+        {source('Referral bonus', `${referrerPct}% of the sales of merchants you brought in`, wallet.referralHkd, referralPending, 'border-amber-200 bg-amber-50/60')}
       </div>
 
       {referral.length > 0 ? (
@@ -59,8 +63,8 @@ export function IncomeWalletCard({ userId, sales, orders, refCode }: { userId: s
                   <span className="ml-2 text-xs text-slate-500">{row.orders} delivered order{row.orders === 1 ? '' : 's'}</span>
                 </span>
                 <span className="font-semibold text-emerald-700">
-                  {formatCurrency(row.earnedPhp)}
-                  {row.pendingPhp > 0 ? <span className="ml-2 text-xs font-normal text-slate-500">+ {formatCurrency(row.pendingPhp)} on the way</span> : null}
+                  {formatHkd(row.earnedHkd)}
+                  {row.pendingHkd > 0 ? <span className="ml-2 text-xs font-normal text-slate-500">+ {formatHkd(row.pendingHkd)} on the way</span> : null}
                 </span>
               </li>
             ))}
@@ -83,7 +87,7 @@ export function IncomeWalletCard({ userId, sales, orders, refCode }: { userId: s
                     {row.earned ? '' : ' · on the way'}
                   </span>
                 </span>
-                <span className={`font-semibold ${row.earned ? 'text-emerald-700' : 'text-slate-500'}`}>{formatCurrency(row.php)}</span>
+                <span className={`font-semibold ${row.earned ? 'text-emerald-700' : 'text-slate-500'}`}>{formatHkd(row.hkd)}</span>
               </li>
             ))}
           </ul>

@@ -4,24 +4,27 @@ import { useMemo } from 'react';
 import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import { merchantBalances } from '@/lib/branch-balance';
-import { formatCurrency } from '@/lib/format';
+import { formatMoney } from '@/lib/format';
 import { useAppData } from '@/lib/store';
-import { BRANCHES } from '@/lib/types';
+import { BRANCHES, type Currency } from '@/lib/types';
 
 /**
  * Check and balance: what each merchant earned at each branch, the total, and how that matches the one
  * consolidated payout. Both branches are paid out together; this just proves the numbers agree.
  */
-export function BranchBalanceCard() {
+export function BranchBalanceCard({ currency = 'HKD' }: { currency?: Currency }) {
   const { merchants, orders, remittances } = useAppData();
-  const rows = useMemo(() => merchantBalances(merchants, orders, remittances), [merchants, orders, remittances]);
+  const rows = useMemo(() => merchantBalances(merchants, orders, remittances, currency), [merchants, orders, remittances, currency]);
   const totals = BRANCHES.map((branch) => rows.reduce((sum, row) => sum + row.earnedByBranch[branch.id], 0));
   const grand = rows.reduce((sum, row) => sum + row.earned, 0);
   const allOk = rows.every((row) => row.checks.every((check) => check.ok));
+  const formatCurrency = (value: number) => formatMoney(value, currency);
+  // The older PHP balances only show while there is something in them.
+  if (currency === 'PHP' && grand === 0) return null;
 
   return (
     <Card
-      title="Branch check & balances"
+      title={currency === 'HKD' ? 'Branch check & balances (HKD)' : 'Branch check & balances: earlier orders (PHP)'}
       subtitle="Merchant income (Net SRP, delivered orders) per branch. One consolidated payout covers both branches."
       action={<Badge tone={allOk ? 'green' : 'red'}>{allOk ? 'All balanced' : 'Out of balance'}</Badge>}
     >

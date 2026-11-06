@@ -388,7 +388,8 @@ export function AccountingView() {
       {tab === 'reports' ? (
         <>
           <AccountingReports />
-          <BranchBalanceCard />
+          <BranchBalanceCard currency="HKD" />
+          <BranchBalanceCard currency="PHP" />
           <PackageIncomeCard />
         </>
       ) : (

@@ -11,6 +11,7 @@ import { Icon } from '@/components/ui/Icon';
 import { useAuth } from '@/lib/auth';
 import { inResellerProgram, isSellable, livePickup } from '@/lib/costing';
 import { formatHkd, roundMoney } from '@/lib/format';
+import { walletHkd } from '@/lib/wallet';
 import { MOCK_TODAY } from '@/lib/mock-data';
 import { expiryOf, makeStockBook } from '@/lib/stock';
 import { useAppData } from '@/lib/store';
@@ -45,16 +46,17 @@ export function ResellerOrderForm() {
           elsewhere: book.elsewhere(item, branch),
           expired: expiryOf(item, products) < today,
           pickupHkd: livePickup(costing, item.id) ?? 0,
-          unitDiscountHkd: inResellerProgram(item, costing) ? roundMoney((item.unitPrice * pct) / 100 / fx) : 0,
+          unitDiscountHkd: inResellerProgram(item, costing) ? roundMoney(((livePickup(costing, item.id) ?? 0) * pct) / 100) : 0,
         })),
     [items, products, book, today, costing, active, pct, fx, branch],
   );
 
   const parsed = parseQuantities(rows, typed);
   const subtotal = parsed.totalHkd;
-  // The discount is a percent of the SRP of the program products, shown in HKD.
-  const eligibleSrp = parsed.lines.reduce((sum, line) => sum + (inResellerProgram(line.item, costing) ? line.item.unitPrice * line.quantity : 0), 0);
-  const discount = roundMoney(roundMoney((eligibleSrp * pct) / 100) / fx);
+  // The discount is a percent of the pickup price (HKD) of the program products.
+  const discount = roundMoney(parsed.lines.reduce((sum, line) => sum + (inResellerProgram(line.item, costing) ? roundMoney(((livePickup(costing, line.item.id) ?? 0) * line.quantity * pct) / 100) : 0), 0));
+  const wallet = useMemo(() => (user ? walletHkd(user.id, orders, packageSales, costing) : null), [user, orders, packageSales, costing]);
+  const [payFromWallet, setPayFromWallet] = useState(false);
   const toPay = roundMoney(subtotal - discount);
   const canSubmit = parsed.lines.length > 0 && Object.keys(parsed.errors).length === 0;
 
@@ -67,6 +69,7 @@ export function ResellerOrderForm() {
       contactNo,
       notes,
       branch,
+      payFromWallet: payFromWallet && active,
       lines: parsed.lines.map((line) => ({ itemId: line.item.id, quantity: line.quantity })),
     });
     if (!result.ok) return setError(result.error);
@@ -163,6 +166,18 @@ export function ResellerOrderForm() {
         <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">
           {error}
         </p>
+      ) : null}
+
+      {active && wallet ? (
+        <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm">
+          <input type="checkbox" checked={payFromWallet} onChange={(event) => setPayFromWallet(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-slate-300 text-emerald-600" />
+          <span>
+            <span className="font-medium text-slate-900">Pay from my wallet</span>
+            <span className="block text-xs text-slate-500">
+              Available: {formatHkd(Math.max(0, wallet.availableHkd))}. {wallet.availableHkd < toPay ? 'Not enough for this order: choose another way to pay at pickup.' : 'It is charged when the order is delivered.'}
+            </span>
+          </span>
+        </label>
       ) : null}
 
       <div className="flex justify-end">

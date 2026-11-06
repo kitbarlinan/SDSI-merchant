@@ -1,4 +1,5 @@
-export const PAYMENT_METHODS = ['Cash', 'Bank Transfer', 'Debit / Credit Card'] as const;
+/** 'Wallet' = charged to the buyer's wallet (HKD). It needs enough balance. */
+export const PAYMENT_METHODS = ['Cash', 'Bank Transfer', 'Debit / Credit Card', 'Wallet'] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
 export const CATEGORIES = ['Food Supplements', 'Beauty Products'] as const;
@@ -73,6 +74,8 @@ export interface MerchantProfile {
   bankAccountName: string;
   bankAccountNo: string;
 }
+
+export type Currency = 'PHP' | 'HKD';
 
 export interface OrderDeductions {
   resellerPhp: number;
@@ -238,6 +241,10 @@ export interface Order {
   discountPhp?: number;
   /** What the merchant is charged on this order for the reseller program, fixed when it is delivered. Comes off the merchant's payout. */
   deductions?: OrderDeductions;
+  /** PHP per HKD in force when the order was delivered. Orders with it are paid out to the merchant in HKD; older ones in PHP. */
+  fxRate?: number;
+  /** A reseller chose to pay this order from their wallet. */
+  payFromWallet?: boolean;
   /** Reseller orders: the buyer's upline at the time of the order and the tier income each earns once delivered. */
   tiers?: TierShare[];
   /** The reseller this order is for (counter sale of the package). */
@@ -348,6 +355,8 @@ export type RemittanceStatus = 'pending' | 'submitted' | 'released';
 
 export interface Remittance {
   id: string;
+  /** Money of the amounts below. Missing = PHP (older remittances). New ones are HKD. */
+  currency?: Currency;
   merchantId: string;
   /** Monday of the cutoff week, YYYY-MM-DD. The week runs Monday to Sunday. */
   weekStart: string;
@@ -398,6 +407,8 @@ export interface PackageSale {
   resellerName: string;
   createdAt: string;
   recordedBy: string;
+  /** PHP per HKD when the package was sold (to turn tier income into HKD). */
+  fxRate?: number;
   /** What the buyer paid, HKD. */
   hkd: number;
   /** SRP basis in PHP. */

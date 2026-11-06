@@ -51,7 +51,7 @@ export interface CostingSettings {
 /** Values from the costing sheet. The exchange rate matches the sheet's 1,485 PHP = 182.36 HKD. */
 export const DEFAULT_COSTING_SETTINGS: CostingSettings = {
   markupPct: 50,
-  fxPhpPerHkd: 8.1432,
+  fxPhpPerHkd: 8.0388,
   sfPerQtyHkd: 5,
   shippingFeeHkd: 34,
   cfRatePct: 2.5,
@@ -126,7 +126,7 @@ export interface ReferralLink {
   merchantId: string;
   userId: string;
   /** Filled by the server for the referrer's own view (they cannot see the orders themselves). */
-  stats?: { orders: number; earnedPhp: number; pendingPhp: number };
+  stats?: { orders: number; earnedPhp: number; pendingPhp: number; earnedHkd: number; pendingHkd: number };
 }
 
 /** In the reseller program: the merchant is in it and the SKU was not switched off. The package itself never gets the discount. */
@@ -239,15 +239,15 @@ export interface ResellerCharges {
   eligibleSrpPhp: number;
   /** Discount in HKD, shown to the reseller. */
   discountHkd: number;
-  /** The same discount in PHP: a percent of the SRP. It is charged to the merchant, not to Yellow Basket's top-up. */
+  /** The same discount in PHP (HKD x the rate). It is charged to the merchant, not to the top-up. */
   discountPhp: number;
   /** What the reseller pays at pickup, HKD. */
   amountHkd: number;
 }
 
 /**
- * Reseller order pricing. The discount is a percent of the SRP (PHP) of the program products, shown in HKD at today's
- * rate and taken off the pickup price. The discount is charged to the merchant; Yellow Basket's top-up stays as is.
+ * Reseller order pricing. The discount is a percent of the pickup price (HKD) of the program products and is taken off
+ * the pickup price. The discount is charged to the merchant; Yellow Basket's top-up stays as is.
  * null when a line has no live price.
  */
 export function resellerCharges(
@@ -258,14 +258,17 @@ export function resellerCharges(
   const all = orderCharges(lines, costing);
   if (!all) return null;
   let eligibleSrp = 0;
+  let eligiblePickupHkd = 0;
   for (const line of lines) {
     const item = items.find((candidate) => candidate.id === line.itemId);
     if (!item || !inResellerProgram(item, costing)) continue;
     eligibleSrp += line.total;
+    eligiblePickupHkd += (livePickup(costing, line.itemId) ?? 0) * line.quantity;
   }
   const { resellerDiscountPct, fxPhpPerHkd } = costing.settings;
-  const discountPhp = roundMoney((eligibleSrp * resellerDiscountPct) / 100);
-  const discountHkd = roundMoney(discountPhp / fxPhpPerHkd);
+  // The discount is a percent of the pickup price (HKD). Its PHP value is what the merchant is charged.
+  const discountHkd = roundMoney((eligiblePickupHkd * resellerDiscountPct) / 100);
+  const discountPhp = roundMoney(discountHkd * fxPhpPerHkd);
   return {
     pickupHkd: all.pickupHkd,
     eligibleSrpPhp: roundMoney(eligibleSrp),
@@ -358,7 +361,7 @@ export const SETTING_LABEL: Record<keyof CostingSettings, string> = {
   shippingFeeHkd: 'Shipping fee, SF (HKD)',
   cfRatePct: 'Collection fee rate (%)',
   cfMinHkd: 'Minimum collection fee (HKD)',
-  resellerDiscountPct: 'Reseller discount (%)',
+  resellerDiscountPct: 'Reseller discount (% of the pickup price)',
   packageHkd: 'Reseller package price (HKD)',
   packageSrpPhp: 'Reseller package SRP basis (PHP)',
   tierL1Pct: 'Tier income level 1 (% of package SRP)',
@@ -471,6 +474,7 @@ export function makePackageSale(
     srpPhp: paid?.srpPhp ?? settings.packageSrpPhp,
     orderId: paid?.orderId,
     paymentMethod: paid?.paymentMethod,
+    fxRate: settings.fxPhpPerHkd,
     grossPhp: split.grossPhp,
     resellerPhp: split.resellerPhp,
     tiers: split.tiers,
@@ -478,9 +482,11 @@ export function makePackageSale(
   };
 }
 
-/** Income sheet of one SKU, on its Net SRP: Yellow Basket top-up 495 as is; the merchant is charged reseller 99, referrer 49.5, tier 39.6, fees 9.9 and keeps 792 of 990. */
+/** Income sheet of one SKU: top-up 495 as is. The merchant is charged the reseller discount (10% of the pickup price in HKD, 188 -> 18.80 = 151.13 PHP), referrer 5%, tier 4%, fees 1% of the Net SRP, and is paid the rest in HKD. */
 export interface SkuIncome {
   grossTopUpPhp: number;
+  /** Reseller discount: % of the pickup price in HKD, and its PHP value (HKD x the rate). */
+  resellerHkd: number;
   resellerPhp: number;
   referrerPhp: number;
   tierPhp: number;
@@ -489,12 +495,15 @@ export interface SkuIncome {
   deductionsPhp: number;
   /** What the merchant is left with: Net SRP less the deductions (990 -> 792). */
   merchantNetPhp: number;
+  /** The payout to the merchant, HKD (net remittance PHP / the rate). */
+  payoutHkd: number;
 }
 
-export function skuIncome(netSrpPhp: number, settings: CostingSettings): SkuIncome {
+export function skuIncome(netSrpPhp: number, settings: CostingSettings, pickupHkd: number | null = null): SkuIncome {
   const part = (pct: number) => roundMoney((netSrpPhp * pct) / 100);
   const grossTopUpPhp = part(settings.markupPct);
-  const resellerPhp = part(settings.resellerDiscountPct);
+  const resellerHkd = pickupHkd === null ? 0 : roundMoney((pickupHkd * settings.resellerDiscountPct) / 100);
+  const resellerPhp = roundMoney(resellerHkd * settings.fxPhpPerHkd);
   const referrerPhp = part(settings.referrerPct);
   const tierPhp = part(settings.tierL1Pct + settings.tierL2Pct);
   const systemFeePhp = part(settings.systemFeePct);
@@ -502,12 +511,14 @@ export function skuIncome(netSrpPhp: number, settings: CostingSettings): SkuInco
   const merchantNetPhp = roundMoney(netSrpPhp - deductionsPhp);
   return {
     grossTopUpPhp,
+    resellerHkd,
     resellerPhp,
     referrerPhp,
     tierPhp,
     systemFeePhp,
     deductionsPhp,
     merchantNetPhp,
+    payoutHkd: roundMoney(merchantNetPhp / settings.fxPhpPerHkd),
   };
 }
 
