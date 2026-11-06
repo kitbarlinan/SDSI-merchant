@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { IncomeWalletCard } from '@/components/orders/IncomeWalletCard';
+import { refCodeOf } from '@/lib/accounts';
 import { useAuth } from '@/lib/auth';
 import { useAppData } from '@/lib/store';
 
@@ -11,7 +12,11 @@ export function WalletView() {
   const { user } = useAuth();
   const { users, packageSales, orders, costing } = useAppData();
   // Only people who are a referrer of a merchant have a wallet to open here.
-  const referrerIds = new Set((costing.referrals ?? []).map((link) => link.userId));
+  const referrerIds = new Set([
+    ...(costing.referrals ?? []).map((link) => link.userId),
+    ...(costing.linkHolderIds ?? []),
+    ...(costing.rootSponsorId ? [costing.rootSponsorId] : []),
+  ]);
   const [who, setWho] = useState('');
   if (!user) return null;
   const isAdmin = user.role === 'admin';
@@ -31,7 +36,7 @@ export function WalletView() {
           </select>
         </label>
       ) : null}
-      <IncomeWalletCard userId={shown.id} sales={packageSales} orders={orders} refCode={shown.refCode} />
+      <IncomeWalletCard userId={shown.id} sales={packageSales} orders={orders} refCode={referrerIds.has(shown.id) || shown.refCode ? refCodeOf(shown) : undefined} />
     </div>
   );
 }

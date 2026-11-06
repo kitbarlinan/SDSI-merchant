@@ -13,6 +13,15 @@ export function makeRefCode(name: string, userId: string): string {
   return `${initials || 'R'}-${number.padStart(2, '0')}`;
 }
 
+/** The code of anyone who invites resellers: a reseller's own code, or one made from the name for staff and others. */
+export function refCodeOf(user: User): string {
+  if (user.refCode) return user.refCode;
+  const base = makeRefCode(user.name, user.id).split('-')[0];
+  let hash = 0;
+  for (const char of user.id) hash = (hash * 31 + char.charCodeAt(0)) % 46656;
+  return `${base}-${hash.toString(36).toUpperCase().padStart(3, '0')}`;
+}
+
 /** A readable sign-in name from the email ("maria.santos@x.com" -> "maria.santos"), made unique. */
 export function makeUsername(email: string, taken: Set<string>): string {
   const base = (email.split('@')[0] || 'reseller').toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 24) || 'reseller';

@@ -26,7 +26,7 @@ import {
   type CostingState,
   type ReferralLink,
 } from './costing';
-import { provisionReseller, validateCredentials } from './accounts';
+import { provisionReseller, refCodeOf, validateCredentials } from './accounts';
 import { demandOfLines, emptySplit, expiryOf, holderAt, makeStockBook, moveUnits, reservedUnits } from './stock';
 import { orderTotal } from './orders';
 import { buildWeekRemittances, remittedOrderIds, weekEndOf, weekStartOf } from './remittance';
@@ -257,6 +257,39 @@ export interface ResellerOrderInput {
 export const isActiveReseller = (state: AppState, userId: string): boolean =>
   state.packageSales.some((sale) => sale.resellerId === userId);
 
+/** Who can be above a buyer and earn tier income: resellers with the package, the top of the chain, and people given a link. */
+export const sponsorIds = (state: AppState): Set<string> =>
+  new Set([
+    ...state.packageSales.map((sale) => sale.resellerId),
+    ...(state.costing.rootSponsorId ? [state.costing.rootSponsorId] : []),
+    ...(state.costing.linkHolderIds ?? []),
+  ]);
+
+/** Can this person be picked as a sponsor? */
+export const canSponsor = (state: AppState, userId: string): boolean => sponsorIds(state).has(userId);
+
+/** Admin: the top of the chain, and the people who get their own code and link to invite resellers. */
+export function setReferralLinks(
+  state: AppState,
+  actor: Actor,
+  input: { rootSponsorId: string | null; linkHolderIds: string[] },
+  now: string,
+): Outcome<{ rootSponsorId?: string; linkHolderIds: string[] }> {
+  const denied = costingGuard(actor);
+  if (denied) return denied;
+  const known = (id: string) => state.users.some((user) => user.id === id);
+  if (input.rootSponsorId && !known(input.rootSponsorId)) return fail('Pick a person with an account as the top sponsor.');
+  if (input.linkHolderIds.some((id) => !known(id))) return fail('Pick people with an account.');
+  const linkHolderIds = [...new Set(input.linkHolderIds)];
+  const rootSponsorId = input.rootSponsorId || undefined;
+  const name = (id: string) => state.users.find((user) => user.id === id)?.name ?? id;
+  return {
+    ok: true,
+    state: logged(state, actor, now, 'Referral links changed', [`Top sponsor: ${rootSponsorId ? name(rootSponsorId) : 'nobody'}`, `Links: ${linkHolderIds.map(name).join(', ') || 'none'}`], { rootSponsorId, linkHolderIds }),
+    value: { rootSponsorId, linkHolderIds },
+  };
+}
+
 const isPackageLine = (state: AppState, itemId: string): boolean =>
   Boolean(state.items.find((item) => item.id === itemId)?.package);
 
@@ -265,7 +298,7 @@ export const hasPackage = (state: AppState, order: Order): boolean =>
 
 /**
  * A delivered package order makes its buyer a reseller. The sale is recorded with the split of the package
- * (top-up, reseller share, tier income to the 3 sponsors above) worked out on what was paid.
+ * (top-up, reseller share, tier income to the 2 sponsors above) worked out on what was paid.
  */
 function addPackageSale(initial: AppState, initialOrder: Order, recordedBy: string, now: string): AppState {
   let state = initial;
@@ -289,7 +322,7 @@ function addPackageSale(initial: AppState, initialOrder: Order, recordedBy: stri
   const buyerId = order.buyerId ?? order.createdBy;
   const buyer = state.users.find((user) => user.id === buyerId && user.role === 'customer');
   if (!buyer || isActiveReseller(state, buyer.id)) return state;
-  const active = new Set(state.packageSales.map((sale) => sale.resellerId));
+  const active = sponsorIds(state);
   const sale = makePackageSale(
     `PKG-${String(state.packageSales.length + 1).padStart(4, '0')}`,
     buyer,
@@ -338,7 +371,7 @@ export function placeResellerOrder(
 
   const { ids, poSeq } = nextPoids(state, byMerchant.size);
   const { resellerDiscountPct } = state.costing.settings;
-  const upline = uplineOf(state.users, new Set(state.packageSales.map((sale) => sale.resellerId)), actor.id);
+  const upline = uplineOf(state.users, sponsorIds(state), actor.id);
   const created: Order[] = [];
   for (const [merchantId, lines] of byMerchant) {
     const charges = resellerCharges(lines, state.items, state.costing);
@@ -408,8 +441,8 @@ export function checkoutWalkIn(
       if (name.length < 2) return fail('Enter the name of the customer buying the package.');
       const email = input.newReseller.email?.trim();
       if (email && !/^\S+@\S+\.\S+$/.test(email)) return fail('That email does not look right.');
-      const sponsorId = input.newReseller.sponsorId || undefined;
-      if (sponsorId && !isActiveReseller(state, sponsorId)) return fail('The sponsor must be a reseller who already has the package.');
+      const sponsorId = input.newReseller.sponsorId || state.costing.rootSponsorId || undefined;
+      if (sponsorId && !canSponsor(state, sponsorId)) return fail('The sponsor must be a reseller who already has the package.');
       const made = provisionReseller(state.users, { name, email, sponsorId }, now, state.outbox.length + 1);
       newUser = made.user;
       newEmail = made.email;
@@ -2092,9 +2125,12 @@ export function applyForReseller(state: AppState, input: ResellerApplication, no
   let sponsorId: string | undefined;
   const code = input.refCode?.trim().toUpperCase();
   if (code) {
-    const sponsor = state.users.find((user) => user.refCode === code && isActiveReseller(state, user.id));
+    const sponsor = state.users.find((user) => refCodeOf(user) === code && canSponsor(state, user.id));
     if (!sponsor) return fail('We could not find that referral code. Check it or leave it empty.');
     sponsorId = sponsor.id;
+  } else if (state.costing.rootSponsorId) {
+    // No code: the new reseller lands under the top of the chain.
+    sponsorId = state.costing.rootSponsorId;
   }
   const built = buildLines(state, [{ itemId: item.id, quantity: 1 }], dateOf(now), undefined, input.branch);
   if (!built.ok) return fail(built.error);

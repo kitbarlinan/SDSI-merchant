@@ -7,6 +7,7 @@ import { InviteActions } from '@/components/team/InviteActions';
 import { StatCard } from '@/components/ui/StatCard';
 import { useAuth } from '@/lib/auth';
 import { formatCurrency, formatDate, formatHkd } from '@/lib/format';
+import { refCodeOf } from '@/lib/accounts';
 import { referralRows } from '@/lib/referral';
 import { resellerLedger, resellerSummaries } from '@/lib/reseller';
 import { useAppData } from '@/lib/store';
@@ -14,7 +15,7 @@ import { useAppData } from '@/lib/store';
 /** Admin and cashier: every reseller, what they got in discount and tier income, and the split of each purchase. */
 export function ResellersView() {
   const { user } = useAuth();
-  const { users, items, orders, packageSales, costing, outbox, merchants, setMerchantReferrer } = useAppData();
+  const { users, items, orders, packageSales, costing, outbox, merchants, setMerchantReferrer, setReferralLinks } = useAppData();
   const { settings } = costing;
   const nameOf = (id: string) => users.find((candidate) => candidate.id === id)?.name ?? id;
   const ledger = useMemo(() => resellerLedger(orders, packageSales, items, settings.markupPct, settings.referrerPct + settings.systemFeePct), [orders, packageSales, items, settings.markupPct, settings.referrerPct, settings.systemFeePct]);
@@ -41,6 +42,68 @@ export function ResellersView() {
           <StatCard label="Tier income paid" value={formatCurrency(tierPaid)} hint={`up to ${tierPct}% of the SRP`} />
           <StatCard label="Charged to merchants" value={formatCurrency(sum((row) => row.discountPhp) + tierPaid)} hint="discount + tier income" variant="primary" />
         </div>
+      ) : null}
+
+      {user.role === 'admin' ? (
+        <Card title="Referral links" subtitle="Who invites resellers. A reseller with no sponsor lands under the top sponsor, so they always have an upline. Everyone listed gets their own code and link, and earns tier income on the resellers who join through them.">
+          <div className="mt-3 grid gap-4 sm:grid-cols-2">
+            <label className="text-xs font-medium text-slate-500">
+              Top sponsor (default upline)
+              <select
+                aria-label="Top sponsor"
+                value={costing.rootSponsorId ?? ''}
+                onChange={(event) => void setReferralLinks(user, { rootSponsorId: event.target.value || null, linkHolderIds: costing.linkHolderIds ?? [] })}
+                className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900"
+              >
+                <option value="">Nobody</option>
+                {users.map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>{candidate.name} ({candidate.role === 'customer' ? 'reseller' : candidate.role})</option>
+                ))}
+              </select>
+            </label>
+            <label className="text-xs font-medium text-slate-500">
+              Add a person with their own link
+              <select
+                aria-label="Add link holder"
+                value=""
+                onChange={(event) => event.target.value && void setReferralLinks(user, { rootSponsorId: costing.rootSponsorId ?? null, linkHolderIds: [...(costing.linkHolderIds ?? []), event.target.value] })}
+                className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900"
+              >
+                <option value="">Choose…</option>
+                {users.filter((candidate) => !(costing.linkHolderIds ?? []).includes(candidate.id)).map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>{candidate.name} ({candidate.role === 'customer' ? 'reseller' : candidate.role})</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          {(() => {
+            const holders = [...new Set([...(costing.rootSponsorId ? [costing.rootSponsorId] : []), ...(costing.linkHolderIds ?? [])])]
+              .map((id) => users.find((candidate) => candidate.id === id))
+              .filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate));
+            return holders.length === 0 ? (
+              <p className="mt-3 text-sm text-slate-500">No one yet. Pick a top sponsor or add a person above.</p>
+            ) : (
+              <ul className="mt-3 divide-y divide-slate-100 rounded-xl border border-slate-100 text-sm">
+                {holders.map((holder) => (
+                  <li key={holder.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+                    <span>
+                      <span className="font-medium text-slate-800">{holder.name}</span>
+                      {costing.rootSponsorId === holder.id ? <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800">Top sponsor</span> : null}
+                      <span className="ml-2 text-xs text-slate-500">{users.filter((candidate) => candidate.sponsorId === holder.id).length} invited</span>
+                    </span>
+                    <span className="flex items-center gap-2">
+                      <span className="font-mono text-xs text-slate-700">{refCodeOf(holder)}</span>
+                      <span className="font-mono text-xs text-slate-500">/become-a-reseller?ref={refCodeOf(holder)}</span>
+                      {(costing.linkHolderIds ?? []).includes(holder.id) ? (
+                        <button type="button" onClick={() => void setReferralLinks(user, { rootSponsorId: costing.rootSponsorId ?? null, linkHolderIds: (costing.linkHolderIds ?? []).filter((id) => id !== holder.id) })} className="text-xs font-semibold text-rose-600 hover:underline">Remove</button>
+                      ) : null}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            );
+          })()}
+        </Card>
       ) : null}
 
       {user.role === 'admin' ? (

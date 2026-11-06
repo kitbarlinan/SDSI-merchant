@@ -204,6 +204,7 @@ export function RemoteProviders({ children }: { children: ReactNode }) {
       revokeApproval: (_a, rowId) => call('revokeApproval', { rowId }),
       goLiveCostingRow: (_a, rowId) => call('goLiveCostingRow', { rowId }),
       setSkuDisabled: (_a, itemId, disabled) => call('setSkuDisabled', { itemId, disabled }),
+      setReferralLinks: (_a, input) => call('setReferralLinks', { ...input }),
       setMerchantReferrer: (_a, merchantId, userId) => call('setMerchantReferrer', { merchantId, userId }),
       setProgramMerchant: (_a, merchantId, on) => call('setProgramMerchant', { merchantId, on }),
       setSkuReseller: (_a, itemId, inProgram) => call('setSkuReseller', { itemId, inProgram }),

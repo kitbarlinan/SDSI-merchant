@@ -87,10 +87,10 @@ export function AppShell({ children }: { children: ReactNode }) {
             (entry) =>
               entry.roles.includes(user.role) &&
               // The wallet is for admin, or for someone who brought a merchant in.
-              (entry.href !== '/wallet' || user.role === 'admin' || (costing.referrals ?? []).some((link) => link.userId === user.id)),
+              (entry.href !== '/wallet' || user.role === 'admin' || (costing.referrals ?? []).some((link) => link.userId === user.id) || (costing.linkHolderIds ?? []).includes(user.id) || costing.rootSponsorId === user.id),
           )
         : [],
-    [user, costing.referrals],
+    [user, costing.referrals, costing.linkHolderIds, costing.rootSponsorId],
   );
 
   // The most specific nav entry wins, so /orders/new does not also light up "Orders".

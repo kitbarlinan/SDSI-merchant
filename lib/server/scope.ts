@@ -75,6 +75,17 @@ const merchantsFor = (me: User, merchants: Merchant[]): Merchant[] =>
     return rest;
   });
 
+/** Package sales and orders on which this person earns tier income, with only their own tier line. For people who are not resellers. */
+function earningsOf(me: User, state: AppState): { sales: PackageSale[]; orders: Order[] } {
+  const mine = <T extends { userId: string }>(tiers: T[] | undefined) => (tiers ?? []).filter((tier) => tier.userId === me.id);
+  return {
+    sales: state.packageSales.filter((sale) => mine(sale.tiers).length > 0).map((sale): PackageSale => ({ ...sale, tiers: mine(sale.tiers) })),
+    orders: state.orders
+      .filter((order) => mine(order.tiers).length > 0)
+      .map((order): Order => ({ ...redactOrder(order), customerName: order.customerName, tiers: mine(order.tiers) })),
+  };
+}
+
 export function scopeFor(me: User, state: AppState, merchantList: Merchant[]): Scoped {
   const merchants = merchantsFor(me, merchantList);
   const base: AppState = { ...state, outbox: [], poSeq: 0 };
@@ -90,6 +101,8 @@ export function scopeFor(me: User, state: AppState, merchantList: Merchant[]): S
     .map((link) => ({ ...link, stats: referralStats(state.orders, link.merchantId, state.costing.settings.referrerPct) }));
   const costing = { ...state.costing, settings: { ...state.costing.settings, markupPct: 0 }, log: [], referrals };
 
+  const earnings = earningsOf(me, state);
+
   if (me.role === 'merchant') {
     const mine = (merchantId: string) => merchantId === me.merchantId;
     return {
@@ -99,11 +112,11 @@ export function scopeFor(me: User, state: AppState, merchantList: Merchant[]): S
         costing,
         items: state.items.filter((item) => mine(item.merchantId)),
         products: state.products.filter((product) => mine(product.merchantId)),
-        orders: state.orders.filter((order) => mine(order.merchantId)),
+        orders: [...state.orders.filter((order) => mine(order.merchantId)), ...earnings.orders.filter((order) => !mine(order.merchantId))],
         receipts: state.receipts.filter((receipt) => mine(receipt.merchantId)),
         reversals: state.reversals.filter((request) => mine(request.merchantId)),
         remittances: state.remittances.filter((remittance) => mine(remittance.merchantId)),
-        packageSales: [],
+        packageSales: earnings.sales,
         users: state.users.filter((user) => user.id === me.id).map(noPassword),
       },
     };
@@ -159,7 +172,7 @@ export function scopeFor(me: User, state: AppState, merchantList: Merchant[]): S
       receipts: state.receipts,
       reversals: state.reversals,
       remittances: me.role === 'cashier' ? state.remittances : [],
-      packageSales: me.role === 'cashier' ? state.packageSales : [],
+      packageSales: me.role === 'cashier' ? state.packageSales : earnings.sales,
       users: state.users.map(noPassword).map((user) => (me.role === 'cashier' || user.role !== 'customer' ? user : publicUser(user))),
     },
   };

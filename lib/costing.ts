@@ -116,6 +116,10 @@ export interface CostingState {
   programMerchantIds: string[];
   /** Referral bonus: the person who brought a merchant in earns the referrer % of that merchant's delivered Net SRP. */
   referrals?: ReferralLink[];
+  /** Resellers who have no sponsor land under this person (the top of the chain, e.g. the chairman). */
+  rootSponsorId?: string;
+  /** People other than resellers who invite resellers with their own code and link. */
+  linkHolderIds?: string[];
 }
 
 export interface ReferralLink {

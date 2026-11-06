@@ -152,6 +152,7 @@ export interface AppDataValue {
   goLiveCostingRow: (actor: Actor, rowId: string) => Promise<ActionResult<CostingRow>>;
   setSkuDisabled: (actor: Actor, itemId: string, disabled: boolean) => Promise<ActionResult<InventoryItem>>;
   setProgramMerchant: (actor: Actor, merchantId: string, on: boolean) => Promise<ActionResult<string[]>>;
+  setReferralLinks: (actor: Actor, input: { rootSponsorId: string | null; linkHolderIds: string[] }) => Promise<ActionResult<{ rootSponsorId?: string; linkHolderIds: string[] }>>;
   setMerchantReferrer: (actor: Actor, merchantId: string, userId: string | null) => Promise<ActionResult<ReferralLink[]>>;
   setSkuReseller: (actor: Actor, itemId: string, inProgram: boolean) => Promise<ActionResult<InventoryItem>>;
   addSku: (actor: Actor, input: engine.NewSkuInput) => Promise<ActionResult<InventoryItem>>;
@@ -323,6 +324,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       approveCostingRow: (actor, rowId) => run((s) => engine.approveCostingRow(s, actor, rowId, nowISO())),
       revokeApproval: (actor, rowId) => run((s) => engine.revokeApproval(s, actor, rowId, nowISO())),
       goLiveCostingRow: (actor, rowId) => run((s) => engine.goLiveCostingRow(s, actor, rowId, nowISO())),
+      setReferralLinks: (actor, input) => run((st) => engine.setReferralLinks(st, actor, input, nowISO())),
       setMerchantReferrer: (actor, merchantId, userId) =>
         run((st) => engine.setMerchantReferrer(st, actor, merchantId, userId, nowISO())),
       setProgramMerchant: (actor, merchantId, on) =>
