@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { OrderCard } from '@/components/orders/OrderCard';
-import { IncomeWalletCard } from '@/components/orders/IncomeWalletCard';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Icon } from '@/components/ui/Icon';
 import { StatCard } from '@/components/ui/StatCard';
@@ -122,7 +121,11 @@ export function OrdersView() {
         }
       />
 
-      {isReseller && user ? <IncomeWalletCard userId={user.id} sales={packageSales} orders={orders} refCode={user.refCode} /> : null}
+      {isReseller && user ? (
+        <Link href="/wallet" className="block rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">
+          Your wallet, income and payout requests are in <span className="underline">My income</span>.
+        </Link>
+      ) : null}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard

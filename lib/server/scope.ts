@@ -5,6 +5,8 @@
  */
 import { referralStats } from '../referral';
 import type { AppState } from '../engine';
+import { inResellerProgram } from '../costing';
+import { stockAt } from '../inventory';
 import { LEGACY_BRANCH, type InventoryItem, type MasterProduct, type Merchant, type Order, type PackageSale, type User } from '../types';
 
 export interface Scoped {
@@ -145,7 +147,10 @@ export function scopeFor(me: User, state: AppState, merchantList: Merchant[]): S
       state: {
         ...base,
         costing,
-        items: state.items.map(stripCost),
+        // A reseller can only see the package and the reseller program products (and what is in their own orders).
+        items: state.items
+          .filter((item) => item.package || inResellerProgram(item, state.costing) || orders.some((order) => (order.createdBy === me.id || order.buyerId === me.id) && order.lines.some((line) => line.itemId === item.id)))
+          .map(stripCost),
         products: state.products.map(stockOnly),
         orders,
         receipts: [],
@@ -173,10 +178,11 @@ export function scopeFor(me: User, state: AppState, merchantList: Merchant[]): S
     state: {
       ...base,
       costing,
-      items: state.items,
+      // A cashier sees only the stock and receipts of their own branch.
+      items: me.role === 'cashier' ? state.items.map((item) => ({ ...item, stock: stockAt(item, branch), branchStock: { [branch]: stockAt(item, branch) } as typeof item.branchStock })) : state.items,
       products: state.products,
       orders,
-      receipts: state.receipts,
+      receipts: me.role === 'cashier' ? state.receipts.filter((receipt) => (receipt.branch ?? LEGACY_BRANCH) === branch) : state.receipts,
       reversals: state.reversals,
       remittances: me.role === 'cashier' ? state.remittances : [],
       packageSales: me.role === 'cashier' ? state.packageSales : earnings.sales,

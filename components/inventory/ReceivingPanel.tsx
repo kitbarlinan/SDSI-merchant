@@ -301,7 +301,7 @@ function ReceiveForm() {
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium text-slate-900">{item.name}</p>
                 <p className="text-xs text-slate-500">
-                  <span className="font-mono">{item.sku}</span> · on hand at {branchName(branch)} {formatNumber(stockAt(item, branch))}{kind === 'transfer' ? ` · at ${branchName(toPick)} ${formatNumber(stockAt(item, toPick))}` : ''}
+                  <span className="font-mono">{item.sku}</span> · on hand at {branchName(branch)} {formatNumber(stockAt(item, branch))}{kind === 'transfer' && user.role !== 'cashier' ? ` · at ${branchName(toPick)} ${formatNumber(stockAt(item, toPick))}` : ''}
                 </p>
               </div>
               <input
@@ -365,7 +365,8 @@ export function ReceivingPanel({ merchantFilter }: { merchantFilter: string }) {
   const scoped = useMemo(() => {
     if (!user) return [];
     if (user.role === 'merchant') return receipts.filter((r) => r.merchantId === user.merchantId);
-    return merchantFilter === 'all' ? receipts : receipts.filter((r) => r.merchantId === merchantFilter);
+    const own = user.role === 'cashier' ? receipts.filter((r) => (r.branch ?? DEFAULT_BRANCH) === (user.branchId ?? DEFAULT_BRANCH)) : receipts;
+    return merchantFilter === 'all' ? own : own.filter((r) => r.merchantId === merchantFilter);
   }, [receipts, user, merchantFilter]);
 
   const pending = scoped.filter((r) => r.status === 'pending');

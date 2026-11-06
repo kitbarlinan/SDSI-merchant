@@ -48,7 +48,7 @@ const NAV: NavItem[] = [
     badge: 'inventory',
   },
   { href: '/resellers', label: 'Resellers', icon: 'user', roles: ['admin', 'cashier'] },
-  { href: '/wallet', label: 'My income', icon: 'wallet', roles: ['admin', 'merchant', 'cashier', 'clerk'] },
+  { href: '/wallet', label: 'My income', icon: 'wallet', roles: ['admin', 'merchant', 'cashier', 'clerk', 'customer'] },
   { href: '/team', label: 'Team & accounts', icon: 'user', roles: ['admin'] },
   { href: '/remittances', label: 'Remittances', icon: 'wallet', roles: ['admin', 'cashier', 'merchant'] },
   { href: '/approvals', label: 'For Approval', icon: 'check', roles: ['admin', 'clerk'], badge: 'approvals' },
@@ -79,7 +79,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const auth = useAuth();
   const { user, ready, logout } = auth;
-  const { items, orders, receipts, reversals, remittances, merchants, resetDemo, costing } = useAppData();
+  const { items, orders, receipts, reversals, remittances, merchants, resetDemo, costing, packageSales } = useAppData();
 
   const visibleNav = useMemo(
     () =>
@@ -88,10 +88,10 @@ export function AppShell({ children }: { children: ReactNode }) {
             (entry) =>
               entry.roles.includes(user.role) &&
               // The wallet is for admin, or for someone who brought a merchant in.
-              (entry.href !== '/wallet' || user.role === 'admin' || (costing.referrals ?? []).some((link) => link.userId === user.id) || (costing.linkHolderIds ?? []).includes(user.id) || costing.rootSponsorId === user.id),
+              (entry.href !== '/wallet' || user.role === 'admin' || (user.role === 'customer' && packageSales.some((sale) => sale.resellerId === user.id)) || (costing.referrals ?? []).some((link) => link.userId === user.id) || (costing.linkHolderIds ?? []).includes(user.id) || costing.rootSponsorId === user.id),
           )
         : [],
-    [user, costing.referrals, costing.linkHolderIds, costing.rootSponsorId],
+    [user, costing.referrals, costing.linkHolderIds, costing.rootSponsorId, packageSales],
   );
 
   // The most specific nav entry wins, so /orders/new does not also light up "Orders".

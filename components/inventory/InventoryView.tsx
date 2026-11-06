@@ -20,7 +20,7 @@ import { availableOf, flattenDelivered } from '@/lib/orders';
 import { isSdsiTeam } from '@/lib/roles';
 import { useAppData } from '@/lib/store';
 import { CATEGORY_COLORS } from '@/lib/theme';
-import { BRANCHES, DEFAULT_BRANCH, type BranchId } from '@/lib/types';
+import { BRANCHES, DEFAULT_BRANCH, branchName, type BranchId } from '@/lib/types';
 import { useToday } from '@/lib/use-today';
 
 export function InventoryView() {
@@ -39,7 +39,8 @@ export function InventoryView() {
   const [alertsOnly, setAlertsOnly] = useState(false);
   const [branchView, setBranchView] = useState<BranchId | 'all' | null>(null);
   // A cashier starts on their own branch; everyone else on the total.
-  const branchSel: BranchId | 'all' = branchView ?? (user?.role === 'cashier' ? (user.branchId ?? DEFAULT_BRANCH) : 'all');
+  // A cashier is tied to their own branch: they never see the other branch's stock.
+  const branchSel: BranchId | 'all' = user?.role === 'cashier' ? (user.branchId ?? DEFAULT_BRANCH) : (branchView ?? 'all');
 
   const scopedItems = useMemo(() => {
     if (!user) return [];
@@ -88,7 +89,7 @@ export function InventoryView() {
   const colCount = 9;
 
   const scopedOrders = orders.filter((o) => (isMerchant ? o.merchantId === user.merchantId : merchantId === 'all' || o.merchantId === merchantId));
-  const scopedReceipts = receipts.filter((r) => (isMerchant ? r.merchantId === user.merchantId : merchantId === 'all' || r.merchantId === merchantId));
+  const scopedReceipts = receipts.filter((r) => (isMerchant ? r.merchantId === user.merchantId : merchantId === 'all' || r.merchantId === merchantId) && (user.role !== 'cashier' || (r.branch ?? DEFAULT_BRANCH) === (user.branchId ?? DEFAULT_BRANCH)));
   const tabs = [
     { key: 'stock' as const, label: 'Stock', count: 0 },
     { key: 'receiving' as const, label: 'Stock in / out', count: scopedReceipts.filter((r) => r.status === 'pending').length },
@@ -132,6 +133,9 @@ export function InventoryView() {
             );
           })}
         </div>
+        {user.role === 'cashier' ? (
+          <span className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700">{branchName(user.branchId)}</span>
+        ) : (
         <label className="text-xs font-medium text-slate-500">
           <span className="sr-only">Branch</span>
           <select
@@ -148,6 +152,7 @@ export function InventoryView() {
             ))}
           </select>
         </label>
+        )}
         {isStaff ? (
           <label className="text-xs font-medium text-slate-500">
             <span className="sr-only">Filter by merchant</span>
