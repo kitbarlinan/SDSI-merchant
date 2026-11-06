@@ -31,7 +31,9 @@ import { provisionReseller, refCodeOf, validateCredentials } from './accounts';
 import { demandOfLines, emptySplit, expiryOf, holderAt, makeStockBook, moveUnits, reservedUnits } from './stock';
 import { orderTotal } from './orders';
 import { walletHkd } from './wallet';
-import { buildWeekRemittances, remittedOrderIds, weekEndOf, weekStartOf } from './remittance';
+import { bankTransfer } from './costing';
+import { addDays } from './period';
+import { buildWeekRemittances, remittanceCurrency, remittedOrderIds, weekEndOf, weekStartOf } from './remittance';
 import {
   PAYMENT_METHODS,
   type InventoryItem,
@@ -303,6 +305,8 @@ export function requestEarningPayout(state: AppState, actor: Actor, amountHkd: n
   if (!me || actor.role === 'merchant' || actor.role === 'cashier' || actor.role === 'clerk') return fail('Only resellers and referrers have a wallet.');
   if (!Number.isFinite(amountHkd) || amountHkd <= 0) return fail('Enter an amount above 0.');
   if (Math.abs(amountHkd * 100 - Math.round(amountHkd * 100)) > 1e-6) return fail('Use at most 2 decimal places.');
+  const { payoutMinHkd } = state.costing.settings;
+  if (amountHkd < payoutMinHkd) return fail(`The minimum payout is ${formatHkd(payoutMinHkd)}. Keep it in your wallet until you reach it.`);
   const wallet = walletHkd(actor.id, state.orders, state.packageSales, state.costing, state.earningPayouts);
   if (amountHkd > wallet.availableHkd) return fail(`You can cash out up to ${formatHkd(Math.max(0, wallet.availableHkd))}.`);
   const payout: EarningPayout = {
@@ -310,9 +314,13 @@ export function requestEarningPayout(state: AppState, actor: Actor, amountHkd: n
     userId: me.id,
     userName: me.name,
     amountHkd: roundMoney(amountHkd),
+    ...bankTransfer(roundMoney(amountHkd), state.costing.settings),
+    // Requests are cut off on Sunday and sent the Monday after (a request on a Monday goes the next Monday).
+    releaseOn: addDays(weekStartOf(dateOf(now)), 7),
     status: 'requested',
     requestedAt: now,
   };
+  if (payout.netHkd! <= 0) return fail('The payout is smaller than the bank charge.');
   return { ok: true, state: { ...state, earningPayouts: [payout, ...state.earningPayouts] }, value: payout };
 }
 
@@ -2056,15 +2064,28 @@ export function closeWeek(
   if (state.remittances.some((remittance) => remittance.weekStart === weekStart)) {
     return fail('This week is already closed.');
   }
-  const created = buildWeekRemittances(
+  const built = buildWeekRemittances(
     state.orders,
     weekStart,
     state.remittances.length + 1,
     actor.id,
     now,
   );
-  if (created.length === 0) return fail('No delivered orders in this week.');
-  return { ok: true, state: { ...state, remittances: [...created.reverse(), ...state.remittances] }, value: created };
+  if (built.length === 0) return fail('No delivered orders in this week.');
+  // A payout that stayed below the minimum was never released: it is added to this week's payout of the same merchant.
+  const minHkd = state.costing.settings.payoutMinHkd;
+  const held = state.remittances.filter((r) => r.status === 'pending' && remittanceCurrency(r) === 'HKD' && r.netPayable < minHkd);
+  const folded = new Set<string>();
+  const created = built.map((r) => {
+    if (remittanceCurrency(r) !== 'HKD') return r;
+    const earlier = held.filter((h) => h.merchantId === r.merchantId);
+    if (earlier.length === 0) return r;
+    earlier.forEach((h) => folded.add(h.id));
+    const netPayable = roundMoney(r.netPayable + earlier.reduce((sum, h) => sum + h.netPayable, 0));
+    return { ...r, orderIds: [...r.orderIds, ...earlier.flatMap((h) => h.orderIds)].sort(), netPayable, payoutPhp: netPayable };
+  });
+  const rest = state.remittances.filter((r) => !folded.has(r.id));
+  return { ok: true, state: { ...state, remittances: [...created.slice().reverse(), ...rest] }, value: created };
 }
 
 /** Admin releases the payout: sets the SF advance to deduct, the release date and a reference. */
@@ -2105,13 +2126,22 @@ export function submitRelease(
   }
   const deduction = roundMoney(input.deductionPhp);
   if (remittance.netPayable - deduction + adjustment < 0) return fail('The payout cannot be negative.');
+  // HKD payouts: from the minimum, and the bank charge of each transfer comes out of what the merchant receives.
+  const hkd = remittanceCurrency(remittance) === 'HKD';
+  const gross = roundMoney(remittance.netPayable - deduction + adjustment);
+  const bank = hkd ? bankTransfer(gross, state.costing.settings) : { transactions: 0, feeHkd: 0, netHkd: gross };
+  if (hkd && remittance.netPayable < state.costing.settings.payoutMinHkd) {
+    return fail(`This payout is below the minimum of ${formatHkd(state.costing.settings.payoutMinHkd)}. It is added to the next week's payout.`);
+  }
+  if (hkd && bank.netHkd < 0) return fail('The payout is smaller than the bank charge.');
   const next: Remittance = {
+    ...(hkd ? { transactions: bank.transactions, bankFeeHkd: bank.feeHkd } : {}),
     ...remittance,
     deductionPhp: deduction,
     deductionNote: input.deductionNote.trim(),
     adjustmentPhp: adjustment,
     adjustmentNote: adjustment === 0 ? '' : (input.adjustmentNote ?? '').trim(),
-    payoutPhp: roundMoney(remittance.netPayable - deduction + adjustment),
+    payoutPhp: bank.netHkd,
     status: 'submitted',
     releasedBy: actor.id,
     releasedAt: now,

@@ -50,7 +50,8 @@ export function WalletView() {
                 <li key={payout.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
                   <span>{payout.userName}<span className="ml-2 text-xs text-slate-500">{payout.id} · {formatDate(payout.requestedAt)}</span></span>
                   <span className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold">{formatHkd(payout.amountHkd)}</span>
+                    <span className="text-xs text-slate-500">{payout.releaseOn ? `send ${formatDate(payout.releaseOn)} · ` : ''}wallet {formatHkd(payout.amountHkd)}</span>
+                    <span className="font-semibold">send {formatHkd(payout.netHkd ?? payout.amountHkd)}</span>
                     <input placeholder="Bank reference" value={refs[payout.id] ?? ''} onChange={(event) => setRefs({ ...refs, [payout.id]: event.target.value })} className="w-40 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
                     <button type="button" onClick={async () => { const result = await markEarningPaid(user, payout.id, refs[payout.id] ?? ''); setError(result.ok ? '' : result.error); }} className="rounded-lg bg-emerald-600 px-3 py-1 text-sm font-semibold text-white">Mark paid</button>
                   </span>

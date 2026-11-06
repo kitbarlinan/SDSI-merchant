@@ -39,10 +39,12 @@ export const remittedOrderIds = (remittances: Remittance[]): Set<string> =>
 /** Completed weeks (Monday starts) that have delivered orders and were not closed yet, oldest first. */
 export function closableWeeks(orders: Order[], remittances: Remittance[], today: string): string[] {
   const closed = new Set(remittances.map((remittance) => remittance.weekStart));
+  const taken = remittedOrderIds(remittances);
   const weeks = new Set<string>();
   for (const order of orders) {
     const day = deliveredDay(order);
-    if (!day) continue;
+    // Orders already carried into a later payout do not keep their old week open.
+    if (!day || taken.has(order.id)) continue;
     const start = weekStartOf(day);
     if (weekEndOf(start) < today && !closed.has(start)) weeks.add(start);
   }

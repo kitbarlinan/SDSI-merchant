@@ -14,6 +14,7 @@ import { formatCurrency, formatDate, formatHkd, formatMoney, formatNumber } from
 import { MOCK_TODAY } from '@/lib/mock-data';
 import { orderTotal } from '@/lib/orders';
 import { orderPay } from '@/lib/orders';
+import { bankTransfer } from '@/lib/costing';
 import { closableWeeks, openWeeks, payoutDueDate, remittanceCurrency, walletOf, weekEndOf } from '@/lib/remittance';
 import { useAppData } from '@/lib/store';
 import type { Remittance } from '@/lib/types';
@@ -23,7 +24,7 @@ const weekLabel = (start: string, end: string) => `${formatDate(start)} to ${for
 
 function RemittanceRow({ remittance, showMerchant }: { remittance: Remittance; showMerchant: boolean }) {
   const { user } = useAuth();
-  const { orders, merchants, submitRelease, approveRelease, rejectRelease } = useAppData();
+  const { orders, merchants, costing, submitRelease, approveRelease, rejectRelease } = useAppData();
   const today = useToday() || MOCK_TODAY;
   const [open, setOpen] = useState(false);
   const [releasing, setReleasing] = useState(false);
@@ -50,10 +51,12 @@ function RemittanceRow({ remittance, showMerchant }: { remittance: Remittance; s
   const defaultDate = dueDate <= today ? dueDate : today;
   const deductionValue = deduction.trim() === '' ? 0 : Number(deduction);
   const adjustmentValue = adjustment.trim() === '' ? 0 : Number(adjustment);
-  const payoutPreview =
+  const belowMin = remittanceCurrency(remittance) === 'HKD' && remittance.status === 'pending' && remittance.netPayable < costing.settings.payoutMinHkd;
+  const rawPreview =
     remittance.netPayable -
     (Number.isFinite(deductionValue) ? deductionValue : 0) +
     (Number.isFinite(adjustmentValue) ? adjustmentValue : 0);
+  const payoutPreview = remittanceCurrency(remittance) === 'HKD' ? bankTransfer(Math.max(0, rawPreview), costing.settings).netHkd : rawPreview;
 
   if (!user) return null;
 
@@ -93,6 +96,9 @@ function RemittanceRow({ remittance, showMerchant }: { remittance: Remittance; s
                 ? ` · released by cashier ${remittance.releasedDate ? formatDate(remittance.releasedDate) : ''} · ref ${remittance.reference}`
                 : ` · closed, due ${formatDate(dueDate)}`}
           </p>
+          {belowMin ? (
+            <p className="mt-0.5 text-xs font-medium text-amber-700">Below the minimum payout of {formatMoney(costing.settings.payoutMinHkd, 'HKD')}: it is held and added to this merchant's payout next week.</p>
+          ) : null}
           {merchant?.profile ? (
             <p className="mt-0.5 text-xs text-slate-600">
               Remit to: <span className="font-medium">{merchant.profile.bankName}</span> · {merchant.profile.bankAccountName} ·{' '}
@@ -116,6 +122,12 @@ function RemittanceRow({ remittance, showMerchant }: { remittance: Remittance; s
               {remittance.deductionPhp > 0 ? `− ${money(remittance.deductionPhp)}` : released ? '—' : 'not set'}
             </p>
           </div>
+          {remittance.bankFeeHkd ? (
+            <div>
+              <p className="text-xs text-slate-500">Bank charge</p>
+              <p className="font-medium text-rose-700">− {money(remittance.bankFeeHkd)}{remittance.transactions && remittance.transactions > 1 ? ` (${remittance.transactions} transfers)` : ''}</p>
+            </div>
+          ) : null}
           {released && remittance.adjustmentPhp !== 0 ? (
             <div>
               <p className="text-xs text-slate-500">Adjustment</p>

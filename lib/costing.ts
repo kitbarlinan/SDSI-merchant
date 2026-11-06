@@ -48,6 +48,12 @@ export interface CostingSettings {
   referrerPct: number;
   /** System fee, percent of the SRP basis. Charged to the merchant. */
   systemFeePct: number;
+  /** Payouts (merchants, resellers, referrers) are sent only from this amount, HKD. Below it the money carries over. */
+  payoutMinHkd: number;
+  /** Bank charge of one transfer, taken out of the payout, HKD. */
+  bankFeeHkd: number;
+  /** The most one transfer can carry, HKD. A bigger payout is sent in several transfers, each with the bank charge. */
+  bankMaxHkd: number;
 }
 
 /** Values from the costing sheet. The exchange rate matches the sheet's 1,485 PHP = 182.36 HKD. */
@@ -66,6 +72,9 @@ export const DEFAULT_COSTING_SETTINGS: CostingSettings = {
   tierL2Pct: 2,
   referrerPct: 5,
   systemFeePct: 1,
+  payoutMinHkd: 100,
+  bankFeeHkd: 25,
+  bankMaxHkd: 8000,
 };
 
 /**
@@ -356,6 +365,9 @@ const RANGES: Record<keyof CostingSettings, { label: string; min: number; max: n
   tierL2Pct: { label: 'Tier level 2 %', min: 0, max: 50 },
   referrerPct: { label: 'Referrer %', min: 0, max: 50 },
   systemFeePct: { label: 'System fee %', min: 0, max: 50 },
+  payoutMinHkd: { label: 'Minimum payout', min: 0, max: 100_000 },
+  bankFeeHkd: { label: 'Bank charge', min: 0, max: 10_000 },
+  bankMaxHkd: { label: 'Bank limit per transfer', min: 0, max: 10_000_000, exclusiveMin: true },
 };
 
 export const SETTING_LABEL: Record<keyof CostingSettings, string> = {
@@ -373,6 +385,9 @@ export const SETTING_LABEL: Record<keyof CostingSettings, string> = {
   tierL2Pct: 'Tier income level 2 (% of package SRP)',
   referrerPct: 'Referrer (% of SRP basis)',
   systemFeePct: 'System fees (% of SRP basis)',
+  payoutMinHkd: 'Minimum payout (HKD)',
+  bankFeeHkd: 'Bank charge per transfer (HKD), taken out of the payout',
+  bankMaxHkd: 'Bank limit per transfer (HKD)',
 };
 
 export function validateSettings(patch: Partial<CostingSettings>): string | null {
@@ -567,4 +582,11 @@ export function orderDeductions(
   const referrerPhp = referred ? roundMoney((programSrp * referrerPct) / 100) : 0;
   const systemFeePhp = roundMoney((programSrp * systemFeePct) / 100);
   return { resellerPhp, referrerPhp, tierPhp, systemFeePhp, totalPhp: roundMoney(resellerPhp + referrerPhp + tierPhp + systemFeePhp) };
+}
+
+/** How a payout is sent: the number of bank transfers (each at most the limit), the bank charge, and what arrives. */
+export function bankTransfer(grossHkd: number, settings: Pick<CostingSettings, 'bankFeeHkd' | 'bankMaxHkd'>): { transactions: number; feeHkd: number; netHkd: number } {
+  const transactions = grossHkd > 0 ? Math.ceil(grossHkd / settings.bankMaxHkd) : 0;
+  const feeHkd = roundMoney(transactions * settings.bankFeeHkd);
+  return { transactions, feeHkd, netHkd: roundMoney(grossHkd - feeHkd) };
 }

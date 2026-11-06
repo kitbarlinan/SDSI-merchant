@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { useAuth } from '@/lib/auth';
+import { bankTransfer } from '@/lib/costing';
 import { Card } from '@/components/ui/Card';
 import { formatDate, formatHkd } from '@/lib/format';
 import { tierIncome } from '@/lib/orders';
@@ -66,7 +67,7 @@ export function IncomeWalletCard({ userId, sales, orders, refCode }: { userId: s
         <p className="text-sm font-semibold text-slate-800">Weekly payout</p>
         <p className="text-xs text-slate-500">
           Leave your balance here to buy products, or ask for part of it in the weekly payout. What you spent from the wallet is already taken out.
-          You can cash out up to {formatHkd(Math.max(0, wallet.availableHkd))}.
+          You can cash out up to {formatHkd(Math.max(0, wallet.availableHkd))}. Minimum {formatHkd(costing.settings.payoutMinHkd)}; the bank charge of {formatHkd(costing.settings.bankFeeHkd)} per transfer (up to {formatHkd(costing.settings.bankMaxHkd)} each) is taken out of the payout. Request before Sunday: it is sent the Monday after.
         </p>
         {mine && user && user.role !== 'customer' ? (
           <Link href="/wallet/buy" className="mt-2 inline-block rounded-xl border border-emerald-600 px-4 py-2 text-sm font-semibold text-emerald-700">
@@ -80,8 +81,13 @@ export function IncomeWalletCard({ userId, sales, orders, refCode }: { userId: s
               <input type="number" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} className="mt-1 block w-36 rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900" />
             </label>
             <button type="button" onClick={() => setAmount(String(Math.max(0, wallet.availableHkd)))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-700">All</button>
-            <button type="button" disabled={!(Number(amount) > 0)} onClick={() => void cashOut()} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">Request payout</button>
+            <button type="button" disabled={!(Number(amount) >= costing.settings.payoutMinHkd)} onClick={() => void cashOut()} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">Request payout</button>
           </div>
+        ) : null}
+        {mine && Number(amount) >= costing.settings.payoutMinHkd ? (
+          <p className="mt-2 text-xs text-slate-600">
+            You receive <strong>{formatHkd(bankTransfer(Number(amount), costing.settings).netHkd)}</strong> (bank charge {formatHkd(bankTransfer(Number(amount), costing.settings).feeHkd)}).
+          </p>
         ) : null}
         {message ? <p className={`mt-2 text-sm ${message.ok ? 'text-emerald-700' : 'text-rose-600'}`}>{message.text}</p> : null}
         {payouts.length > 0 ? (
@@ -91,7 +97,7 @@ export function IncomeWalletCard({ userId, sales, orders, refCode }: { userId: s
                 <span>
                   {payout.id} · {formatDate(payout.requestedAt)}
                   <span className="ml-2 text-xs text-slate-500">
-                    {payout.status === 'requested' ? 'Waiting for the weekly payout' : payout.status === 'paid' ? `Paid ${payout.paidAt ? formatDate(payout.paidAt) : ''}${payout.reference ? ` · ${payout.reference}` : ''}` : 'Cancelled'}
+                    {payout.status === 'requested' ? `Sent ${payout.releaseOn ? formatDate(payout.releaseOn) : 'in the weekly payout'}${payout.netHkd !== undefined ? ` · you receive ${formatHkd(payout.netHkd)} after the bank charge` : ''}` : payout.status === 'paid' ? `Paid ${payout.paidAt ? formatDate(payout.paidAt) : ''}${payout.reference ? ` · ${payout.reference}` : ''}` : 'Cancelled'}
                   </span>
                 </span>
                 <span className="flex items-center gap-3 font-semibold text-slate-900">

@@ -378,6 +378,9 @@ export interface Remittance {
   adjustmentNote: string;
   /** What is actually paid out: net payable minus the deduction, plus the adjustment. */
   payoutPhp: number;
+  /** HKD payouts: bank transfers needed and their charge, already taken out of the payout. */
+  transactions?: number;
+  bankFeeHkd?: number;
   status: RemittanceStatus;
   closedBy: string;
   closedAt: string;
@@ -408,6 +411,12 @@ export interface EarningPayout {
   userId: string;
   userName: string;
   amountHkd: number;
+  /** Bank charge and what arrives: amountHkd is taken from the wallet, netHkd is sent. */
+  transactions?: number;
+  feeHkd?: number;
+  netHkd?: number;
+  /** The Monday it is sent (the cutoff is Sunday). */
+  releaseOn?: string;
   status: 'requested' | 'paid' | 'cancelled';
   requestedAt: string;
   paidAt?: string;
