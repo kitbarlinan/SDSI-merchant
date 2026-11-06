@@ -76,7 +76,7 @@ export interface ResellerSummary {
   /** Discount received on delivered orders. */
   discountPhp: number;
   /** Tier income earned as an upline, per level. */
-  tierByLevel: [number, number, number];
+  tierByLevel: [number, number];
   tierTotal: number;
 }
 
@@ -86,7 +86,7 @@ export function resellerSummaries(users: User[], rows: LedgerRow[], sales: Packa
     .map((user) => {
       const mine = rows.filter((row) => row.buyerId === user.id && row.counted && row.kind === 'Order');
       const income = tierIncome(sales, orders, user.id);
-      const byLevel: [number, number, number] = [0, 0, 0];
+      const byLevel: [number, number] = [0, 0];
       for (const row of income.rows) if (row.earned) byLevel[row.level - 1] = roundMoney(byLevel[row.level - 1] + row.php);
       const sale = sales.find((candidate) => candidate.resellerId === user.id);
       return {

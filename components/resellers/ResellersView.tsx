@@ -104,7 +104,6 @@ export function ResellersView() {
                     <th className="py-2 pr-4 text-right font-medium">Discount received</th>
                     <th className="py-2 pr-4 text-right font-medium">Tier L1</th>
                     <th className="py-2 pr-4 text-right font-medium">Tier L2</th>
-                    <th className="py-2 pr-4 text-right font-medium">Tier L3</th>
                     <th className="py-2 text-right font-medium">Tier total</th>
                   </>
                 ) : null}
