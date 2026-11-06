@@ -47,6 +47,7 @@ const NAV: NavItem[] = [
     badge: 'inventory',
   },
   { href: '/resellers', label: 'Resellers', icon: 'user', roles: ['admin', 'cashier'] },
+  { href: '/wallet', label: 'My income', icon: 'wallet', roles: ['admin', 'merchant', 'cashier', 'clerk'] },
   { href: '/team', label: 'Team & accounts', icon: 'user', roles: ['admin'] },
   { href: '/remittances', label: 'Remittances', icon: 'wallet', roles: ['admin', 'cashier', 'merchant'] },
   { href: '/approvals', label: 'For Approval', icon: 'check', roles: ['admin', 'clerk'], badge: 'approvals' },
@@ -77,11 +78,19 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const auth = useAuth();
   const { user, ready, logout } = auth;
-  const { items, orders, receipts, reversals, remittances, merchants, resetDemo } = useAppData();
+  const { items, orders, receipts, reversals, remittances, merchants, resetDemo, costing } = useAppData();
 
   const visibleNav = useMemo(
-    () => (user ? NAV.filter((entry) => entry.roles.includes(user.role)) : []),
-    [user],
+    () =>
+      user
+        ? NAV.filter(
+            (entry) =>
+              entry.roles.includes(user.role) &&
+              // The wallet is for admin, or for someone who brought a merchant in.
+              (entry.href !== '/wallet' || user.role === 'admin' || (costing.referrals ?? []).some((link) => link.userId === user.id)),
+          )
+        : [],
+    [user, costing.referrals],
   );
 
   // The most specific nav entry wins, so /orders/new does not also light up "Orders".

@@ -37,6 +37,9 @@ export const reservesStock = (order: Order): boolean =>
 export const orderTotal = (order: Order): number =>
   roundMoney(order.lines.reduce((sum, line) => sum + line.total, 0));
 
+/** What the merchant is paid for the order: the SRP less the reseller program deductions charged to them. */
+export const orderNet = (order: Order): number => roundMoney(orderTotal(order) - (order.deductions?.totalPhp ?? 0));
+
 export const orderUnits = (order: Order): number =>
   order.lines.reduce((sum, line) => sum + line.quantity, 0);
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { BranchBalanceCard } from '@/components/accounting/BranchBalanceCard';
+import { NetIncomeCard } from '@/components/accounting/NetIncomeCard';
 import { PackageIncomeCard } from '@/components/accounting/PackageIncomeCard';
 import { useMemo, useState } from 'react';
 import { DonutChart } from '@/components/charts/DonutChart';
@@ -140,6 +141,8 @@ function AccountingReports() {
           }}
         />
       </div>
+
+      <NetIncomeCard merchantId={merchantFilter} range={range} today={today} setRange={setRange} />
 
       <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4 text-sm text-violet-900">
         <p className="font-medium">How the numbers work</p>

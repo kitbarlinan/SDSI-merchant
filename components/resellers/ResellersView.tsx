@@ -71,8 +71,8 @@ export function ResellersView() {
                           className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
                         >
                           <option value="">No referrer</option>
-                          {users.filter((candidate) => candidate.role === 'customer').map((candidate) => (
-                            <option key={candidate.id} value={candidate.id}>{candidate.name}</option>
+                          {users.map((candidate) => (
+                            <option key={candidate.id} value={candidate.id}>{candidate.name} ({candidate.role === 'customer' ? 'reseller' : candidate.role})</option>
                           ))}
                         </select>
                       </td>

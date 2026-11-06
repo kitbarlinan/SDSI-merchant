@@ -18,7 +18,7 @@
  * SF 34, CF 5.55 -> 6, net COD 228.
  */
 import { roundMoney } from './format';
-import type { InventoryItem, PackageSale, PaymentMethod, TierShare, User } from './types';
+import type { InventoryItem, OrderDeductions, PackageSale, PaymentMethod, TierShare, User } from './types';
 
 export interface CostingSettings {
   /** Mark-up on the merchant's SRP, percent. */
@@ -517,4 +517,29 @@ export function normalizeSettings(saved: Record<string, unknown> | undefined): C
   // The old default reseller discount was 15%; the program now runs on 10%.
   if (saved?.resellerDiscountPct === 15) next.resellerDiscountPct = 10;
   return next as unknown as CostingSettings;
+}
+
+/**
+ * What the merchant is charged on a delivered order, on the lines that are in the reseller program (merchant ticked,
+ * SKU not switched off): the reseller discount and tier income as recorded on the order, plus the referrer share
+ * (when the merchant has a referrer) and the system fee on the SRP of those lines. null when no line is in the program.
+ */
+export function orderDeductions(
+  order: { merchantId: string; lines: { itemId: string; total: number }[]; discountPhp?: number; tiers?: { php: number }[] },
+  items: InventoryItem[],
+  costing: CostingState,
+): OrderDeductions | null {
+  let programSrp = 0;
+  for (const line of order.lines) {
+    const item = items.find((candidate) => candidate.id === line.itemId);
+    if (item && inResellerProgram(item, costing)) programSrp += line.total;
+  }
+  if (programSrp <= 0) return null;
+  const { referrerPct, systemFeePct } = costing.settings;
+  const referred = (costing.referrals ?? []).some((link) => link.merchantId === order.merchantId);
+  const resellerPhp = roundMoney(order.discountPhp ?? 0);
+  const tierPhp = roundMoney((order.tiers ?? []).reduce((sum, tier) => sum + tier.php, 0));
+  const referrerPhp = referred ? roundMoney((programSrp * referrerPct) / 100) : 0;
+  const systemFeePhp = roundMoney((programSrp * systemFeePct) / 100);
+  return { resellerPhp, referrerPhp, tierPhp, systemFeePhp, totalPhp: roundMoney(resellerPhp + referrerPhp + tierPhp + systemFeePhp) };
 }

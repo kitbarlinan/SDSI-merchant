@@ -10,7 +10,7 @@
  */
 import { roundMoney } from './format';
 import { addDays, weekdayOf } from './period';
-import { orderTotal } from './orders';
+import { orderNet } from './orders';
 import type { Order, Remittance } from './types';
 
 /** Monday of the week that contains the date. */
@@ -62,7 +62,7 @@ export function buildWeekRemittances(
   return [...byMerchant.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([merchantId, list], index) => {
-      const netPayable = roundMoney(list.reduce((sum, order) => sum + orderTotal(order), 0));
+      const netPayable = roundMoney(list.reduce((sum, order) => sum + orderNet(order), 0));
       return {
         id: `RMT-${String(firstNumber + index).padStart(6, '0')}`,
         merchantId,
@@ -101,7 +101,7 @@ export function walletOf(merchantId: string, orders: Order[], remittances: Remit
   const earned = roundMoney(
     orders
       .filter((order) => order.merchantId === merchantId && order.status === 'delivered')
-      .reduce((sum, order) => sum + orderTotal(order), 0),
+      .reduce((sum, order) => sum + orderNet(order), 0),
   );
   const mine = remittances.filter((remittance) => remittance.merchantId === merchantId);
   const released = mine.filter((remittance) => remittance.status === 'released');
@@ -148,7 +148,7 @@ export function openWeeks(orders: Order[], remittances: Remittance[], today: str
         weekStart,
         weekEnd: weekEndOf(weekStart),
         orderIds: list.map((order) => order.id).sort(),
-        netPayable: roundMoney(list.reduce((sum, order) => sum + orderTotal(order), 0)),
+        netPayable: roundMoney(list.reduce((sum, order) => sum + orderNet(order), 0)),
         running: weekEndOf(weekStart) >= today,
       };
     })

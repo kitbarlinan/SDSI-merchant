@@ -16,6 +16,7 @@ import {
   validateSettings,
   resellerCharges,
   makePackageSale,
+  orderDeductions,
   orderTiers,
   uplineOf,
   SETTING_LABEL,
@@ -436,7 +437,7 @@ export function checkoutWalkIn(
 
   const { ids, poSeq } = nextPoids(state, byMerchant.size);
   const customerName = packageBuyer?.name ?? (input.customerName?.trim() || WALK_IN_DEFAULT_NAME);
-  const created: Order[] = [...byMerchant.entries()].map(([merchantId, lines], index) => {
+  const createdRaw: Order[] = [...byMerchant.entries()].map(([merchantId, lines], index) => {
     const charges = orderCharges(
       lines.map((line) => ({ itemId: line.itemId, quantity: line.quantity })),
       state.costing,
@@ -465,6 +466,7 @@ export function checkoutWalkIn(
     ...(packageBuyer ? { buyerId: packageBuyer.id } : {}),
     };
   });
+  const created = createdRaw.map((order) => withDeductions(state, order));
 
   const moved = moveUnits(state.items, state.products, branch, demandOfLines(state.items, built.lines), -1);
 
@@ -480,6 +482,12 @@ export function checkoutWalkIn(
     ? { ...next, users: [...next.users, newUser], outbox: newEmail ? [newEmail, ...next.outbox] : next.outbox }
     : next;
   return { ok: true, state: packageBuyer ? addPackageSale(withUser, first, actor.id, now) : withUser, value: created };
+}
+
+/** Fixes what the merchant is charged for the reseller program on an order that is being delivered. */
+function withDeductions(state: AppState, order: Order): Order {
+  const deductions = orderDeductions(order, state.items, state.costing);
+  return deductions ? { ...order, deductions } : order;
 }
 
 function updateOrder(state: AppState, orderId: string, change: Partial<Order>): AppState {
@@ -586,6 +594,7 @@ export function markDelivered(
     handledBy: actor.id,
     paymentMethod,
     topUpRate: state.costing.settings.markupPct,
+    deductions: orderDeductions(order, state.items, state.costing) ?? undefined,
   });
   const delivered = next.orders.find((o) => o.id === orderId)!;
   const final = hasPackage(next, delivered) ? addPackageSale(next, delivered, actor.id, now) : next;
@@ -1128,7 +1137,7 @@ export function setMerchantReferrer(
 ): Outcome<ReferralLink[]> {
   const denied = costingGuard(actor);
   if (denied) return denied;
-  if (userId !== null && !state.users.some((user) => user.id === userId && user.role === 'customer')) return fail('Pick a reseller account as the referrer.');
+  if (userId !== null && !state.users.some((user) => user.id === userId)) return fail('Pick a person with an account as the referrer.');
   const rest = (state.costing.referrals ?? []).filter((link) => link.merchantId !== merchantId);
   const referrals = userId === null ? rest : [...rest, { merchantId, userId }];
   const who = userId ? state.users.find((user) => user.id === userId)?.name ?? userId : 'nobody';
@@ -1853,7 +1862,7 @@ export function approveReversal(
   };
 
   if (order.status === 'delivered') {
-    change = { ...change, deliveredAt: undefined, paymentMethod: undefined, topUpRate: undefined };
+    change = { ...change, deliveredAt: undefined, paymentMethod: undefined, topUpRate: undefined, deductions: undefined };
     if (target === 'cancelled') {
       change = { ...change, cancelledAt: now, cancelReason: `Sale voided (${request.id})` };
     }

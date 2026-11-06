@@ -74,6 +74,14 @@ export interface MerchantProfile {
   bankAccountNo: string;
 }
 
+export interface OrderDeductions {
+  resellerPhp: number;
+  referrerPhp: number;
+  tierPhp: number;
+  systemFeePhp: number;
+  totalPhp: number;
+}
+
 export interface Merchant {
   id: string;
   name: string;
@@ -228,6 +236,8 @@ export interface Order {
   discountHkd?: number;
   /** Same discount in PHP at the exchange rate of that day. It comes off the merchant's net payable. */
   discountPhp?: number;
+  /** What the merchant is charged on this order for the reseller program, fixed when it is delivered. Comes off the merchant's payout. */
+  deductions?: OrderDeductions;
   /** Reseller orders: the buyer's upline at the time of the order and the tier income each earns once delivered. */
   tiers?: TierShare[];
   /** The reseller this order is for (counter sale of the package). */
