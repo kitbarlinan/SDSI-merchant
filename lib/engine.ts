@@ -1097,7 +1097,8 @@ export function setCostingSettings(
   const problem = validateSettings(patch);
   if (problem) return fail(problem);
 
-  const settings = { ...state.costing.settings, ...patch };
+  // One exchange rate: payouts and wallets use the same rate as the costing.
+  const settings = { ...state.costing.settings, ...patch, ...(patch.fxPhpPerHkd !== undefined ? { payoutFxPhpPerHkd: patch.fxPhpPerHkd } : {}) };
   const details = keys.map((key) => `${SETTING_LABEL[key]}: ${state.costing.settings[key]} -> ${patch[key]}`);
   return {
     ok: true,

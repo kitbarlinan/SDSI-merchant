@@ -460,20 +460,20 @@ function CostingEditor() {
         subtitle="SKU SRP × (1 + mark-up) ÷ exchange rate = basis. Basis + SF per qty × pieces = final basis. Pickup price is set by hand."
       >
         <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {SETTING_KEYS.map((key) => {
+          {SETTING_KEYS.filter((key) => key !== 'payoutFxPhpPerHkd').map((key) => {
             const error = settingErrors[key];
             const changed = preview[key] !== saved[key];
             return (
               <label key={key} className="text-xs font-medium text-slate-500">
                 {SETTING_LABEL[key]}
-                {key === 'payoutFxPhpPerHkd' ? (
+                {key === 'fxPhpPerHkd' ? (
                   <button
                     type="button"
                     onClick={async () => {
                       const result = await fetchBankRate();
                       if (!result.ok) return setNotice(result.error);
-                      setSettingsDraft((current) => ({ ...current, payoutFxPhpPerHkd: String(result.rate) }));
-                      setNotice(`Rate from your sheet: ${result.rate} (${new Date(result.at).toLocaleString()}). It is in the Payout rate box: review it, then save.`);
+                      setSettingsDraft((current) => ({ ...current, fxPhpPerHkd: String(result.rate) }));
+                      setNotice(`Rate from your sheet: ${result.rate} (${new Date(result.at).toLocaleString()}). It is in the Exchange rate box: review it, then save.`);
                     }}
                     className="ml-2 rounded-lg border border-slate-300 px-2 py-0.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
                   >
@@ -497,8 +497,7 @@ function CostingEditor() {
           })}
         </div>
         <p className="mt-3 text-xs text-slate-500">
-          The exchange rate is the one used to get the basis in HKD from 1,485 PHP in the sheet (1,485 ÷ 8.0388 = 184.73). This costing rate is a budget
-          rate. The payout rate is the actual bank rate: it is locked on each order when it is delivered and used for the HKD payouts and wallets. Update both
+          The exchange rate is the one used to get the basis in HKD from 1,485 PHP in the sheet (1,485 ÷ 8.0388 = 184.73). This one rate (mid-market) is also locked on each order when it is delivered and used for the HKD payouts and wallets. Update it
           whenever the rate changes. The collection fee is (pickup price + SF) × CF rate, rounded to a
           whole HKD, never below the minimum.
         </p>

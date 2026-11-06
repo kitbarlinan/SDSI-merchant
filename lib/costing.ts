@@ -368,7 +368,7 @@ const RANGES: Record<keyof CostingSettings, { label: string; min: number; max: n
 
 export const SETTING_LABEL: Record<keyof CostingSettings, string> = {
   markupPct: 'Mark-up (%)',
-  fxPhpPerHkd: 'Costing rate (PHP per 1 HKD) - budget',
+  fxPhpPerHkd: 'Exchange rate (PHP per 1 HKD) - mid-market, also used for payouts and wallets',
   payoutFxPhpPerHkd: 'Payout rate (PHP per 1 HKD) - actual bank rate',
   sfPerQtyHkd: 'SF added to basis, per qty (HKD)',
   shippingFeeHkd: 'Shipping fee, SF (HKD)',
@@ -546,8 +546,8 @@ export function normalizeSettings(saved: Record<string, unknown> | undefined): C
   }
   // The old default reseller discount was 15%; the program now runs on 10%.
   if (saved?.resellerDiscountPct === 15) next.resellerDiscountPct = 10;
-  // Settings saved before the payout rate existed: it starts equal to the costing rate.
-  if (typeof saved?.payoutFxPhpPerHkd !== 'number' && typeof saved?.fxPhpPerHkd === 'number') next.payoutFxPhpPerHkd = saved.fxPhpPerHkd;
+  // One exchange rate (mid-market): the payout rate always follows it.
+  next.payoutFxPhpPerHkd = next.fxPhpPerHkd;
   return next as unknown as CostingSettings;
 }
 
