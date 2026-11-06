@@ -9,7 +9,9 @@ import { useAppData } from '@/lib/store';
 /** Income wallet: tier income and referral bonus. The admin can open anyone's wallet. */
 export function WalletView() {
   const { user } = useAuth();
-  const { users, packageSales, orders } = useAppData();
+  const { users, packageSales, orders, costing } = useAppData();
+  // Only people who are a referrer of a merchant have a wallet to open here.
+  const referrerIds = new Set((costing.referrals ?? []).map((link) => link.userId));
   const [who, setWho] = useState('');
   if (!user) return null;
   const isAdmin = user.role === 'admin';
@@ -23,7 +25,7 @@ export function WalletView() {
           Whose wallet
           <select value={who} onChange={(event) => setWho(event.target.value)} className="mt-1 block rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900">
             <option value="">Mine ({user.name})</option>
-            {users.filter((candidate) => candidate.id !== user.id).map((candidate) => (
+            {users.filter((candidate) => candidate.id !== user.id && referrerIds.has(candidate.id)).map((candidate) => (
               <option key={candidate.id} value={candidate.id}>{candidate.name} ({candidate.role === 'customer' ? 'reseller' : candidate.role})</option>
             ))}
           </select>
