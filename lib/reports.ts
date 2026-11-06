@@ -17,8 +17,10 @@ export interface Summary {
   avgOrder: number;
   /** SDSI's fulfillment top-up. This is SDSI's own revenue. */
   topUp: number;
-  /** What SDSI owes the merchant: the price basis minus the top-up, which equals the Net SRP. */
+  /** What SDSI owes the merchant: the price basis minus the top-up (= the Net SRP), less the reseller program deductions. */
   netPayable: number;
+  /** Reseller program deductions charged to the merchants (inside the net payable). */
+  deductions: number;
 }
 
 export function summarize(lines: SaleLine[]): Summary {
@@ -27,6 +29,7 @@ export function summarize(lines: SaleLine[]): Summary {
   let cogs = 0;
   let units = 0;
   let topUp = 0;
+  let deductions = 0;
   const orderIds = new Set<string>();
   for (const line of lines) {
     revenue += line.total;
@@ -34,11 +37,13 @@ export function summarize(lines: SaleLine[]): Summary {
     cogs += line.quantity * line.unitCost;
     units += line.quantity;
     topUp += line.topUp;
+    deductions += line.deduction ?? 0;
     orderIds.add(line.orderId);
   }
   revenue = roundMoney(revenue);
   cogs = roundMoney(cogs);
   topUp = roundMoney(topUp);
+  deductions = roundMoney(deductions);
   gross = roundMoney(gross);
   const profit = roundMoney(revenue - cogs);
   return {
@@ -51,7 +56,8 @@ export function summarize(lines: SaleLine[]): Summary {
     units,
     avgOrder: orderIds.size > 0 ? roundMoney(revenue / orderIds.size) : 0,
     topUp,
-    netPayable: roundMoney(gross - topUp),
+    netPayable: roundMoney(gross - topUp - deductions),
+    deductions,
   };
 }
 

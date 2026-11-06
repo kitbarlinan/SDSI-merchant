@@ -114,6 +114,7 @@ export function flattenDelivered(orders: Order[]): SaleLine[] {
         total: net,
         gross: roundMoney(net + lineTopUp(line, rate)),
         topUp: lineTopUp(line, rate),
+        deduction: orderTotal(order) > 0 ? roundMoney(((order.deductions?.totalPhp ?? 0) * line.total) / orderTotal(order)) : 0,
         paymentMethod: order.paymentMethod!,
         terms: order.terms,
         source: order.source,

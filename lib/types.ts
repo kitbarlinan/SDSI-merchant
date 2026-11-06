@@ -266,6 +266,8 @@ export interface SaleLine {
   gross: number;
   /** SDSI's top-up on this line (the mark-up, 495 on 990). */
   topUp: number;
+  /** Share of the order's reseller program deductions charged to the merchant on this line. */
+  deduction?: number;
   paymentMethod: PaymentMethod;
   terms: OrderTerms;
   source: OrderSource;

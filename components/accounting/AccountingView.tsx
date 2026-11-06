@@ -150,7 +150,7 @@ function AccountingReports() {
           TheYellowBasket fulfills orders for the merchants, so the cash we collect belongs to them. TheYellowBasket&apos;s own
           revenue is only the <strong>top-up</strong>. The customer price basis is the merchant&apos;s SRP plus the
           costing mark-up ({formatPercent(topUpPercent)}): 990 becomes 1,485. The difference, <strong>495</strong>, is
-          TheYellowBasket&apos;s top-up. <strong>Net payable</strong> to the merchant is the basis minus the top-up, so 1,485 − 495 = 990.
+          TheYellowBasket&apos;s top-up. <strong>Net payable</strong> to the merchant is the basis minus the top-up, so 1,485 − 495 = 990. For merchants in the reseller program, the reseller discount, referrer, tier income and system fee are taken off that too (990 → 792). Other merchants are paid in full.
           The top-up is an <strong>estimate in pesos</strong>; the real one (pickup / COD price in HKD, converted, less what we
           remit) comes later.
         </p>
@@ -183,7 +183,7 @@ function AccountingReports() {
           icon="leaf"
           label="Net payable to merchants"
           value={formatCurrency(summary.netPayable)}
-          hint="Basis minus top-up (= Net SRP)"
+          hint={summary.deductions > 0 ? `Net SRP less ${formatCurrency(summary.deductions)} reseller program deductions` : 'Basis minus top-up (= Net SRP)'}
         />
       </div>
 
