@@ -125,7 +125,7 @@ function RemittanceRow({ remittance, showMerchant }: { remittance: Remittance; s
           {remittance.bankFeeHkd ? (
             <div>
               <p className="text-xs text-slate-500">Bank charge</p>
-              <p className="font-medium text-rose-700">− {money(remittance.bankFeeHkd)}{remittance.transactions && remittance.transactions > 1 ? ` (${remittance.transactions} transfers)` : ''}</p>
+              <p className="font-medium text-rose-700">− {money(remittance.bankFeeHkd)}</p>
             </div>
           ) : null}
           {released && remittance.adjustmentPhp !== 0 ? (

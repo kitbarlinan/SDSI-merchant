@@ -67,7 +67,7 @@ export function IncomeWalletCard({ userId, sales, orders, refCode }: { userId: s
         <p className="text-sm font-semibold text-slate-800">Weekly payout</p>
         <p className="text-xs text-slate-500">
           Leave your balance here to buy products, or ask for part of it in the weekly payout. What you spent from the wallet is already taken out.
-          You can cash out up to {formatHkd(Math.max(0, wallet.availableHkd))}. Minimum {formatHkd(costing.settings.payoutMinHkd)}; the bank charge of {formatHkd(costing.settings.bankFeeHkd)} per transfer (up to {formatHkd(costing.settings.bankMaxHkd)} each) is taken out of the payout. Request before Sunday: it is sent the Monday after.
+          You can cash out up to {formatHkd(Math.max(0, wallet.availableHkd))}. Minimum {formatHkd(costing.settings.payoutMinHkd)}; the bank charge of {formatHkd(costing.settings.bankFeeHkd)} per payout is taken out of the payout. Request before Sunday: it is sent the Monday after.
         </p>
         {mine && user && user.role !== 'customer' ? (
           <Link href="/wallet/buy" className="mt-2 inline-block rounded-xl border border-emerald-600 px-4 py-2 text-sm font-semibold text-emerald-700">
