@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { useAuth } from '@/lib/auth';
 import { Card } from '@/components/ui/Card';
 import { formatDate, formatHkd } from '@/lib/format';
 import { tierIncome } from '@/lib/orders';
@@ -11,9 +12,20 @@ import type { Order, PackageSale } from '@/lib/types';
 
 /** A reseller's income wallet: the total, and where each peso came from (tier income, referral bonus). */
 export function IncomeWalletCard({ userId, sales, orders, refCode }: { userId: string; sales: PackageSale[]; orders: Order[]; refCode?: string }) {
-  const { costing, merchants } = useAppData();
-  const tier = useMemo(() => tierIncome(sales, orders, userId, costing.settings.fxPhpPerHkd), [sales, orders, userId, costing.settings.fxPhpPerHkd]);
-  const wallet = useMemo(() => walletHkd(userId, orders, sales, costing), [userId, orders, sales, costing]);
+  const { costing, merchants, earningPayouts, requestEarningPayout, cancelEarningPayout } = useAppData();
+  const { user } = useAuth();
+  const [amount, setAmount] = useState('');
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const tier = useMemo(() => tierIncome(sales, orders, userId, costing.settings.payoutFxPhpPerHkd), [sales, orders, userId, costing.settings.payoutFxPhpPerHkd]);
+  const wallet = useMemo(() => walletHkd(userId, orders, sales, costing, earningPayouts), [userId, orders, sales, costing, earningPayouts]);
+  const mine = user?.id === userId;
+  const payouts = earningPayouts.filter((payout) => payout.userId === userId);
+  const cashOut = async () => {
+    if (!user) return;
+    const result = await requestEarningPayout(user, Number(amount));
+    setMessage(result.ok ? { ok: true, text: 'Requested. It will be sent in the weekly payout.' } : { ok: false, text: result.error });
+    if (result.ok) setAmount('');
+  };
   const referral = useMemo(() => referralRows(costing, merchants, orders, userId), [costing, merchants, orders, userId]);
   const referralPending = referral.reduce((n, r) => n + r.pendingHkd, 0);
   const pending = tier.pendingHkd + referralPending;
@@ -42,9 +54,50 @@ export function IncomeWalletCard({ userId, sales, orders, refCode }: { userId: s
         <p className="text-3xl font-semibold text-emerald-950">{formatHkd(wallet.balanceHkd)}</p>
         <p className="text-xs text-emerald-950/70">
           Earned {formatHkd(wallet.tierHkd + wallet.referralHkd)}
-          {wallet.spentHkd > 0 ? ` − paid from wallet ${formatHkd(wallet.spentHkd)}` : ''} · + {formatHkd(pending)} on the way (not delivered yet)
+          {wallet.spentHkd > 0 ? ` − paid from wallet ${formatHkd(wallet.spentHkd)}` : ''}
+          {wallet.paidOutHkd > 0 ? ` − cashed out ${formatHkd(wallet.paidOutHkd)}` : ''} · + {formatHkd(pending)} on the way (not delivered yet)
+          {wallet.payoutPendingHkd > 0 ? ` · ${formatHkd(wallet.payoutPendingHkd)} waiting for the weekly payout` : ''}
           {wallet.heldHkd > 0 ? ` · ${formatHkd(wallet.heldHkd)} held for open orders` : ''}
         </p>
+      </div>
+
+      <div className="mt-3 rounded-xl border border-slate-200 p-4">
+        <p className="text-sm font-semibold text-slate-800">Weekly payout</p>
+        <p className="text-xs text-slate-500">
+          Leave your balance here to buy products, or ask for part of it in the weekly payout. What you spent from the wallet is already taken out.
+          You can cash out up to {formatHkd(Math.max(0, wallet.availableHkd))}.
+        </p>
+        {mine ? (
+          <div className="mt-2 flex flex-wrap items-end gap-2">
+            <label className="text-xs font-medium text-slate-500">
+              Amount (HKD)
+              <input type="number" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} className="mt-1 block w-36 rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900" />
+            </label>
+            <button type="button" onClick={() => setAmount(String(Math.max(0, wallet.availableHkd)))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-700">All</button>
+            <button type="button" disabled={!(Number(amount) > 0)} onClick={() => void cashOut()} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">Request payout</button>
+          </div>
+        ) : null}
+        {message ? <p className={`mt-2 text-sm ${message.ok ? 'text-emerald-700' : 'text-rose-600'}`}>{message.text}</p> : null}
+        {payouts.length > 0 ? (
+          <ul className="mt-3 divide-y divide-slate-100 rounded-xl border border-slate-100 text-sm">
+            {payouts.slice(0, 10).map((payout) => (
+              <li key={payout.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+                <span>
+                  {payout.id} · {formatDate(payout.requestedAt)}
+                  <span className="ml-2 text-xs text-slate-500">
+                    {payout.status === 'requested' ? 'Waiting for the weekly payout' : payout.status === 'paid' ? `Paid ${payout.paidAt ? formatDate(payout.paidAt) : ''}${payout.reference ? ` · ${payout.reference}` : ''}` : 'Cancelled'}
+                  </span>
+                </span>
+                <span className="flex items-center gap-3 font-semibold text-slate-900">
+                  {formatHkd(payout.amountHkd)}
+                  {payout.status === 'requested' && user && (mine || user.role === 'admin') ? (
+                    <button type="button" onClick={() => void cancelEarningPayout(user, payout.id)} className="text-xs font-normal text-rose-600 underline">Cancel</button>
+                  ) : null}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </div>
 
       <div className="mt-3 grid gap-3 sm:grid-cols-2">

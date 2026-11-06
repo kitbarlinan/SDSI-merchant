@@ -1,5 +1,6 @@
 'use client';
 
+import { VIEW_ONLY_MESSAGE } from './view-only';
 import type { Session } from '@supabase/supabase-js';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AuthContext, type AuthValue } from './auth';
@@ -22,6 +23,7 @@ const EMPTY: AppState = {
   reversals: [],
   remittances: [],
   packageSales: [],
+  earningPayouts: [],
   users: [],
   outbox: [],
   costing: { settings: { ...DEFAULT_COSTING_SETTINGS }, rows: [], log: [], programMerchantIds: [] },
@@ -44,6 +46,10 @@ export function RemoteProviders({ children }: { children: ReactNode }) {
   const [accountProblem, setAccountProblem] = useState<string | null>(null);
   const [serverProblem, setServerProblem] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  // Admin only: the person being looked at. The server builds that person's view; changes are refused meanwhile.
+  const [viewAsId, setViewAsId] = useState<string | null>(null);
+  const [viewed, setViewed] = useState<User | null>(null);
+  const [realMe, setRealMe] = useState<User | null>(null);
   const sessionRef = useRef<Session | null>(null);
 
   useEffect(() => {
@@ -77,10 +83,12 @@ export function RemoteProviders({ children }: { children: ReactNode }) {
   const load = useCallback(async () => {
     try {
       if (token) {
-        const response = await fetch('/api/state', { headers: { authorization: `Bearer ${token}` }, cache: 'no-store' });
+        const response = await fetch(`/api/state${viewAsId ? `?viewAs=${encodeURIComponent(viewAsId)}` : ''}`, { headers: { authorization: `Bearer ${token}` }, cache: 'no-store' });
         const json = await response.json().catch(() => null);
         if (json?.ok) {
           setMe(json.me);
+          setViewed(json.viewing ? json.me : null);
+          if (!json.viewing) setRealMe(json.me);
           setData(json.data);
           setAccountProblem(null);
           setServerProblem(null);
@@ -102,7 +110,7 @@ export function RemoteProviders({ children }: { children: ReactNode }) {
       if (token) setServerProblem((current) => current ?? OFFLINE);
     }
     setLoaded(true);
-  }, [token]);
+  }, [token, viewAsId]);
 
   useEffect(() => {
     if (!ready) return;
@@ -121,6 +129,7 @@ export function RemoteProviders({ children }: { children: ReactNode }) {
 
   const call = useCallback(
     async <T,>(action: string, args: Record<string, unknown>): Promise<ActionResult<T>> => {
+      if (viewAsId) return { ok: false, error: VIEW_ONLY_MESSAGE };
       try {
         const fresh = (await supabase.auth.getSession()).data.session ?? sessionRef.current;
         const response = await fetch('/api/act', {
@@ -139,7 +148,7 @@ export function RemoteProviders({ children }: { children: ReactNode }) {
         return { ok: false, error: OFFLINE };
       }
     },
-    [supabase],
+    [supabase, viewAsId],
   );
 
   const state = data?.state ?? EMPTY;
@@ -161,6 +170,7 @@ export function RemoteProviders({ children }: { children: ReactNode }) {
       reversals: state.reversals,
       remittances: state.remittances,
       packageSales: state.packageSales,
+      earningPayouts: state.earningPayouts ?? [],
       outbox: state.outbox,
       costing: state.costing,
       hydrated: loaded,
@@ -204,6 +214,9 @@ export function RemoteProviders({ children }: { children: ReactNode }) {
       revokeApproval: (_a, rowId) => call('revokeApproval', { rowId }),
       goLiveCostingRow: (_a, rowId) => call('goLiveCostingRow', { rowId }),
       setSkuDisabled: (_a, itemId, disabled) => call('setSkuDisabled', { itemId, disabled }),
+      requestEarningPayout: (_a, amountHkd) => call('requestEarningPayout', { amountHkd }),
+      markEarningPaid: (_a, payoutId, reference) => call('markEarningPaid', { payoutId, reference }),
+      cancelEarningPayout: (_a, payoutId) => call('cancelEarningPayout', { payoutId }),
       setReferralLinks: (_a, input) => call('setReferralLinks', { ...input }),
       setMerchantReferrer: (_a, merchantId, userId) => call('setMerchantReferrer', { merchantId, userId }),
       setProgramMerchant: (_a, merchantId, on) => call('setProgramMerchant', { merchantId, on }),
@@ -223,6 +236,12 @@ export function RemoteProviders({ children }: { children: ReactNode }) {
   const authValue = useMemo<AuthValue>(
     () => ({
       user: me,
+      realUser: viewed ? realMe : me,
+      viewingAs: viewed,
+      viewAs: (id) => {
+        if (!id) setViewed(null);
+        setViewAsId(id);
+      },
       users: [],
       ready: ready && (loaded || !session),
       remote: true,
@@ -260,7 +279,7 @@ export function RemoteProviders({ children }: { children: ReactNode }) {
         return null;
       },
     }),
-    [me, ready, loaded, session, accountProblem, serverProblem, needPassword, supabase, load],
+    [me, viewed, realMe, ready, loaded, session, accountProblem, serverProblem, needPassword, supabase, load],
   );
 
   return (

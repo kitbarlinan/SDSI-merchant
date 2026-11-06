@@ -43,6 +43,7 @@ import {
   type OrderStatus,
   type OrderTerms,
   type PackageSale,
+  type EarningPayout,
   type PaymentMethod,
   type ReceiptLine,
   type Remittance,
@@ -72,6 +73,8 @@ export interface AppState {
   costing: CostingState;
   /** Reseller packages sold. A reseller is active once they have one. */
   packageSales: PackageSale[];
+  /** Wallet money cashed out by resellers and referrers. */
+  earningPayouts: EarningPayout[];
   /** Everyone who can sign in. The reseller chain (sponsors) is read from here. */
   users: User[];
   /** Emails the app sent (demo: only listed). */
@@ -293,6 +296,45 @@ export function setReferralLinks(
   };
 }
 
+/** A reseller or referrer asks to be paid part of their wallet in the weekly payout. */
+export function requestEarningPayout(state: AppState, actor: Actor, amountHkd: number, now: string): Outcome<EarningPayout> {
+  const me = state.users.find((user) => user.id === actor.id);
+  if (!me || actor.role === 'merchant' || actor.role === 'cashier' || actor.role === 'clerk') return fail('Only resellers and referrers have a wallet.');
+  if (!Number.isFinite(amountHkd) || amountHkd <= 0) return fail('Enter an amount above 0.');
+  if (Math.abs(amountHkd * 100 - Math.round(amountHkd * 100)) > 1e-6) return fail('Use at most 2 decimal places.');
+  const wallet = walletHkd(actor.id, state.orders, state.packageSales, state.costing, state.earningPayouts);
+  if (amountHkd > wallet.availableHkd) return fail(`You can cash out up to ${formatHkd(Math.max(0, wallet.availableHkd))}.`);
+  const payout: EarningPayout = {
+    id: `EP-${String(state.earningPayouts.length + 1).padStart(4, '0')}`,
+    userId: me.id,
+    userName: me.name,
+    amountHkd: roundMoney(amountHkd),
+    status: 'requested',
+    requestedAt: now,
+  };
+  return { ok: true, state: { ...state, earningPayouts: [payout, ...state.earningPayouts] }, value: payout };
+}
+
+/** Admin: the money was sent. It leaves the wallet for good. */
+export function markEarningPaid(state: AppState, actor: Actor, payoutId: string, reference: string, now: string): Outcome<EarningPayout> {
+  if (actor.role !== 'admin') return fail('Only the admin can mark a payout as paid.');
+  const payout = state.earningPayouts.find((candidate) => candidate.id === payoutId);
+  if (!payout) return fail('That payout was not found.');
+  if (payout.status !== 'requested') return fail('That payout is already closed.');
+  const next: EarningPayout = { ...payout, status: 'paid', paidAt: now, paidBy: actor.id, reference: reference.trim().slice(0, 200) || undefined };
+  return { ok: true, state: { ...state, earningPayouts: state.earningPayouts.map((candidate) => (candidate.id === payoutId ? next : candidate)) }, value: next };
+}
+
+/** The person (or the admin) takes back a request that is not paid yet. The money stays in the wallet. */
+export function cancelEarningPayout(state: AppState, actor: Actor, payoutId: string): Outcome<EarningPayout> {
+  const payout = state.earningPayouts.find((candidate) => candidate.id === payoutId);
+  if (!payout) return fail('That payout was not found.');
+  if (actor.role !== 'admin' && payout.userId !== actor.id) return fail('That payout is not yours.');
+  if (payout.status !== 'requested') return fail('That payout is already closed.');
+  const next: EarningPayout = { ...payout, status: 'cancelled' };
+  return { ok: true, state: { ...state, earningPayouts: state.earningPayouts.map((candidate) => (candidate.id === payoutId ? next : candidate)) }, value: next };
+}
+
 const isPackageLine = (state: AppState, itemId: string): boolean =>
   Boolean(state.items.find((item) => item.id === itemId)?.package);
 
@@ -409,7 +451,7 @@ export function placeResellerOrder(
   }
   if (input.payFromWallet) {
     const total = roundMoney(created.reduce((sum, order) => sum + (order.amountHkd ?? 0), 0));
-    const wallet = walletHkd(actor.id, state.orders, state.packageSales, state.costing);
+    const wallet = walletHkd(actor.id, state.orders, state.packageSales, state.costing, state.earningPayouts);
     if (!active) return fail('The package cannot be paid from a wallet.');
     if (wallet.availableHkd < total) return fail(`Your wallet has ${formatHkd(Math.max(0, wallet.availableHkd))} available, this order is ${formatHkd(total)}. Choose another way to pay.`);
     for (const order of created) order.payFromWallet = true;
@@ -503,7 +545,7 @@ export function checkoutWalkIn(
     deliveredAt: now,
     handledBy: actor.id,
     paymentMethod: input.paymentMethod,
-    fxRate: state.costing.settings.fxPhpPerHkd,
+    fxRate: state.costing.settings.payoutFxPhpPerHkd,
     topUpRate: state.costing.settings.markupPct,
     pickupHkd: charges.pickupHkd,
     amountHkd: charges.pickupHkd,
@@ -637,7 +679,7 @@ export function markDelivered(
     const buyerId = order.buyerId ?? '';
     if (order.source !== 'reseller' || !buyerId || hasPackage(state, order)) return fail('Only a reseller order for products can be charged to a wallet.');
     const need = order.amountHkd ?? 0;
-    const wallet = walletHkd(buyerId, state.orders, state.packageSales, state.costing, order.id);
+    const wallet = walletHkd(buyerId, state.orders, state.packageSales, state.costing, state.earningPayouts, order.id);
     if (wallet.availableHkd < need) return fail(`Not enough in the wallet: ${formatHkd(Math.max(0, wallet.availableHkd))} available, ${formatHkd(need)} needed. Choose another payment method.`);
   }
   const next = updateOrder(base, orderId, {
@@ -645,7 +687,7 @@ export function markDelivered(
     deliveredAt: now,
     handledBy: actor.id,
     paymentMethod,
-    fxRate: state.costing.settings.fxPhpPerHkd,
+    fxRate: state.costing.settings.payoutFxPhpPerHkd,
     topUpRate: state.costing.settings.markupPct,
     deductions: orderDeductions(order, state.items, state.costing) ?? undefined,
   });

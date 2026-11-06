@@ -25,6 +25,8 @@ export interface CostingSettings {
   markupPct: number;
   /** How many PHP are 1 HKD. Update it whenever the rate changes. */
   fxPhpPerHkd: number;
+  /** The actual bank rate used for payouts and wallets (PHP per 1 HKD). It is locked on each order when it is delivered. */
+  payoutFxPhpPerHkd: number;
   /** Added to the basis for every unit, in HKD. */
   sfPerQtyHkd: number;
   /** Shipping fee (SF) added to every package, in HKD. */
@@ -52,6 +54,7 @@ export interface CostingSettings {
 export const DEFAULT_COSTING_SETTINGS: CostingSettings = {
   markupPct: 50,
   fxPhpPerHkd: 8.0388,
+  payoutFxPhpPerHkd: 8.0388,
   sfPerQtyHkd: 5,
   shippingFeeHkd: 34,
   cfRatePct: 2.5,
@@ -341,6 +344,7 @@ export function validatePickupPrice(value: number): string | null {
 const RANGES: Record<keyof CostingSettings, { label: string; min: number; max: number; exclusiveMin?: boolean }> = {
   markupPct: { label: 'Mark-up %', min: 0, max: 500 },
   fxPhpPerHkd: { label: 'Exchange rate', min: 0, max: 1000, exclusiveMin: true },
+  payoutFxPhpPerHkd: { label: 'Payout rate', min: 0, max: 1000, exclusiveMin: true },
   sfPerQtyHkd: { label: 'SF per qty', min: 0, max: 1000 },
   shippingFeeHkd: { label: 'Shipping fee', min: 0, max: 10_000 },
   cfRatePct: { label: 'Collection fee %', min: 0, max: 100 },
@@ -356,7 +360,8 @@ const RANGES: Record<keyof CostingSettings, { label: string; min: number; max: n
 
 export const SETTING_LABEL: Record<keyof CostingSettings, string> = {
   markupPct: 'Mark-up (%)',
-  fxPhpPerHkd: 'Exchange rate (PHP per 1 HKD)',
+  fxPhpPerHkd: 'Costing rate (PHP per 1 HKD) - budget',
+  payoutFxPhpPerHkd: 'Payout rate (PHP per 1 HKD) - actual bank rate',
   sfPerQtyHkd: 'SF added to basis, per qty (HKD)',
   shippingFeeHkd: 'Shipping fee, SF (HKD)',
   cfRatePct: 'Collection fee rate (%)',
@@ -474,7 +479,7 @@ export function makePackageSale(
     srpPhp: paid?.srpPhp ?? settings.packageSrpPhp,
     orderId: paid?.orderId,
     paymentMethod: paid?.paymentMethod,
-    fxRate: settings.fxPhpPerHkd,
+    fxRate: settings.payoutFxPhpPerHkd,
     grossPhp: split.grossPhp,
     resellerPhp: split.resellerPhp,
     tiers: split.tiers,
@@ -531,6 +536,8 @@ export function normalizeSettings(saved: Record<string, unknown> | undefined): C
   }
   // The old default reseller discount was 15%; the program now runs on 10%.
   if (saved?.resellerDiscountPct === 15) next.resellerDiscountPct = 10;
+  // Settings saved before the payout rate existed: it starts equal to the costing rate.
+  if (typeof saved?.payoutFxPhpPerHkd !== 'number' && typeof saved?.fxPhpPerHkd === 'number') next.payoutFxPhpPerHkd = saved.fxPhpPerHkd;
   return next as unknown as CostingSettings;
 }
 

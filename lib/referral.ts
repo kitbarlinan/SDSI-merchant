@@ -46,7 +46,7 @@ export function referralRows(costing: CostingState, merchants: Merchant[], order
   return (costing.referrals ?? [])
     .filter((link) => link.userId === userId)
     .map((link) => {
-      const stats = link.stats ?? referralStats(orders, link.merchantId, costing.settings.referrerPct, costing.settings.fxPhpPerHkd);
+      const stats = link.stats ?? referralStats(orders, link.merchantId, costing.settings.referrerPct, costing.settings.payoutFxPhpPerHkd);
       return { merchantId: link.merchantId, merchantName: merchants.find((m) => m.id === link.merchantId)?.name ?? link.merchantId, ...stats };
     });
 }

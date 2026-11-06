@@ -21,7 +21,7 @@ import { useToday } from '@/lib/use-today';
 /** A reseller / customer orders for pickup, with the reseller discount. */
 export function ResellerOrderForm() {
   const { user } = useAuth();
-  const { items, products, orders, merchants, costing, packageSales, placeResellerOrder } = useAppData();
+  const { items, products, orders, merchants, costing, packageSales, earningPayouts, placeResellerOrder } = useAppData();
   const today = useToday() || MOCK_TODAY;
 
   const [typed, setTyped] = useState<Record<string, string>>({});
@@ -32,7 +32,7 @@ export function ResellerOrderForm() {
   const [placed, setPlaced] = useState<Order[] | null>(null);
 
   const pct = costing.settings.resellerDiscountPct;
-  const fx = costing.settings.fxPhpPerHkd;
+  const fx = costing.settings.payoutFxPhpPerHkd;
   const active = Boolean(user && packageSales.some((sale) => sale.resellerId === user.id));
   const book = useMemo(() => makeStockBook(items, products, orders), [items, products, orders]);
   const rows: ListRow[] = useMemo(
@@ -55,7 +55,7 @@ export function ResellerOrderForm() {
   const subtotal = parsed.totalHkd;
   // The discount is a percent of the pickup price (HKD) of the program products.
   const discount = roundMoney(parsed.lines.reduce((sum, line) => sum + (inResellerProgram(line.item, costing) ? roundMoney(((livePickup(costing, line.item.id) ?? 0) * line.quantity * pct) / 100) : 0), 0));
-  const wallet = useMemo(() => (user ? walletHkd(user.id, orders, packageSales, costing) : null), [user, orders, packageSales, costing]);
+  const wallet = useMemo(() => (user ? walletHkd(user.id, orders, packageSales, costing, earningPayouts) : null), [user, orders, packageSales, costing, earningPayouts]);
   const [payFromWallet, setPayFromWallet] = useState(false);
   const toPay = roundMoney(subtotal - discount);
   const canSubmit = parsed.lines.length > 0 && Object.keys(parsed.errors).length === 0;

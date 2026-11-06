@@ -1,7 +1,7 @@
 import { roundMoney } from './format';
 import type { CostingState } from './costing';
 import { referralStats } from './referral';
-import type { Order, PackageSale } from './types';
+import type { EarningPayout, Order, PackageSale } from './types';
 
 export interface ResellerWallet {
   /** Income that came in, HKD: tier income and referral bonus, once delivered. */
@@ -9,6 +9,10 @@ export interface ResellerWallet {
   referralHkd: number;
   /** Paid with the wallet on delivered orders. */
   spentHkd: number;
+  /** Cashed out: payouts already paid. */
+  paidOutHkd: number;
+  /** Payouts asked for and not paid yet. They are already taken out of what can be used. */
+  payoutPendingHkd: number;
   /** Held for open orders the buyer chose to pay from the wallet. */
   heldHkd: number;
   balanceHkd: number;
@@ -25,10 +29,11 @@ export function walletHkd(
   orders: Order[],
   sales: PackageSale[],
   costing: CostingState,
+  payouts: EarningPayout[] = [],
   /** An order that is being paid now is not held against the balance twice. */
   ignoreOrderId?: string,
 ): ResellerWallet {
-  const fx = costing.settings.fxPhpPerHkd;
+  const fx = costing.settings.payoutFxPhpPerHkd;
   let tier = 0;
   for (const sale of sales) {
     for (const t of sale.tiers) if (t.userId === userId) tier += t.php / (sale.fxRate ?? fx);
@@ -53,6 +58,9 @@ export function walletHkd(
   const referralHkd = roundMoney(referral);
   const spentHkd = roundMoney(spent);
   const heldHkd = roundMoney(held);
-  const balanceHkd = roundMoney(tierHkd + referralHkd - spentHkd);
-  return { tierHkd, referralHkd, spentHkd, heldHkd, balanceHkd, availableHkd: roundMoney(balanceHkd - heldHkd) };
+  const mine = payouts.filter((payout) => payout.userId === userId);
+  const paidOutHkd = roundMoney(mine.filter((payout) => payout.status === 'paid').reduce((sum, payout) => sum + payout.amountHkd, 0));
+  const payoutPendingHkd = roundMoney(mine.filter((payout) => payout.status === 'requested').reduce((sum, payout) => sum + payout.amountHkd, 0));
+  const balanceHkd = roundMoney(tierHkd + referralHkd - spentHkd - paidOutHkd);
+  return { tierHkd, referralHkd, spentHkd, paidOutHkd, payoutPendingHkd, heldHkd, balanceHkd, availableHkd: roundMoney(balanceHkd - heldHkd - payoutPendingHkd) };
 }

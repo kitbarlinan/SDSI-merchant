@@ -400,6 +400,20 @@ export interface TierShare {
   php: number;
 }
 
+/** A weekly cash-out of wallet money (HKD) by a reseller or referrer. The admin marks it paid once the money is sent. */
+export interface EarningPayout {
+  id: string;
+  userId: string;
+  userName: string;
+  amountHkd: number;
+  status: 'requested' | 'paid' | 'cancelled';
+  requestedAt: string;
+  paidAt?: string;
+  paidBy?: string;
+  /** Bank reference or note written by the admin when paying. */
+  reference?: string;
+}
+
 /** A reseller package sold at the counter. After it the buyer is an active reseller and the upline earns tier income. */
 export interface PackageSale {
   id: string;

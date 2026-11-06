@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useAppData } from './store';
+import { setViewOnly } from './view-only';
 import type { User } from './types';
 
 /**
@@ -21,6 +22,12 @@ const SESSION_KEY = 'sdsi-wellness:session';
 
 interface AuthValue {
   user: User | null;
+  /** The person who is really signed in (differs from `user` while the admin uses "View as"). */
+  realUser: User | null;
+  /** Set while the admin looks at the app as this person. */
+  viewingAs: User | null;
+  /** Admin only. null stops viewing as. */
+  viewAs: (userId: string | null) => void;
   users: User[];
   /** false until the saved session has been read, to avoid flashing the login screen. */
   ready: boolean;
@@ -54,6 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const { users: accounts } = useAppData();
   const [userId, setUserId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  const [viewAsId, setViewAsId] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -91,6 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const logout = useCallback(() => {
+    setViewAsId(null);
     setUserId(null);
     try {
       window.localStorage.removeItem(SESSION_KEY);
@@ -99,9 +108,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const real = accounts.find((candidate) => candidate.id === userId) ?? null;
+  const viewed = real?.role === 'admin' && viewAsId && viewAsId !== real.id ? accounts.find((candidate) => candidate.id === viewAsId) ?? null : null;
+  useEffect(() => setViewOnly(!!viewed), [viewed]);
+  const viewAs = useCallback((id: string | null) => setViewAsId(id), []);
+
   const value = useMemo<AuthValue>(
     () => ({
-      user: accounts.find((candidate) => candidate.id === userId) ?? null,
+      user: viewed ?? real,
+      realUser: real,
+      viewingAs: viewed,
+      viewAs,
       users: accounts,
       ready,
       login,
@@ -117,7 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       sendReset: demoOnly,
       setNewPassword: demoOnly,
     }),
-    [userId, ready, login, loginWithPassword, logout, accounts],
+    [real, viewed, viewAs, ready, login, loginWithPassword, logout, accounts],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

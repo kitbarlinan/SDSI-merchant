@@ -17,7 +17,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, error: why }, { status: 401 });
   }
   try {
-    const reply = await dataFor(database(), auth);
+    const reply = await dataFor(database(), auth, new URL(request.url).searchParams.get('viewAs') ?? undefined);
     return NextResponse.json(reply, { status: reply.ok ? 200 : reply.status });
   } catch (error) {
     console.error('state failed', error);

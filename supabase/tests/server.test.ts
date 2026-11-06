@@ -27,7 +27,7 @@ const stateOfMock = () => ({
   receipts: M.MOCK_RECEIPTS.map((r) => ({ ...r })),
   reversals: JSON.parse(JSON.stringify(M.MOCK_REVERSALS)),
   remittances: JSON.parse(JSON.stringify(M.MOCK_REMITTANCES)),
-  packageSales: JSON.parse(JSON.stringify(M.MOCK_PACKAGE_SALES)),
+  packageSales: JSON.parse(JSON.stringify(M.MOCK_PACKAGE_SALES)), earningPayouts: [],
   users: M.MOCK_USERS.map((u) => ({ ...u, authId: 'auth-' + u.id })),
   costing: JSON.parse(JSON.stringify(M.MOCK_COSTING)),
   poSeq: M.MOCK_PO_SEQ,
@@ -59,6 +59,10 @@ const A = (id: string) => ({ authId: 'auth-' + id });
   const cash2 = await dataFor(db, A('usr-cashier2')) as any;
   const clerk = await dataFor(db, A('usr-clerk')) as any;
   check('admin sees everything', admin.ok && admin.data.state.orders.length === mock.orders.length && admin.data.state.costing.settings.markupPct === mock.costing.settings.markupPct);
+  const va = await dataFor(db, A('usr-admin'), 'usr-m1') as any;
+  check('view as: admin gets exactly the merchant data', va.ok && va.viewing === true && va.me.id === 'usr-m1' && JSON.stringify(va.data) === JSON.stringify(m1.data) && va.data.state.costing.settings.markupPct === 0);
+  check('view as: non-admin refused, unknown user refused', !(await dataFor(db, A('usr-m1'), 'usr-c1') as any).ok && !(await dataFor(db, A('usr-admin'), 'nobody') as any).ok);
+  check('view as: no password in the reply', !JSON.stringify(va).includes('"password"'));
   check('nobody receives a password or a sign-in id', [admin, m1, c1, cash2, clerk].every((r) => !JSON.stringify(r).includes('"password"') && !JSON.stringify(r).includes('"authId"')));
   check('merchant: only own items, orders, receipts, remittances', m1.data.state.items.every((i: any) => i.merchantId === 'mrc-1') && m1.data.state.orders.length > 0 && m1.data.state.orders.every((o: any) => o.merchantId === 'mrc-1') && m1.data.state.receipts.every((r: any) => r.merchantId === 'mrc-1') && m1.data.state.remittances.every((r: any) => r.merchantId === 'mrc-1'));
   check('merchant: no mark-up, no costing log, no other users, no reseller sales', m1.data.state.costing.settings.markupPct === 0 && m1.data.state.costing.log.length === 0 && m1.data.state.users.length === 1 && m1.data.state.packageSales.length === 0);

@@ -1,5 +1,6 @@
 'use client';
 
+import { isViewOnly, VIEW_ONLY_MESSAGE } from './view-only';
 import {
   createContext,
   useCallback,
@@ -37,6 +38,7 @@ import type {
   PaymentMethod,
   BranchId,
   PackageSale,
+  EarningPayout,
   SentEmail,
   StockReceipt,
   User,
@@ -78,6 +80,7 @@ export interface AppDataValue {
   reversals: ReversalRequest[];
   remittances: Remittance[];
   packageSales: PackageSale[];
+  earningPayouts: EarningPayout[];
   outbox: SentEmail[];
   applyForReseller: (input: ResellerApplication) => Promise<ActionResult<Order>>;
   changeCredentials: (userId: string, username: string, password: string) => Promise<ActionResult<User>>;
@@ -152,6 +155,9 @@ export interface AppDataValue {
   goLiveCostingRow: (actor: Actor, rowId: string) => Promise<ActionResult<CostingRow>>;
   setSkuDisabled: (actor: Actor, itemId: string, disabled: boolean) => Promise<ActionResult<InventoryItem>>;
   setProgramMerchant: (actor: Actor, merchantId: string, on: boolean) => Promise<ActionResult<string[]>>;
+  requestEarningPayout: (actor: Actor, amountHkd: number) => Promise<ActionResult<EarningPayout>>;
+  markEarningPaid: (actor: Actor, payoutId: string, reference: string) => Promise<ActionResult<EarningPayout>>;
+  cancelEarningPayout: (actor: Actor, payoutId: string) => Promise<ActionResult<EarningPayout>>;
   setReferralLinks: (actor: Actor, input: { rootSponsorId: string | null; linkHolderIds: string[] }) => Promise<ActionResult<{ rootSponsorId?: string; linkHolderIds: string[] }>>;
   setMerchantReferrer: (actor: Actor, merchantId: string, userId: string | null) => Promise<ActionResult<ReferralLink[]>>;
   setSkuReseller: (actor: Actor, itemId: string, inProgram: boolean) => Promise<ActionResult<InventoryItem>>;
@@ -194,6 +200,7 @@ const createInitialState = (): AppState => ({
   },
   users: MOCK_USERS.map((user) => ({ ...user })),
   outbox: [],
+  earningPayouts: [],
   packageSales: MOCK_PACKAGE_SALES.map((sale) => ({ ...sale, tiers: sale.tiers.map((tier) => ({ ...tier })) })),
   poSeq: MOCK_PO_SEQ,
 });
@@ -239,6 +246,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         if (isSavedState(parsed)) {
           commit({
             ...parsed,
+            earningPayouts: Array.isArray(parsed.earningPayouts) ? parsed.earningPayouts : [],
             products: Array.isArray(parsed.products) ? parsed.products.map(normalizeProduct) : [],
             items: parsed.items.map((item) => ({ ...item, category: normalizeCategory(item.category) })),
           });
@@ -261,6 +269,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   const run = useCallback(
     <T,>(action: (current: AppState) => engine.Outcome<T>): Promise<ActionResult<T>> => {
+      if (isViewOnly()) return Promise.resolve({ ok: false, error: VIEW_ONLY_MESSAGE });
       const outcome = action(stateRef.current);
       if (!outcome.ok) return Promise.resolve({ ok: false, error: outcome.error });
       commit(outcome.state);
@@ -280,6 +289,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       reversals: state.reversals,
       remittances: state.remittances,
       packageSales: state.packageSales,
+      earningPayouts: state.earningPayouts,
       outbox: state.outbox,
       applyForReseller: (input) => run((s) => engine.applyForReseller(s, input, nowISO())),
       changeCredentials: (userId, username, password) => run((s) => engine.changeCredentials(s, userId, username, password)),
@@ -324,6 +334,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       approveCostingRow: (actor, rowId) => run((s) => engine.approveCostingRow(s, actor, rowId, nowISO())),
       revokeApproval: (actor, rowId) => run((s) => engine.revokeApproval(s, actor, rowId, nowISO())),
       goLiveCostingRow: (actor, rowId) => run((s) => engine.goLiveCostingRow(s, actor, rowId, nowISO())),
+      requestEarningPayout: (actor, amountHkd) => run((st) => engine.requestEarningPayout(st, actor, amountHkd, nowISO())),
+      markEarningPaid: (actor, payoutId, reference) => run((st) => engine.markEarningPaid(st, actor, payoutId, reference, nowISO())),
+      cancelEarningPayout: (actor, payoutId) => run((st) => engine.cancelEarningPayout(st, actor, payoutId)),
       setReferralLinks: (actor, input) => run((st) => engine.setReferralLinks(st, actor, input, nowISO())),
       setMerchantReferrer: (actor, merchantId, userId) =>
         run((st) => engine.setMerchantReferrer(st, actor, merchantId, userId, nowISO())),

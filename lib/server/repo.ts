@@ -20,6 +20,7 @@ const LISTS = {
   reversal: { key: 'reversals', order: 'desc' },
   remittance: { key: 'remittances', order: 'desc' },
   packageSale: { key: 'packageSales', order: 'desc' },
+  earningPayout: { key: 'earningPayouts', order: 'desc' },
   user: { key: 'users', order: 'asc' },
   outbox: { key: 'outbox', order: 'desc' },
 } as const;
@@ -33,6 +34,7 @@ export const emptyState = (): AppState => ({
   reversals: [],
   remittances: [],
   packageSales: [],
+  earningPayouts: [],
   users: [],
   outbox: [],
   costing: { settings: { ...DEFAULT_COSTING_SETTINGS }, rows: [], log: [], programMerchantIds: [] },

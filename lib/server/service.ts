@@ -24,7 +24,7 @@ export interface AuthedUser {
 }
 
 export type Reply =
-  | { ok: true; value?: unknown; me?: User; data?: Scoped; warnings?: string[] }
+  | { ok: true; value?: unknown; me?: User; viewing?: boolean; data?: Scoped; warnings?: string[] }
   | { ok: false; error: string; status: number };
 
 export const clockHk = (): string => new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 16);
@@ -71,10 +71,19 @@ async function findUser(db: TxDb, auth: AuthedUser): Promise<User | null> {
 type Staffing = { name?: string; role?: string; email?: string; branchId?: string; merchantId?: string };
 const STAFF_ROLES: Role[] = ['cashier', 'clerk', 'merchant', 'admin'];
 
-export async function dataFor(db: TxDb, auth: AuthedUser): Promise<Reply> {
+/** `viewAs` (admin only): the data exactly as that person gets it, for checking their screens. Read-only. */
+export async function dataFor(db: TxDb, auth: AuthedUser, viewAs?: string): Promise<Reply> {
   const me = await findUser(db, auth);
   if (!me) return bad(403, 'This sign-in has no account in the app yet. Ask the admin to invite you.');
   const loaded = await db.tx(async (q) => loadAll(q));
+  if (viewAs && viewAs !== me.id) {
+    if (me.role !== 'admin') return bad(403, 'Only the admin can view as someone else.');
+    const target = loaded.state.users.find((user) => user.id === viewAs);
+    if (!target) return bad(404, 'That person was not found.');
+    const { password: _password, ...safe } = stripAuth(target);
+    void _password;
+    return { ok: true, me: safe as User, viewing: true, data: scopeFor(target, loaded.state, loaded.merchants) };
+  }
   return { ok: true, me: stripAuth(me), data: scopeFor(me, loaded.state, loaded.merchants) };
 }
 
@@ -98,6 +107,7 @@ export async function publicCatalog(db: TxDb): Promise<Scoped> {
       reversals: [],
       remittances: [],
       packageSales: [],
+      earningPayouts: [],
       users: [],
       outbox: [],
       poSeq: 0,

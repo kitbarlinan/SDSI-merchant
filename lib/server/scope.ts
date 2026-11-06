@@ -98,7 +98,7 @@ export function scopeFor(me: User, state: AppState, merchantList: Merchant[]): S
   // A reseller sees only the merchants they brought in, with the numbers worked out here (they cannot see those orders).
   const referrals = (state.costing.referrals ?? [])
     .filter((link) => link.userId === me.id)
-    .map((link) => ({ ...link, stats: referralStats(state.orders, link.merchantId, state.costing.settings.referrerPct, state.costing.settings.fxPhpPerHkd) }));
+    .map((link) => ({ ...link, stats: referralStats(state.orders, link.merchantId, state.costing.settings.referrerPct, state.costing.settings.payoutFxPhpPerHkd) }));
   const costing = { ...state.costing, settings: { ...state.costing.settings, markupPct: 0 }, log: [], referrals };
 
   const earnings = earningsOf(me, state);
@@ -117,6 +117,7 @@ export function scopeFor(me: User, state: AppState, merchantList: Merchant[]): S
         reversals: state.reversals.filter((request) => mine(request.merchantId)),
         remittances: state.remittances.filter((remittance) => mine(remittance.merchantId)),
         packageSales: earnings.sales,
+        earningPayouts: [],
         users: state.users.filter((user) => user.id === me.id).map(noPassword),
       },
     };
@@ -145,6 +146,7 @@ export function scopeFor(me: User, state: AppState, merchantList: Merchant[]): S
         receipts: [],
         reversals: [],
         remittances: [],
+        earningPayouts: state.earningPayouts.filter((payout) => payout.userId === me.id),
         packageSales: state.packageSales
           .filter((sale) => sale.resellerId === me.id || sale.tiers.some((tier) => tier.userId === me.id))
           .map((sale): PackageSale => ({ ...sale, tiers: sale.tiers.filter((tier) => tier.userId === me.id || sale.resellerId === me.id) })),
@@ -173,6 +175,7 @@ export function scopeFor(me: User, state: AppState, merchantList: Merchant[]): S
       reversals: state.reversals,
       remittances: me.role === 'cashier' ? state.remittances : [],
       packageSales: me.role === 'cashier' ? state.packageSales : earnings.sales,
+      earningPayouts: state.earningPayouts.filter((payout) => payout.userId === me.id),
       users: state.users.map(noPassword).map((user) => (me.role === 'cashier' || user.role !== 'customer' ? user : publicUser(user))),
     },
   };

@@ -1,5 +1,6 @@
 'use client';
 
+import { ViewAsBar } from './ViewAsBar';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useMemo, type ReactNode } from 'react';
@@ -132,7 +133,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   if (auth.needPassword) return <SetPasswordScreen />;
   if (auth.accountProblem || (auth.serverProblem && !user)) return <NoAccountScreen />;
   if (!user) return auth.remote ? <RemoteSignIn /> : <LoginScreen />;
-  if (user.mustChange) return <SetCredentialsScreen />;
+  if (user.mustChange && !auth.viewingAs) return <SetCredentialsScreen />;
 
   const merchantName =
     user.role === 'merchant'
@@ -264,6 +265,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </nav>
         </div>
 
+        <ViewAsBar />
         <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
           {children}
         </main>

@@ -482,7 +482,8 @@ function CostingEditor() {
           })}
         </div>
         <p className="mt-3 text-xs text-slate-500">
-          The exchange rate is the one used to get the basis in HKD from 1,485 PHP in the sheet (1,485 ÷ 8.0388 = 184.73). Update it
+          The exchange rate is the one used to get the basis in HKD from 1,485 PHP in the sheet (1,485 ÷ 8.0388 = 184.73). This costing rate is a budget
+          rate. The payout rate is the actual bank rate: it is locked on each order when it is delivered and used for the HKD payouts and wallets. Update both
           whenever the rate changes. The collection fee is (pickup price + SF) × CF rate, rounded to a
           whole HKD, never below the minimum.
         </p>
