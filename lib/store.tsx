@@ -155,6 +155,8 @@ export interface AppDataValue {
   goLiveCostingRow: (actor: Actor, rowId: string) => Promise<ActionResult<CostingRow>>;
   setSkuDisabled: (actor: Actor, itemId: string, disabled: boolean) => Promise<ActionResult<InventoryItem>>;
   setProgramMerchant: (actor: Actor, merchantId: string, on: boolean) => Promise<ActionResult<string[]>>;
+  /** Reads the exchange rate from the admin's sheet. Nothing is changed until the admin applies it. */
+  fetchBankRate: () => Promise<{ ok: true; rate: number; at: string } | { ok: false; error: string }>;
   requestEarningPayout: (actor: Actor, amountHkd: number) => Promise<ActionResult<EarningPayout>>;
   markEarningPaid: (actor: Actor, payoutId: string, reference: string) => Promise<ActionResult<EarningPayout>>;
   cancelEarningPayout: (actor: Actor, payoutId: string) => Promise<ActionResult<EarningPayout>>;
@@ -334,6 +336,14 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       approveCostingRow: (actor, rowId) => run((s) => engine.approveCostingRow(s, actor, rowId, nowISO())),
       revokeApproval: (actor, rowId) => run((s) => engine.revokeApproval(s, actor, rowId, nowISO())),
       goLiveCostingRow: (actor, rowId) => run((s) => engine.goLiveCostingRow(s, actor, rowId, nowISO())),
+      fetchBankRate: async () => {
+        try {
+          const json = await (await fetch('/api/rate', { cache: 'no-store' })).json();
+          return json.ok ? { ok: true as const, rate: json.rate, at: json.at } : { ok: false as const, error: String(json.error ?? 'No rate.') };
+        } catch {
+          return { ok: false as const, error: 'The rate could not be fetched.' };
+        }
+      },
       requestEarningPayout: (actor, amountHkd) => run((st) => engine.requestEarningPayout(st, actor, amountHkd, nowISO())),
       markEarningPaid: (actor, payoutId, reference) => run((st) => engine.markEarningPaid(st, actor, payoutId, reference, nowISO())),
       cancelEarningPayout: (actor, payoutId) => run((st) => engine.cancelEarningPayout(st, actor, payoutId)),

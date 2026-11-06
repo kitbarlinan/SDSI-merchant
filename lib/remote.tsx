@@ -214,6 +214,15 @@ export function RemoteProviders({ children }: { children: ReactNode }) {
       revokeApproval: (_a, rowId) => call('revokeApproval', { rowId }),
       goLiveCostingRow: (_a, rowId) => call('goLiveCostingRow', { rowId }),
       setSkuDisabled: (_a, itemId, disabled) => call('setSkuDisabled', { itemId, disabled }),
+      fetchBankRate: async () => {
+        try {
+          const fresh = (await supabase.auth.getSession()).data.session ?? sessionRef.current;
+          const json = await (await fetch('/api/rate', { cache: 'no-store', headers: fresh ? { authorization: `Bearer ${fresh.access_token}` } : {} })).json();
+          return json.ok ? { ok: true as const, rate: json.rate, at: json.at } : { ok: false as const, error: String(json.error ?? 'No rate.') };
+        } catch {
+          return { ok: false as const, error: 'The rate could not be fetched.' };
+        }
+      },
       requestEarningPayout: (_a, amountHkd) => call('requestEarningPayout', { amountHkd }),
       markEarningPaid: (_a, payoutId, reference) => call('markEarningPaid', { payoutId, reference }),
       cancelEarningPayout: (_a, payoutId) => call('cancelEarningPayout', { payoutId }),

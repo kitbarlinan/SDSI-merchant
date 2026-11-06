@@ -204,6 +204,7 @@ function CostingEditor() {
     costing,
     setPickupPrices,
     setCostingSettings,
+    fetchBankRate,
     removeCostingRow,
     approveCostingRow,
     revokeApproval,
@@ -465,6 +466,20 @@ function CostingEditor() {
             return (
               <label key={key} className="text-xs font-medium text-slate-500">
                 {SETTING_LABEL[key]}
+                {key === 'payoutFxPhpPerHkd' ? (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const result = await fetchBankRate();
+                      if (!result.ok) return setNotice(result.error);
+                      setSettingsDraft((current) => ({ ...current, payoutFxPhpPerHkd: String(result.rate) }));
+                      setNotice(`Rate from your sheet: ${result.rate} (${new Date(result.at).toLocaleString()}). It is in the Payout rate box: review it, then save.`);
+                    }}
+                    className="ml-2 rounded-lg border border-slate-300 px-2 py-0.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    Fetch from sheet
+                  </button>
+                ) : null}
                 <input
                   type="number"
                   step="any"
