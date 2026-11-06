@@ -86,7 +86,7 @@ function AccountingReports() {
       'Paid via',
       'Customer price basis',
       'Mark-up % (costing)',
-      'Yellow Basket top-up (estimate)',
+      'TheYellowBasket top-up (estimate)',
       'Net payable to merchant',
     ];
     const lines = ledger.map((order) => {
@@ -120,7 +120,7 @@ function AccountingReports() {
     <div className="space-y-6">
       <PageHeader
         title="Accounting"
-        description="SDSI's real revenue as the fulfillment party. Merchant sales are shown as pass-through, not SDSI sales."
+        description="TheYellowBasket's real revenue as the fulfillment party. Merchant sales are shown as pass-through, not TheYellowBasket sales."
       />
 
       <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
@@ -147,10 +147,10 @@ function AccountingReports() {
       <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4 text-sm text-violet-900">
         <p className="font-medium">How the numbers work</p>
         <p className="mt-1 text-violet-800">
-          SDSI fulfills orders for the merchants, so the cash we collect belongs to them. SDSI&apos;s own
+          TheYellowBasket fulfills orders for the merchants, so the cash we collect belongs to them. TheYellowBasket&apos;s own
           revenue is only the <strong>top-up</strong>. The customer price basis is the merchant&apos;s SRP plus the
           costing mark-up ({formatPercent(topUpPercent)}): 990 becomes 1,485. The difference, <strong>495</strong>, is
-          SDSI&apos;s top-up. <strong>Net payable</strong> to the merchant is the basis minus the top-up, so 1,485 − 495 = 990.
+          TheYellowBasket&apos;s top-up. <strong>Net payable</strong> to the merchant is the basis minus the top-up, so 1,485 − 495 = 990.
           The top-up is an <strong>estimate in pesos</strong>; the real one (pickup / COD price in HKD, converted, less what we
           remit) comes later.
         </p>
@@ -160,7 +160,7 @@ function AccountingReports() {
         <StatCard
           variant="primary"
           icon="wallet"
-          label="SDSI revenue (est. top-up)"
+          label="TheYellowBasket revenue (est. top-up)"
           value={formatCurrency(summary.topUp)}
           hint={`${formatPercent(topUpPercent)} costing mark-up, estimate`}
           delta={pctChange(summary.topUp, prev.topUp)}
@@ -188,7 +188,7 @@ function AccountingReports() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-2" title="Yellow Basket top-up over time" subtitle={window.padded ? 'Last 14 days, for context' : 'Revenue earned by SDSI per day'}>
+        <Card className="lg:col-span-2" title="TheYellowBasket top-up over time" subtitle={window.padded ? 'Last 14 days, for context' : 'Revenue earned by TheYellowBasket per day'}>
           <TrendChart data={trend} primary="topUp" />
         </Card>
 
@@ -210,7 +210,7 @@ function AccountingReports() {
       <Card
         flush
         title="Merchant statement"
-        subtitle="What each merchant sold, what SDSI earned (estimate), and what is owed to them"
+        subtitle="What each merchant sold, what TheYellowBasket earned (estimate), and what is owed to them"
       >
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
@@ -219,7 +219,7 @@ function AccountingReports() {
                 <th className="px-5 py-3">Merchant</th>
                 <th className="px-4 py-3 text-right">Orders</th>
                 <th className="px-4 py-3 text-right">Customer price basis</th>
-                <th className="px-4 py-3 text-right">Yellow Basket top-up</th>
+                <th className="px-4 py-3 text-right">TheYellowBasket top-up</th>
                 <th className="px-5 py-3 text-right">Net payable</th>
               </tr>
             </thead>
@@ -260,7 +260,7 @@ function AccountingReports() {
       </Card>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 [&>*]:min-w-0">
-        <Card title="Collections by payment method" subtitle="Cash SDSI collected on merchants' behalf">
+        <Card title="Collections by payment method" subtitle="Cash TheYellowBasket collected on merchants' behalf">
           <DonutChart
             centerLabel="Collected"
             centerValue={formatCurrency(summary.revenue)}

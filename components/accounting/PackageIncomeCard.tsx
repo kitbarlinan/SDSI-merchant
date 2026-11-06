@@ -8,7 +8,7 @@ import { useAppData } from '@/lib/store';
 
 const pct = (value: number, base: number) => (base > 0 ? `${Math.round((value / base) * 1000) / 10}%` : '0%');
 
-/** What SDSI keeps from a reseller package: the sample at full upline, and the packages actually sold. */
+/** What TheYellowBasket keeps from a reseller package: the sample at full upline, and the packages actually sold. */
 export function PackageIncomeCard() {
   const { costing, packageSales, orders, items } = useAppData();
   const { settings } = costing;
@@ -18,7 +18,7 @@ export function PackageIncomeCard() {
   const sum = (pick: (row: (typeof counted)[number]) => number) => counted.reduce((total, row) => total + pick(row), 0);
   const srpTotal = sum((row) => row.srpPhp);
   const tierPaid = sum((row) => row.tiers.reduce((t, tier) => t + tier.php, 0));
-  const TOP = 'Yellow Basket top-up (as is)';
+  const TOP = 'TheYellowBasket top-up (as is)';
   const rows: [string, number, number][] = [
     [TOP, sample.netPhp, srp],
     [`Charged to the merchant: reseller discount ${settings.resellerDiscountPct}%`, sample.resellerPhp, srp],
@@ -35,7 +35,7 @@ export function PackageIncomeCard() {
   return (
     <Card
       title="Reseller program income"
-      subtitle={`Sample on SRP ${formatCurrency(srp)} (the ${formatHkd(settings.packageHkd)} package) with a full 2-level upline. Every reseller purchase splits the same way. The deductions below are charged to the merchant; Yellow Basket's top-up stays as is. Details are on the Resellers page.`}
+      subtitle={`Sample on SRP ${formatCurrency(srp)} (the ${formatHkd(settings.packageHkd)} package) with a full 2-level upline. Every reseller purchase splits the same way. The deductions below are charged to the merchant; TheYellowBasket's top-up stays as is. Details are on the Resellers page.`}
     >
       <table className="mt-3 min-w-full text-sm">
         <tbody className="divide-y divide-slate-100">

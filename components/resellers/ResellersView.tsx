@@ -31,12 +31,12 @@ export function ResellersView() {
     <div className="space-y-6">
       <PageHeader
         title="Resellers"
-        description={`Buying the reseller package (${formatHkd(settings.packageHkd)}) makes someone a reseller. Every purchase after that has ${settings.resellerDiscountPct}% off, and ${tierPct}% of the SRP goes to the 2 sponsors above (L1 ${settings.tierL1Pct}% · L2 ${settings.tierL2Pct}%). All of it is charged to the merchant. Yellow Basket keeps its ${settings.markupPct}% top-up as is.`}
+        description={`Buying the reseller package (${formatHkd(settings.packageHkd)}) makes someone a reseller. Every purchase after that has ${settings.resellerDiscountPct}% off, and ${tierPct}% of the SRP goes to the 2 sponsors above (L1 ${settings.tierL1Pct}% · L2 ${settings.tierL2Pct}%). All of it is charged to the merchant. TheYellowBasket keeps its ${settings.markupPct}% top-up as is.`}
       />
 
       {showPeso ? (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="Yellow Basket top-up" value={formatCurrency(sum((row) => row.topUpPhp))} hint={`${settings.markupPct}% of the SRP`} />
+          <StatCard label="TheYellowBasket top-up" value={formatCurrency(sum((row) => row.topUpPhp))} hint={`${settings.markupPct}% of the SRP`} />
           <StatCard label="Reseller discount" value={formatCurrency(sum((row) => row.discountPhp))} hint={`${settings.resellerDiscountPct}% of the SRP`} />
           <StatCard label="Tier income paid" value={formatCurrency(tierPaid)} hint={`up to ${tierPct}% of the SRP`} />
           <StatCard label="Charged to merchants" value={formatCurrency(sum((row) => row.discountPhp) + tierPaid)} hint="discount + tier income" variant="primary" />
@@ -178,7 +178,7 @@ export function ResellersView() {
                   <th className="py-2 pr-4 text-right font-medium">Top-up</th>
                   <th className="py-2 pr-4 text-right font-medium">Reseller {settings.resellerDiscountPct}%</th>
                   <th className="py-2 pr-4 font-medium">Tier income</th>
-                  <th className="py-2 text-right font-medium">Yellow Basket top-up</th>
+                  <th className="py-2 text-right font-medium">TheYellowBasket top-up</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">

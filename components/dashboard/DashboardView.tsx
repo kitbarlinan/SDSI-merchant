@@ -103,7 +103,7 @@ function InventoryByMerchant({
     <Card
       flush
       title="Running inventory by merchant"
-      subtitle="Live stock held in the SDSI warehouse"
+      subtitle="Live stock held in the TheYellowBasket warehouse"
       action={
         <Link href="/inventory" className="text-xs font-medium text-emerald-700 hover:underline">
           Open inventory
@@ -459,7 +459,7 @@ export function DashboardView() {
         description={
           isAdmin
             ? 'Sales and running inventory for every merchant. Showing transactions for the dates you pick.'
-            : 'Your sales and running inventory at SDSI. Showing transactions for the dates you pick.'
+            : 'Your sales and running inventory at TheYellowBasket. Showing transactions for the dates you pick.'
         }
       />
       <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">

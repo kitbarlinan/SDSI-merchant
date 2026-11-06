@@ -21,7 +21,7 @@ interface Day {
 
 const cell = 'px-3 py-2 text-right tabular-nums';
 
-/** Net income per day of the delivered orders: Yellow Basket's top-up, and what is charged to the merchants. */
+/** Net income per day of the delivered orders: TheYellowBasket's top-up, and what is charged to the merchants. */
 export function NetIncomeCard({ merchantId, range, today, setRange }: { merchantId: string; range: DayRange; today: string; setRange: (range: DayRange) => void }) {
   const { orders, merchants } = useAppData();
 
@@ -66,7 +66,7 @@ export function NetIncomeCard({ merchantId, range, today, setRange }: { merchant
     >
       <div className="mt-3 grid gap-3 sm:grid-cols-3">
         <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3">
-          <p className="text-xs text-slate-600">Yellow Basket top-up (income)</p>
+          <p className="text-xs text-slate-600">TheYellowBasket top-up (income)</p>
           <p className="text-xl font-semibold text-emerald-800">{formatCurrency(total.topUp)}</p>
         </div>
         <div className="rounded-xl border border-slate-200 p-3">
@@ -85,7 +85,7 @@ export function NetIncomeCard({ merchantId, range, today, setRange }: { merchant
               <th className="px-3 py-2 text-left">Date</th>
               <th className="px-3 py-2 text-right">Orders</th>
               <th className="px-3 py-2 text-right">Net SRP (PHP)</th>
-              <th className="bg-yellow-50 px-3 py-2 text-right">Yellow Basket top-up</th>
+              <th className="bg-yellow-50 px-3 py-2 text-right">TheYellowBasket top-up</th>
               <th className="px-3 py-2 text-right">Reseller discount</th>
               <th className="px-3 py-2 text-right">Referrer</th>
               <th className="px-3 py-2 text-right">Tier (1-2)</th>

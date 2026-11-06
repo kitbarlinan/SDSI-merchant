@@ -254,7 +254,7 @@ export function MasterListPanel({ merchantFilter }: { merchantFilter: string }) 
       <Card
         flush
         title="Master list"
-        subtitle={user.role === 'merchant' ? 'Your products with SDSI.' : 'Products per merchant. The SKU form picks from this list.'}
+        subtitle={user.role === 'merchant' ? 'Your products with TheYellowBasket.' : 'Products per merchant. The SKU form picks from this list.'}
         action={
           <div className="mr-5 flex flex-wrap items-center justify-end gap-2">
             <select value={supplierFilter} onChange={(event) => setSupplierFilter(event.target.value)} aria-label="Filter by supplier" className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm">

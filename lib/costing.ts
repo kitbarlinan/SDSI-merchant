@@ -520,6 +520,9 @@ export function normalizeSettings(saved: Record<string, unknown> | undefined): C
 }
 
 /**
+ * RULE (fixed): deductions apply ONLY to the lines in the reseller program. Every other merchant, and every SKU not
+ * ticked, is remitted in full (no deduction at all). The 1% system fee will later apply overall: pending decision.
+ *
  * What the merchant is charged on a delivered order, on the lines that are in the reseller program (merchant ticked,
  * SKU not switched off): the reseller discount and tier income as recorded on the order, plus the referrer share
  * (when the merchant has a referrer) and the system fee on the SRP of those lines. null when no line is in the program.

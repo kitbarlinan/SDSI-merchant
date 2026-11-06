@@ -18,7 +18,7 @@ const formOf = (merchant: Merchant): Required<MerchantInput> => ({
   bankAccountNo: merchant.profile?.bankAccountNo ?? '',
 });
 
-/** Merchants: add, edit the owner and the bank account SDSI remits to, and delete one that was added by mistake. */
+/** Merchants: add, edit the owner and the bank account TheYellowBasket remits to, and delete one that was added by mistake. */
 export function MerchantsCard({ onMessage }: { onMessage: (tone: 'ok' | 'bad', text: string) => void }) {
   const { merchants, team } = useAppData();
   const [form, setForm] = useState<Required<MerchantInput>>(EMPTY);
@@ -58,7 +58,7 @@ export function MerchantsCard({ onMessage }: { onMessage: (tone: 'ok' | 'bad', t
     <Card
       className="lg:col-span-2"
       title="Merchants"
-      subtitle="Companies whose products SDSI fulfills, and where their payout is remitted."
+      subtitle="Companies whose products TheYellowBasket fulfills, and where their payout is remitted."
       action={
         !open ? (
           <button type="button" onClick={() => setOpen(true)} className={`${btn} bg-emerald-600 text-emerald-950 hover:bg-emerald-500`}>

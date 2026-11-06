@@ -373,7 +373,7 @@ export function RemittancesView() {
     <div className="space-y-6">
       <PageHeader
         title={isMerchant ? 'My Remittances' : 'Remittances'}
-        description="Weekly payout, cutoff Monday to Sunday. The wallet is what SDSI still owes the merchant. It is not the merchant's sales."
+        description="Weekly payout, cutoff Monday to Sunday. The wallet is what TheYellowBasket still owes the merchant. It is not the merchant's sales."
       />
 
       {!isMerchant ? (
@@ -406,7 +406,7 @@ export function RemittancesView() {
           icon="truck"
           label="SF advance deducted"
           value={formatCurrency(wallet.deducted)}
-          hint="Actual SF PH to HK, advanced by SDSI"
+          hint="Actual SF PH to HK, advanced by TheYellowBasket"
         />
       </div>
 

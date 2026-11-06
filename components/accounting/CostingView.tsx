@@ -125,7 +125,7 @@ function ResellerProgramCard({ onChanged }: { onChanged: (message: string) => vo
   return (
     <Card
       title="Reseller program"
-      subtitle={`Products in the program give active resellers ${resellerDiscountPct}% off (a percent of the SRP, shown in HKD). The discount is charged to the merchant (Yellow Basket's top-up stays as is). Turn a merchant on, then switch single SKUs on or off. Package price and tier income % are in the settings above.`}
+      subtitle={`Products in the program give active resellers ${resellerDiscountPct}% off (a percent of the SRP, shown in HKD). The discount is charged to the merchant (TheYellowBasket's top-up stays as is). Turn a merchant on, then switch single SKUs on or off. Package price and tier income % are in the settings above.`}
     >
       <ul className="mt-3 divide-y divide-slate-100 text-sm">
         {merchants.map((merchant) => {
@@ -555,7 +555,7 @@ function CostingEditor() {
           <span className="text-slate-400">Use the merchant filter or search above to pick which SKUs.</span>
         </div>
         <div className="border-b border-slate-100 bg-emerald-50/60 px-5 py-2.5 text-xs text-emerald-800">
-          Yellow Basket top-up from delivered orders (approved and live SKUs, packages excluded): <strong>{formatCurrency(earned.total)}</strong>
+          TheYellowBasket top-up from delivered orders (approved and live SKUs, packages excluded): <strong>{formatCurrency(earned.total)}</strong>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
@@ -573,14 +573,14 @@ function CostingEditor() {
                 <th className="px-3 py-3 text-right">CF ({preview.cfRatePct}%, min {preview.cfMinHkd})</th>
                 <th className="px-3 py-3 text-right">Net COD (HKD)</th>
                 <th className="px-3 py-3 text-right">Net remittance (PHP)</th>
-                <th className="px-3 py-3 text-right">Yellow Basket top-up</th>
+                <th className="px-3 py-3 text-right">TheYellowBasket top-up</th>
                 <th className="px-3 py-3 text-right">Reseller discount {preview.resellerDiscountPct}%</th>
                 <th className="px-3 py-3 text-right">Referrer {preview.referrerPct}%</th>
                 <th className="px-3 py-3 text-right">Tier (1-2) {preview.tierL1Pct + preview.tierL2Pct}%</th>
                 <th className="px-3 py-3 text-right">System fees {preview.systemFeePct}%</th>
                 <th className="px-3 py-3 text-right">Net remittance to merchant (PHP)</th>
                 <th className="px-3 py-3 text-right">Delivered (pcs)</th>
-                <th className="px-3 py-3 text-right">Yellow Basket income (PHP)</th>
+                <th className="px-3 py-3 text-right">TheYellowBasket income (PHP)</th>
                 <th className="px-3 py-3 text-left">Status</th>
                 <th className="px-3 py-3" />
               </tr>

@@ -681,7 +681,7 @@ export function createStockInReceipt(
   },
   now: string,
 ): Outcome<StockReceipt> {
-  if (!(actor.role === 'cashier' || canApprove(actor))) return fail('Only SDSI staff can record stock movements.');
+  if (!(actor.role === 'cashier' || canApprove(actor))) return fail('Only TheYellowBasket staff can record stock movements.');
   const branch: BranchId = actor.role === 'cashier' ? actor.branchId ?? DEFAULT_BRANCH : branchOk(input.branch) ? input.branch : DEFAULT_BRANCH;
   const kind = input.kind ?? 'stock-in';
   const dateError = validReceivedDate(input.receivedDate, now);
