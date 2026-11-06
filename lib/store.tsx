@@ -26,7 +26,7 @@ import {
   MOCK_USERS,
   MOCK_PACKAGE_SALES,
 } from './mock-data';
-import type { CostingRow, CostingSettings, CostingState } from './costing';
+import type { CostingRow, CostingSettings, CostingState, ReferralLink } from './costing';
 import type {
   InventoryItem,
   MasterProduct,
@@ -152,6 +152,7 @@ export interface AppDataValue {
   goLiveCostingRow: (actor: Actor, rowId: string) => Promise<ActionResult<CostingRow>>;
   setSkuDisabled: (actor: Actor, itemId: string, disabled: boolean) => Promise<ActionResult<InventoryItem>>;
   setProgramMerchant: (actor: Actor, merchantId: string, on: boolean) => Promise<ActionResult<string[]>>;
+  setMerchantReferrer: (actor: Actor, merchantId: string, userId: string | null) => Promise<ActionResult<ReferralLink[]>>;
   setSkuReseller: (actor: Actor, itemId: string, inProgram: boolean) => Promise<ActionResult<InventoryItem>>;
   addSku: (actor: Actor, input: engine.NewSkuInput) => Promise<ActionResult<InventoryItem>>;
   setSkuSrp: (actor: Actor, itemId: string, srp: number) => Promise<ActionResult<InventoryItem>>;
@@ -188,6 +189,7 @@ const createInitialState = (): AppState => ({
     rows: MOCK_COSTING.rows.map((row) => ({ ...row })),
     log: [],
     programMerchantIds: [...MOCK_COSTING.programMerchantIds],
+    referrals: (MOCK_COSTING.referrals ?? []).map((link) => ({ ...link })),
   },
   users: MOCK_USERS.map((user) => ({ ...user })),
   outbox: [],
@@ -321,6 +323,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       approveCostingRow: (actor, rowId) => run((s) => engine.approveCostingRow(s, actor, rowId, nowISO())),
       revokeApproval: (actor, rowId) => run((s) => engine.revokeApproval(s, actor, rowId, nowISO())),
       goLiveCostingRow: (actor, rowId) => run((s) => engine.goLiveCostingRow(s, actor, rowId, nowISO())),
+      setMerchantReferrer: (actor, merchantId, userId) =>
+        run((st) => engine.setMerchantReferrer(st, actor, merchantId, userId, nowISO())),
       setProgramMerchant: (actor, merchantId, on) =>
         run((s) => engine.setProgramMerchant(s, actor, merchantId, on, nowISO())),
       setSkuReseller: (actor, itemId, inProgram) =>

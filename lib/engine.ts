@@ -23,6 +23,7 @@ import {
   type CostingRow,
   type CostingSettings,
   type CostingState,
+  type ReferralLink,
 } from './costing';
 import { provisionReseller, validateCredentials } from './accounts';
 import { demandOfLines, emptySplit, expiryOf, holderAt, makeStockBook, moveUnits, reservedUnits } from './stock';
@@ -1114,6 +1115,27 @@ export function setProgramMerchant(
       programMerchantIds: ids,
     }),
     value: ids,
+  };
+}
+
+/** Admin: who brought a merchant in (earns the referral bonus), or null to clear. */
+export function setMerchantReferrer(
+  state: AppState,
+  actor: Actor,
+  merchantId: string,
+  userId: string | null,
+  now: string,
+): Outcome<ReferralLink[]> {
+  const denied = costingGuard(actor);
+  if (denied) return denied;
+  if (userId !== null && !state.users.some((user) => user.id === userId && user.role === 'customer')) return fail('Pick a reseller account as the referrer.');
+  const rest = (state.costing.referrals ?? []).filter((link) => link.merchantId !== merchantId);
+  const referrals = userId === null ? rest : [...rest, { merchantId, userId }];
+  const who = userId ? state.users.find((user) => user.id === userId)?.name ?? userId : 'nobody';
+  return {
+    ok: true,
+    state: logged(state, actor, now, 'Referrer of a merchant changed', [`${merchantId}: ${who}`], { referrals }),
+    value: referrals,
   };
 }
 

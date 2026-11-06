@@ -383,6 +383,7 @@ export const MOCK_COSTING: CostingState = {
   rows: buildDemoCosting(MOCK_INVENTORY),
   log: [],
   programMerchantIds: ['mrc-4'],
+  referrals: [{ merchantId: 'mrc-4', userId: 'usr-c1' }],
 };
 
 function generateOrders(): Order[] {

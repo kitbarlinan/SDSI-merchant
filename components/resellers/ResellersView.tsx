@@ -7,13 +7,14 @@ import { InviteActions } from '@/components/team/InviteActions';
 import { StatCard } from '@/components/ui/StatCard';
 import { useAuth } from '@/lib/auth';
 import { formatCurrency, formatDate, formatHkd } from '@/lib/format';
+import { referralRows } from '@/lib/referral';
 import { resellerLedger, resellerSummaries } from '@/lib/reseller';
 import { useAppData } from '@/lib/store';
 
 /** Admin and cashier: every reseller, what they got in discount and tier income, and the split of each purchase. */
 export function ResellersView() {
   const { user } = useAuth();
-  const { users, items, orders, packageSales, costing, outbox } = useAppData();
+  const { users, items, orders, packageSales, costing, outbox, merchants, setMerchantReferrer } = useAppData();
   const { settings } = costing;
   const nameOf = (id: string) => users.find((candidate) => candidate.id === id)?.name ?? id;
   const ledger = useMemo(() => resellerLedger(orders, packageSales, items, settings.markupPct, settings.referrerPct + settings.systemFeePct), [orders, packageSales, items, settings.markupPct, settings.referrerPct, settings.systemFeePct]);
@@ -40,6 +41,51 @@ export function ResellersView() {
           <StatCard label="Tier income paid" value={formatCurrency(tierPaid)} hint={`up to ${tierPct}% of the SRP`} />
           <StatCard label="SDSI net" value={formatCurrency(sum((row) => row.netPhp))} hint="top-up − discount − tier income" variant="primary" />
         </div>
+      ) : null}
+
+      {user.role === 'admin' ? (
+        <Card title="Referral bonus" subtitle={`Whoever brought a merchant in earns ${settings.referrerPct}% of that merchant's Net SRP on every delivered order. Pick the referrer of each merchant.`}>
+          <div className="mt-3 overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="text-left text-xs text-slate-500">
+                <tr>
+                  <th className="py-2 pr-4 font-medium">Merchant</th>
+                  <th className="py-2 pr-4 font-medium">Referrer</th>
+                  <th className="py-2 pr-4 text-right font-medium">Delivered orders</th>
+                  <th className="py-2 pr-4 text-right font-medium">Bonus earned</th>
+                  <th className="py-2 text-right font-medium">On the way</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {merchants.map((merchant) => {
+                  const link = (costing.referrals ?? []).find((candidate) => candidate.merchantId === merchant.id);
+                  const row = link ? referralRows(costing, merchants, orders, link.userId).find((r) => r.merchantId === merchant.id) : undefined;
+                  return (
+                    <tr key={merchant.id}>
+                      <td className="py-2 pr-4 font-medium text-slate-800">{merchant.name}</td>
+                      <td className="py-2 pr-4">
+                        <select
+                          aria-label={`Referrer of ${merchant.name}`}
+                          value={link?.userId ?? ''}
+                          onChange={(event) => void setMerchantReferrer(user, merchant.id, event.target.value || null)}
+                          className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                        >
+                          <option value="">No referrer</option>
+                          {users.filter((candidate) => candidate.role === 'customer').map((candidate) => (
+                            <option key={candidate.id} value={candidate.id}>{candidate.name}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="py-2 pr-4 text-right">{row?.orders ?? '—'}</td>
+                      <td className="py-2 pr-4 text-right font-semibold text-emerald-700">{row ? formatCurrency(row.earnedPhp) : '—'}</td>
+                      <td className="py-2 text-right text-slate-500">{row ? formatCurrency(row.pendingPhp) : '—'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       ) : null}
 
       <Card title="Resellers" subtitle="Delivered orders only. The package counts once it is paid.">

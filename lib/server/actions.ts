@@ -42,6 +42,7 @@ export const ACTIONS: Record<string, Handler> = {
   approveRelease: (st, ac, a, now) => engine.approveRelease(st, ac, s(a.remittanceId), now),
   rejectRelease: (st, ac, a, now) => engine.rejectRelease(st, ac, s(a.remittanceId), s(a.reason), now),
   setSkuDisabled: (st, ac, a, now) => engine.setSkuDisabled(st, ac, s(a.itemId), a.disabled === true, now),
+  setMerchantReferrer: (st, ac, a, now) => engine.setMerchantReferrer(st, ac, s(a.merchantId), a.userId ? s(a.userId) : null, now),
   setProgramMerchant: (st, ac, a, now) => engine.setProgramMerchant(st, ac, s(a.merchantId), a.on === true, now),
   setSkuReseller: (st, ac, a, now) => engine.setSkuReseller(st, ac, s(a.itemId), a.inProgram === true, now),
   addSku: (st, ac, a, now) => engine.addSku(st, ac, a.input as never, now),

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { OrderCard } from '@/components/orders/OrderCard';
-import { TierIncomeCard } from '@/components/orders/TierIncomeCard';
+import { IncomeWalletCard } from '@/components/orders/IncomeWalletCard';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Icon } from '@/components/ui/Icon';
 import { StatCard } from '@/components/ui/StatCard';
@@ -122,7 +122,7 @@ export function OrdersView() {
         }
       />
 
-      {isReseller && user ? <TierIncomeCard userId={user.id} sales={packageSales} orders={orders} refCode={user.refCode} /> : null}
+      {isReseller && user ? <IncomeWalletCard userId={user.id} sales={packageSales} orders={orders} refCode={user.refCode} /> : null}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard

@@ -114,6 +114,15 @@ export interface CostingState {
   log: CostingLogEntry[];
   /** Reseller program: merchants whose products carry the reseller discount and the unilevel commission. */
   programMerchantIds: string[];
+  /** Referral bonus: the person who brought a merchant in earns the referrer % of that merchant's delivered Net SRP. */
+  referrals?: ReferralLink[];
+}
+
+export interface ReferralLink {
+  merchantId: string;
+  userId: string;
+  /** Filled by the server for the referrer's own view (they cannot see the orders themselves). */
+  stats?: { orders: number; earnedPhp: number; pendingPhp: number };
 }
 
 /** In the reseller program: the merchant is in it and the SKU was not switched off. The package itself never gets the discount. */

@@ -3,6 +3,7 @@
  * so a merchant never holds another merchant's orders and a reseller never holds the costing.
  * Server only.
  */
+import { referralStats } from '../referral';
 import type { AppState } from '../engine';
 import { LEGACY_BRANCH, type InventoryItem, type MasterProduct, type Merchant, type Order, type PackageSale, type User } from '../types';
 
@@ -83,7 +84,11 @@ export function scopeFor(me: User, state: AppState, merchantList: Merchant[]): S
   }
 
   // Everyone but the admin gets the costing without the mark-up and its change log.
-  const costing = { ...state.costing, settings: { ...state.costing.settings, markupPct: 0 }, log: [] };
+  // A reseller sees only the merchants they brought in, with the numbers worked out here (they cannot see those orders).
+  const referrals = (state.costing.referrals ?? [])
+    .filter((link) => link.userId === me.id)
+    .map((link) => ({ ...link, stats: referralStats(state.orders, link.merchantId, state.costing.settings.referrerPct) }));
+  const costing = { ...state.costing, settings: { ...state.costing.settings, markupPct: 0 }, log: [], referrals };
 
   if (me.role === 'merchant') {
     const mine = (merchantId: string) => merchantId === me.merchantId;
