@@ -60,7 +60,7 @@ export function resellerLedger(orders: Order[], sales: PackageSale[], items: Inv
       topUpPhp: topUp,
       discountPhp: discount,
       tiers,
-      netPhp: roundMoney(topUp - discount - sumTiers(tiers) - (srp * extraPct) / 100),
+      netPhp: topUp,
       counted: order.status === 'delivered',
     });
   }

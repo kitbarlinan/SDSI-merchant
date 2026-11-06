@@ -39,12 +39,12 @@ export interface CostingSettings {
   packageHkd: number;
   /** SRP basis of the package in PHP. The mark-up, the reseller share and the tier income are worked out on it. */
   packageSrpPhp: number;
-  /** Tier income of the upline, percent of the package SRP. Level 1 and 2 above the buyer. Paid out of SDSI's top-up. */
+  /** Tier income of the upline, percent of the package SRP. Level 1 and 2 above the buyer. Charged to the merchant, not to Yellow Basket. */
   tierL1Pct: number;
   tierL2Pct: number;
-  /** Referrer share, percent of the SRP basis. Taken out of SDSI's top-up. */
+  /** Referrer share, percent of the SRP basis. Charged to the merchant. */
   referrerPct: number;
-  /** System fee, percent of the SRP basis. Taken out of SDSI's top-up. */
+  /** System fee, percent of the SRP basis. Charged to the merchant. */
   systemFeePct: number;
 }
 
@@ -235,7 +235,7 @@ export interface ResellerCharges {
   eligibleSrpPhp: number;
   /** Discount in HKD, shown to the reseller. */
   discountHkd: number;
-  /** The same discount in PHP: a percent of the SRP. It comes out of SDSI's top-up, not the merchant. */
+  /** The same discount in PHP: a percent of the SRP. It is charged to the merchant, not to Yellow Basket's top-up. */
   discountPhp: number;
   /** What the reseller pays at pickup, HKD. */
   amountHkd: number;
@@ -243,7 +243,7 @@ export interface ResellerCharges {
 
 /**
  * Reseller order pricing. The discount is a percent of the SRP (PHP) of the program products, shown in HKD at today's
- * rate and taken off the pickup price. The merchant is still paid the full SRP: the discount comes out of SDSI's top-up.
+ * rate and taken off the pickup price. The discount is charged to the merchant; Yellow Basket's top-up stays as is.
  * null when a line has no live price.
  */
 export function resellerCharges(
@@ -400,7 +400,7 @@ export interface PackageBreakdown {
   referrerPhp: number;
   systemFeePhp: number;
   tiers: { level: 1 | 2; userId: string; pct: number; php: number }[];
-  /** SDSI's net: gross top-up, less the reseller share and the tier income actually paid. */
+  /** Yellow Basket's top-up, as is: the reseller discount, referrer, tiers and system fees are charged to the merchant. */
   netPhp: number;
 }
 
@@ -422,7 +422,6 @@ export function packageBreakdown(settings: CostingSettings, upline: string[]): P
   const resellerPhp = roundMoney((srp * settings.resellerDiscountPct) / 100);
   const referrerPhp = roundMoney((srp * settings.referrerPct) / 100);
   const systemFeePhp = roundMoney((srp * settings.systemFeePct) / 100);
-  const paid = roundMoney(tiers.reduce((sum, tier) => sum + tier.php, 0));
   return {
     grossPhp,
     resellerPhp,
@@ -430,7 +429,7 @@ export function packageBreakdown(settings: CostingSettings, upline: string[]): P
     referrerPhp,
     systemFeePhp,
     tiers,
-    netPhp: roundMoney(grossPhp - resellerPhp - referrerPhp - systemFeePhp - paid),
+    netPhp: grossPhp,
   };
 }
 
@@ -475,17 +474,17 @@ export function makePackageSale(
   };
 }
 
-/** Income sheet of one SKU, worked out on its Net SRP (990 -> top-up 495, reseller 99, referrer 49.5, tier 39.6, fees 9.9, net 297). */
+/** Income sheet of one SKU, on its Net SRP: Yellow Basket top-up 495 as is; the merchant is charged reseller 99, referrer 49.5, tier 39.6, fees 9.9 and keeps 792 of 990. */
 export interface SkuIncome {
   grossTopUpPhp: number;
   resellerPhp: number;
   referrerPhp: number;
   tierPhp: number;
   systemFeePhp: number;
+  /** Total charged to the merchant: reseller + referrer + tier + system fees. */
   deductionsPhp: number;
-  netTopUpPhp: number;
-  /** Net top-up as a percent of the Net SRP. */
-  netPct: number;
+  /** What the merchant is left with: Net SRP less the deductions (990 -> 792). */
+  merchantNetPhp: number;
 }
 
 export function skuIncome(netSrpPhp: number, settings: CostingSettings): SkuIncome {
@@ -496,7 +495,7 @@ export function skuIncome(netSrpPhp: number, settings: CostingSettings): SkuInco
   const tierPhp = part(settings.tierL1Pct + settings.tierL2Pct);
   const systemFeePhp = part(settings.systemFeePct);
   const deductionsPhp = roundMoney(resellerPhp + referrerPhp + tierPhp + systemFeePhp);
-  const netTopUpPhp = roundMoney(grossTopUpPhp - deductionsPhp);
+  const merchantNetPhp = roundMoney(netSrpPhp - deductionsPhp);
   return {
     grossTopUpPhp,
     resellerPhp,
@@ -504,8 +503,7 @@ export function skuIncome(netSrpPhp: number, settings: CostingSettings): SkuInco
     tierPhp,
     systemFeePhp,
     deductionsPhp,
-    netTopUpPhp,
-    netPct: netSrpPhp > 0 ? roundMoney((netTopUpPhp / netSrpPhp) * 100) : 0,
+    merchantNetPhp,
   };
 }
 
@@ -516,5 +514,7 @@ export function normalizeSettings(saved: Record<string, unknown> | undefined): C
     const value = saved?.[key];
     if (typeof value === 'number' && Number.isFinite(value)) next[key] = value;
   }
+  // The old default reseller discount was 15%; the program now runs on 10%.
+  if (saved?.resellerDiscountPct === 15) next.resellerDiscountPct = 10;
   return next as unknown as CostingSettings;
 }

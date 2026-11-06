@@ -190,7 +190,7 @@ export function OrderCard({
               ) : null}
               {user.role === 'admin' && order.discountPhp ? (
                 <p className="flex justify-between">
-                  <span className="text-slate-500">Discount out of SDSI top-up (PHP)</span>
+                  <span className="text-slate-500">Discount charged to the merchant (PHP)</span>
                   <span className="font-semibold text-rose-700">− {formatCurrency(order.discountPhp)}</span>
                 </p>
               ) : null}

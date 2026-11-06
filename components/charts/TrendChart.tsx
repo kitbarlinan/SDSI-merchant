@@ -10,7 +10,7 @@ export type TrendMetric = 'revenue' | 'profit' | 'topUp';
 const METRIC: Record<TrendMetric, { label: string; color: string }> = {
   revenue: { label: 'Sales', color: REVENUE_COLOR },
   profit: { label: 'Gross profit', color: PROFIT_COLOR },
-  topUp: { label: 'SDSI top-up', color: TOP_UP_COLOR },
+  topUp: { label: 'Yellow Basket top-up', color: TOP_UP_COLOR },
 };
 
 const WIDTH = 720;

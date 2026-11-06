@@ -85,7 +85,7 @@ function AccountingReports() {
       'Paid via',
       'Customer price basis',
       'Mark-up % (costing)',
-      'SDSI top-up (estimate)',
+      'Yellow Basket top-up (estimate)',
       'Net payable to merchant',
     ];
     const lines = ledger.map((order) => {
@@ -185,7 +185,7 @@ function AccountingReports() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-2" title="SDSI top-up over time" subtitle={window.padded ? 'Last 14 days, for context' : 'Revenue earned by SDSI per day'}>
+        <Card className="lg:col-span-2" title="Yellow Basket top-up over time" subtitle={window.padded ? 'Last 14 days, for context' : 'Revenue earned by SDSI per day'}>
           <TrendChart data={trend} primary="topUp" />
         </Card>
 
@@ -216,7 +216,7 @@ function AccountingReports() {
                 <th className="px-5 py-3">Merchant</th>
                 <th className="px-4 py-3 text-right">Orders</th>
                 <th className="px-4 py-3 text-right">Customer price basis</th>
-                <th className="px-4 py-3 text-right">SDSI top-up</th>
+                <th className="px-4 py-3 text-right">Yellow Basket top-up</th>
                 <th className="px-5 py-3 text-right">Net payable</th>
               </tr>
             </thead>
