@@ -112,7 +112,12 @@ export function scopeFor(me: User, state: AppState, merchantList: Merchant[]): S
         costing,
         items: state.items.filter((item) => mine(item.merchantId)),
         products: state.products.filter((product) => mine(product.merchantId)),
-        orders: [...state.orders.filter((order) => mine(order.merchantId)), ...earnings.orders.filter((order) => !mine(order.merchantId))],
+        orders: [
+          ...state.orders.filter((order) => mine(order.merchantId)),
+          ...earnings.orders.filter((order) => !mine(order.merchantId)),
+          // What this person bought for themselves from other merchants (paid from their wallet).
+          ...state.orders.filter((order) => order.buyerId === me.id && !mine(order.merchantId) && !(order.tiers ?? []).some((tier) => tier.userId === me.id)),
+        ],
         receipts: state.receipts.filter((receipt) => mine(receipt.merchantId)),
         reversals: state.reversals.filter((request) => mine(request.merchantId)),
         remittances: state.remittances.filter((remittance) => mine(remittance.merchantId)),

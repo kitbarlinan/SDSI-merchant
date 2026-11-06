@@ -126,7 +126,7 @@ export function OrderCard({
               <Icon name="user" className="h-4 w-4 text-slate-400" />
               <span className="font-medium">{order.customerName ?? 'Walk-in client'}</span>
               {order.source === 'walk-in' ? <Badge tone="slate">Walk-in</Badge> : null}
-              {order.source === 'reseller' ? <Badge tone="sky">Reseller</Badge> : null}
+              {order.source === 'reseller' ? <Badge tone="sky">{order.personalUse ? 'Personal use' : 'Reseller'}</Badge> : null}
               {order.contactNo ? <span className="text-xs text-slate-500">{order.contactNo}</span> : null}
             </p>
             {order.address ? (

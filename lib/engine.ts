@@ -10,6 +10,7 @@ import {
   computeCosting,
   orderCharges,
   isSellable,
+  inResellerProgram,
   snapshotLive,
   validateSkuCode,
   validatePickupPrice,
@@ -391,11 +392,23 @@ export function placeResellerOrder(
   input: ResellerOrderInput,
   now: string,
 ): Outcome<Order[]> {
-  if (actor.role !== 'customer') return fail('Only resellers can place this kind of order.');
+  if (actor.role !== 'customer' && actor.role !== 'merchant' && actor.role !== 'admin') return fail('Only resellers can place this kind of order.');
   if (input.customerName.trim().length < 2) return fail('Enter your name.');
 
-  const active = isActiveReseller(state, actor.id);
+  // Merchants and admins can buy for themselves ("Buy for myself"): wallet only, program products and their own products.
+  const personal = actor.role !== 'customer';
+  const active = personal || isActiveReseller(state, actor.id);
   const packageLines = input.lines.filter((line) => isPackageLine(state, line.itemId));
+  if (personal) {
+    if (!input.payFromWallet) return fail('A purchase for yourself is paid from your wallet.');
+    if (packageLines.length > 0) return fail('The reseller package is not sold this way.');
+  }
+  for (const line of input.lines) {
+    const item = state.items.find((candidate) => candidate.id === line.itemId);
+    if (!item || item.package) continue;
+    const own = personal && actor.role === 'merchant' && item.merchantId === actor.merchantId;
+    if (!own && !inResellerProgram(item, state.costing)) return fail(`"${item.name}" is not in the reseller program, so you cannot order it.`);
+  }
   if (!active) {
     if (input.lines.length !== 1 || packageLines.length !== 1 || packageLines[0].quantity !== 1) {
       return fail('Buy the reseller package first. It is the only thing you can order until then (one package).');
@@ -439,13 +452,14 @@ export function placeResellerOrder(
       buyerId: actor.id,
       branch: resellerBranch,
     };
+    if (personal) order.personalUse = true;
     if (charges.discountHkd > 0) {
       order.discountPct = resellerDiscountPct;
       order.discountHkd = charges.discountHkd;
       order.discountPhp = charges.discountPhp;
     }
     // Tier income is worked out on the SRP of the program products and paid from SDSI's top-up once delivered.
-    const tiers = active && charges.eligibleSrpPhp > 0 ? orderTiers(state.costing.settings, upline, charges.eligibleSrpPhp) : [];
+    const tiers = !personal && active && charges.eligibleSrpPhp > 0 ? orderTiers(state.costing.settings, upline, charges.eligibleSrpPhp) : [];
     if (tiers.length > 0) order.tiers = tiers;
     created.push(order);
   }

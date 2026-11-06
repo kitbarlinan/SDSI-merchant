@@ -72,12 +72,27 @@ type Staffing = { name?: string; role?: string; email?: string; branchId?: strin
 const STAFF_ROLES: Role[] = ['cashier', 'clerk', 'merchant', 'admin'];
 
 /** `viewAs` (admin only): the data exactly as that person gets it, for checking their screens. Read-only. */
+const deps0 = (): string => clockHk();
+
 export async function dataFor(db: TxDb, auth: AuthedUser, viewAs?: string): Promise<Reply> {
   const me = await findUser(db, auth);
   if (!me) return bad(403, 'This sign-in has no account in the app yet. Ask the admin to invite you.');
   const loaded = await db.tx(async (q) => loadAll(q));
   if (viewAs && viewAs !== me.id) {
     if (me.role !== 'admin') return bad(403, 'Only the admin can view as someone else.');
+    // Sample people for checking screens when nobody real has that role yet. Nothing is saved.
+    if (viewAs === 'sample:reseller') {
+      const sample: User = { id: 'usr-sample-reseller', name: 'Sample reseller', role: 'customer', email: 'sample@example.com' };
+      const sale = { id: 'PKG-SAMPLE', resellerId: sample.id, resellerName: sample.name, createdAt: deps0(), recordedBy: me.id, hkd: 0, srpPhp: 0, grossPhp: 0, resellerPhp: 0, tiers: [], netPhp: 0 };
+      const st = { ...loaded.state, users: [...loaded.state.users, sample], packageSales: [sale, ...loaded.state.packageSales] };
+      return { ok: true, me: sample, viewing: true, data: scopeFor(sample, st, loaded.merchants) };
+    }
+    if (viewAs.startsWith('sample:merchant:')) {
+      const merchant = loaded.merchants.find((candidate) => candidate.id === viewAs.slice('sample:merchant:'.length));
+      if (!merchant) return bad(404, 'That merchant was not found.');
+      const sample: User = { id: 'usr-sample-merchant', name: `${merchant.name} (sample)`, role: 'merchant', merchantId: merchant.id, email: 'sample@example.com' };
+      return { ok: true, me: sample, viewing: true, data: scopeFor(sample, loaded.state, loaded.merchants) };
+    }
     const target = loaded.state.users.find((user) => user.id === viewAs);
     if (!target) return bad(404, 'That person was not found.');
     const { password: _password, ...safe } = stripAuth(target);

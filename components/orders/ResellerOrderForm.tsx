@@ -19,7 +19,7 @@ import type { Order } from '@/lib/types';
 import { useToday } from '@/lib/use-today';
 
 /** A reseller / customer orders for pickup, with the reseller discount. */
-export function ResellerOrderForm() {
+export function ResellerOrderForm({ personal = false }: { personal?: boolean }) {
   const { user } = useAuth();
   const { items, products, orders, merchants, costing, packageSales, earningPayouts, placeResellerOrder } = useAppData();
   const today = useToday() || MOCK_TODAY;
@@ -33,13 +33,14 @@ export function ResellerOrderForm() {
 
   const pct = costing.settings.resellerDiscountPct;
   const fx = costing.settings.payoutFxPhpPerHkd;
-  const active = Boolean(user && packageSales.some((sale) => sale.resellerId === user.id));
+  const active = personal || Boolean(user && packageSales.some((sale) => sale.resellerId === user.id));
   const book = useMemo(() => makeStockBook(items, products, orders), [items, products, orders]);
   const rows: ListRow[] = useMemo(
     () =>
       items
         // Until the package is bought it is the only thing a reseller can order. After that it is hidden.
-        .filter((item) => isSellable(item, costing) && Boolean(item.package) === !active)
+        // Resellers see only the reseller program. A merchant buying for themselves also sees their own products.
+        .filter((item) => isSellable(item, costing) && (active ? !item.package && (inResellerProgram(item, costing) || (personal && user?.role === 'merchant' && item.merchantId === user.merchantId)) : Boolean(item.package)))
         .map((item) => ({
           item,
           available: book.available(item, branch),
@@ -48,7 +49,7 @@ export function ResellerOrderForm() {
           pickupHkd: livePickup(costing, item.id) ?? 0,
           unitDiscountHkd: inResellerProgram(item, costing) ? roundMoney(((livePickup(costing, item.id) ?? 0) * pct) / 100) : 0,
         })),
-    [items, products, book, today, costing, active, pct, fx, branch],
+    [items, products, book, today, costing, active, pct, fx, branch, personal, user],
   );
 
   const parsed = parseQuantities(rows, typed);
@@ -58,7 +59,7 @@ export function ResellerOrderForm() {
   const wallet = useMemo(() => (user ? walletHkd(user.id, orders, packageSales, costing, earningPayouts) : null), [user, orders, packageSales, costing, earningPayouts]);
   const [payFromWallet, setPayFromWallet] = useState(false);
   const toPay = roundMoney(subtotal - discount);
-  const canSubmit = parsed.lines.length > 0 && Object.keys(parsed.errors).length === 0;
+  const canSubmit = parsed.lines.length > 0 && Object.keys(parsed.errors).length === 0 && (!personal || (wallet?.availableHkd ?? 0) >= toPay);
 
   if (!user) return null;
 
@@ -69,7 +70,7 @@ export function ResellerOrderForm() {
       contactNo,
       notes,
       branch,
-      payFromWallet: payFromWallet && active,
+      payFromWallet: personal || (payFromWallet && active),
       lines: parsed.lines.map((line) => ({ itemId: line.item.id, quantity: line.quantity })),
     });
     if (!result.ok) return setError(result.error);
@@ -82,9 +83,11 @@ export function ResellerOrderForm() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="New Order"
+        title={personal ? 'Buy for myself' : 'New Order'}
         description={
-          active
+          personal
+            ? `For your own use or samples. Paid from your wallet, collected at the counter. Reseller program products show ${pct}% off; your own products are at the normal price.`
+            : active
             ? `Pickup only. You pay at the counter when you collect. Products in the reseller program show ${pct}% off. Other products are at the normal price.`
             : 'Pickup only. Start with the reseller package. Once it is delivered you are a reseller and can order everything with the reseller discount.'
         }
@@ -99,8 +102,8 @@ export function ResellerOrderForm() {
               {placed.length > 1 ? ' (one order per merchant)' : ''}
             </p>
             <p className="mt-0.5 text-emerald-800">
-              Pay {formatHkd(placed.reduce((sum, order) => sum + (order.amountHkd ?? 0), 0))} at pickup.{' '}
-              <Link href="/orders" className="font-medium underline">
+              {personal ? 'Charged to your wallet' : 'Pay'} {formatHkd(placed.reduce((sum, order) => sum + (order.amountHkd ?? 0), 0))} {personal ? 'when it is delivered.' : 'at pickup.'}{' '}
+              <Link href={personal ? '/wallet' : '/orders'} className="font-medium underline">
                 See my orders
               </Link>
             </p>
@@ -168,7 +171,14 @@ export function ResellerOrderForm() {
         </p>
       ) : null}
 
-      {active && wallet ? (
+      {personal && wallet ? (
+        <p className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
+          Wallet available: <strong>{formatHkd(Math.max(0, wallet.availableHkd))}</strong>.{' '}
+          {wallet.availableHkd < toPay ? 'Not enough for this order: reduce the quantity.' : 'It is charged when the order is delivered.'}
+        </p>
+      ) : null}
+
+      {active && !personal && wallet ? (
         <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm">
           <input type="checkbox" checked={payFromWallet} onChange={(event) => setPayFromWallet(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-slate-300 text-emerald-600" />
           <span>

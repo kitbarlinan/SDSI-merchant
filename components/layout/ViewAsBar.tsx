@@ -7,8 +7,8 @@ const ROLE: Record<string, string> = { admin: 'Admin', cashier: 'Cashier', clerk
 
 /** Admin only: pick a person and see exactly what they see. Read-only; a banner shows while it is on. */
 export function ViewAsBar() {
-  const { realUser, viewingAs, viewAs } = useAuth();
-  const { users } = useAppData();
+  const { realUser, viewingAs, viewAs, remote } = useAuth();
+  const { users, merchants } = useAppData();
   if (viewingAs) {
     return (
       <div className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-2 bg-amber-400 px-4 py-2 text-sm font-medium text-amber-950">
@@ -34,6 +34,14 @@ export function ViewAsBar() {
           className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900"
         >
           <option value="">Pick a person…</option>
+          {remote ? (
+            <optgroup label="Samples (mock, nothing is saved)">
+              <option value="sample:reseller">Sample reseller</option>
+              {merchants.map((merchant) => (
+                <option key={merchant.id} value={`sample:merchant:${merchant.id}`}>Merchant: {merchant.name}</option>
+              ))}
+            </optgroup>
+          ) : null}
           {others.map((candidate) => (
             <option key={candidate.id} value={candidate.id}>
               {candidate.name} ({ROLE[candidate.role] ?? candidate.role})

@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { Card } from '@/components/ui/Card';
@@ -67,6 +68,11 @@ export function IncomeWalletCard({ userId, sales, orders, refCode }: { userId: s
           Leave your balance here to buy products, or ask for part of it in the weekly payout. What you spent from the wallet is already taken out.
           You can cash out up to {formatHkd(Math.max(0, wallet.availableHkd))}.
         </p>
+        {mine && user && user.role !== 'customer' ? (
+          <Link href="/wallet/buy" className="mt-2 inline-block rounded-xl border border-emerald-600 px-4 py-2 text-sm font-semibold text-emerald-700">
+            Buy for myself (pay from wallet)
+          </Link>
+        ) : null}
         {mine ? (
           <div className="mt-2 flex flex-wrap items-end gap-2">
             <label className="text-xs font-medium text-slate-500">

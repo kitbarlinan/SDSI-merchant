@@ -245,6 +245,8 @@ export interface Order {
   fxRate?: number;
   /** A reseller chose to pay this order from their wallet. */
   payFromWallet?: boolean;
+  /** Bought by the person for themselves (sample, own use), paid from their wallet. */
+  personalUse?: boolean;
   /** Reseller orders: the buyer's upline at the time of the order and the tier income each earns once delivered. */
   tiers?: TierShare[];
   /** The reseller this order is for (counter sale of the package). */
