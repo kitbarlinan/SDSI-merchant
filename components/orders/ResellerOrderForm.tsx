@@ -59,7 +59,7 @@ export function ResellerOrderForm({ personal = false }: { personal?: boolean }) 
   const wallet = useMemo(() => (user ? walletHkd(user.id, orders, packageSales, costing, earningPayouts) : null), [user, orders, packageSales, costing, earningPayouts]);
   const [payFromWallet, setPayFromWallet] = useState(false);
   const toPay = roundMoney(subtotal - discount);
-  const canSubmit = parsed.lines.length > 0 && Object.keys(parsed.errors).length === 0 && (!personal || (wallet?.availableHkd ?? 0) >= toPay);
+  const canSubmit = parsed.lines.length > 0 && Object.keys(parsed.errors).length === 0 && ((!personal && !payFromWallet) || (wallet?.availableHkd ?? 0) >= toPay);
 
   if (!user) return null;
 
@@ -88,7 +88,7 @@ export function ResellerOrderForm({ personal = false }: { personal?: boolean }) 
           personal
             ? `For your own use or samples. Paid from your wallet, collected at the counter. Reseller program products show ${pct}% off; your own products are at the normal price.`
             : active
-            ? `Pickup only. You pay at the counter when you collect. Products in the reseller program show ${pct}% off. Other products are at the normal price.`
+            ? `Pickup only. You pay at the counter when you collect. These are the products in the reseller program, with ${pct}% off.`
             : 'Pickup only. Start with the reseller package. Once it is delivered you are a reseller and can order everything with the reseller discount.'
         }
       />
@@ -102,7 +102,7 @@ export function ResellerOrderForm({ personal = false }: { personal?: boolean }) 
               {placed.length > 1 ? ' (one order per merchant)' : ''}
             </p>
             <p className="mt-0.5 text-emerald-800">
-              {personal ? 'Charged to your wallet' : 'Pay'} {formatHkd(placed.reduce((sum, order) => sum + (order.amountHkd ?? 0), 0))} {personal ? 'when it is delivered.' : 'at pickup.'}{' '}
+              {placed[0]?.payFromWallet ? 'Charged to your wallet' : 'Pay'} {formatHkd(placed.reduce((sum, order) => sum + (order.amountHkd ?? 0), 0))} {placed[0]?.payFromWallet ? 'when it is delivered.' : 'at pickup.'}{' '}
               <Link href={personal ? '/wallet' : '/orders'} className="font-medium underline">
                 See my orders
               </Link>
@@ -113,7 +113,8 @@ export function ResellerOrderForm({ personal = false }: { personal?: boolean }) 
 
       <ProductList
         rows={rows}
-        merchants={merchants}
+        // Only the merchants that have a product the person can order (the reseller program).
+        merchants={merchants.filter((merchant) => rows.some((row) => row.item.merchantId === merchant.id))}
         typed={typed}
         errors={parsed.errors}
         showMerchant
@@ -157,7 +158,7 @@ export function ResellerOrderForm({ personal = false }: { personal?: boolean }) 
                 </p>
               ) : null}
               <p className="flex justify-between border-t border-slate-200 pt-1 text-xl font-semibold text-slate-900">
-                <span>To pay at pickup</span>
+                <span>{personal || payFromWallet ? 'Charged to wallet' : 'To pay at pickup'}</span>
                 <span>{formatHkd(toPay)}</span>
               </p>
             </div>
@@ -179,15 +180,22 @@ export function ResellerOrderForm({ personal = false }: { personal?: boolean }) 
       ) : null}
 
       {active && !personal && wallet ? (
-        <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm">
-          <input type="checkbox" checked={payFromWallet} onChange={(event) => setPayFromWallet(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-slate-300 text-emerald-600" />
-          <span>
-            <span className="font-medium text-slate-900">Pay from my wallet</span>
-            <span className="block text-xs text-slate-500">
-              Available: {formatHkd(Math.max(0, wallet.availableHkd))}. {wallet.availableHkd < toPay ? 'Not enough for this order: choose another way to pay at pickup.' : 'It is charged when the order is delivered.'}
-            </span>
-          </span>
-        </label>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm">
+          <label htmlFor="resellerMop" className="font-medium text-slate-900">Mode of payment</label>
+          <select
+            id="resellerMop"
+            value={payFromWallet ? 'wallet' : 'cop'}
+            onChange={(event) => setPayFromWallet(event.target.value === 'wallet')}
+            className="mt-1 block w-full max-w-sm rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+          >
+            <option value="cop">COP: pay at the counter when you collect</option>
+            <option value="wallet">Wallet: charged to my wallet when delivered</option>
+          </select>
+          <p className="mt-1 text-xs text-slate-500">
+            Wallet available: {formatHkd(Math.max(0, wallet.availableHkd))}.{' '}
+            {payFromWallet && wallet.availableHkd < toPay ? 'Not enough for this order: choose COP.' : ''}
+          </p>
+        </div>
       ) : null}
 
       <div className="flex justify-end">
