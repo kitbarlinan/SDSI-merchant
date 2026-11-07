@@ -1157,6 +1157,25 @@ export function approveCostingRow(state: AppState, actor: Actor, rowId: string, 
   };
 }
 
+/** Approve (or take live) many rows in one go: all or none, one save, one log entry per row. */
+export function bulkCostingRows(state: AppState, actor: Actor, kind: 'approve' | 'live', rowIds: string[], now: string): Outcome<number> {
+  const denied = costingGuard(actor);
+  if (denied) return denied;
+  const ids = Array.from(new Set(rowIds));
+  if (ids.length === 0) return fail('Nothing was selected.');
+  if (ids.length > 500) return fail('Select up to 500 SKUs at a time.');
+  let next = state;
+  for (const id of ids) {
+    const result = kind === 'approve' ? approveCostingRow(next, actor, id, now) : goLiveCostingRow(next, actor, id, now);
+    if (!result.ok) {
+      const row = state.costing.rows.find((candidate) => candidate.id === id);
+      return fail(`${row ? rowLabel(state, row) : id}: ${result.error} Nothing was changed.`);
+    }
+    next = result.state;
+  }
+  return { ok: true, state: next, value: ids.length };
+}
+
 /** Takes an approved package back to draft, for example when a mistake is found before going live. */
 export function revokeApproval(state: AppState, actor: Actor, rowId: string, now: string): Outcome<CostingRow> {
   const denied = costingGuard(actor);

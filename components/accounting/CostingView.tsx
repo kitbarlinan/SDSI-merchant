@@ -207,6 +207,7 @@ function CostingEditor() {
     fetchBankRate,
     removeCostingRow,
     approveCostingRow,
+    bulkCostingRows,
     revokeApproval,
     goLiveCostingRow,
     setSkuDisabled,
@@ -381,15 +382,9 @@ function CostingEditor() {
       intro: kind === 'approve' ? 'Approved is not live yet. You still click Go live after.' : 'Orders will use these prices, SF and CF right away.',
       confirmLabel: kind === 'approve' ? `Approve ${targets.length}` : `Go live ${targets.length}`,
       apply: async () => {
-        let done = 0;
-        for (const { row } of targets) {
-          const r = kind === 'approve' ? await approveCostingRow(user, row.id) : await goLiveCostingRow(user, row.id);
-          if (!r.ok) {
-            setNotice(`${done} done, then stopped: ${r.error}`);
-            return r.error;
-          }
-          done += 1;
-        }
+        const r = await bulkCostingRows(user, kind, targets.map(({ row }) => row.id));
+        if (!r.ok) return r.error;
+        const done = r.value;
         setPicked(new Set());
         setNotice(kind === 'approve' ? `${done} approved. Tick them again and click Go live when ready.` : `${done} are live.`);
         return null;

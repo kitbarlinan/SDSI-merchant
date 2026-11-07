@@ -31,6 +31,7 @@ export const ACTIONS: Record<string, Handler> = {
   setPickupPrices: (st, ac, a, now) => engine.setPickupPrices(st, ac, a.changes as never, now),
   setCostingSettings: (st, ac, a, now) => engine.setCostingSettings(st, ac, a.patch as never, now),
   removeCostingRow: (st, ac, a, now) => engine.removeCostingRow(st, ac, s(a.rowId), now),
+  bulkCostingRows: (st, ac, a, now) => engine.bulkCostingRows(st, ac, a.kind as 'approve' | 'live', a.rowIds as string[], now),
   approveCostingRow: (st, ac, a, now) => engine.approveCostingRow(st, ac, s(a.rowId), now),
   revokeApproval: (st, ac, a, now) => engine.revokeApproval(st, ac, s(a.rowId), now),
   goLiveCostingRow: (st, ac, a, now) => engine.goLiveCostingRow(st, ac, s(a.rowId), now),
