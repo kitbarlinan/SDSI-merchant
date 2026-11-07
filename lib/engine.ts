@@ -1242,6 +1242,27 @@ export function setSkuDisabled(
   };
 }
 
+/** Disable or enable many SKUs at once. SKUs already in that state are skipped. All or none. */
+export function bulkSkuDisabled(state: AppState, actor: Actor, itemIds: string[], disabled: boolean, now: string): Outcome<number> {
+  const denied = costingGuard(actor);
+  if (denied) return denied;
+  const ids = Array.from(new Set(itemIds));
+  if (ids.length === 0) return fail('Nothing was selected.');
+  if (ids.length > 500) return fail('Select up to 500 SKUs at a time.');
+  let next = state;
+  let changed = 0;
+  for (const id of ids) {
+    const item = next.items.find((candidate) => candidate.id === id);
+    if (!item) return fail('A selected SKU was not found. Nothing was changed.');
+    if (Boolean(item.disabled) === disabled) continue;
+    const result = setSkuDisabled(next, actor, id, disabled, now);
+    if (!result.ok) return fail(`${item.sku}: ${result.error} Nothing was changed.`);
+    next = result.state;
+    changed += 1;
+  }
+  return { ok: true, state: next, value: changed };
+}
+
 export function setProgramMerchant(
   state: AppState,
   actor: Actor,

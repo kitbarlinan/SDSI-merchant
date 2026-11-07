@@ -151,6 +151,7 @@ export interface AppDataValue {
     },
   ) => Promise<ActionResult<Remittance>>;
   approveCostingRow: (actor: Actor, rowId: string) => Promise<ActionResult<CostingRow>>;
+  bulkSkuDisabled: (actor: Actor, itemIds: string[], disabled: boolean) => Promise<ActionResult<number>>;
   bulkCostingRows: (actor: Actor, kind: 'approve' | 'live', rowIds: string[]) => Promise<ActionResult<number>>;
   revokeApproval: (actor: Actor, rowId: string) => Promise<ActionResult<CostingRow>>;
   goLiveCostingRow: (actor: Actor, rowId: string) => Promise<ActionResult<CostingRow>>;
@@ -334,6 +335,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       approveRelease: (actor, remittanceId) => run((s) => engine.approveRelease(s, actor, remittanceId, nowISO())),
       rejectRelease: (actor, remittanceId, reason) =>
         run((s) => engine.rejectRelease(s, actor, remittanceId, reason, nowISO())),
+      bulkSkuDisabled: (actor, itemIds, disabled) => run((s) => engine.bulkSkuDisabled(s, actor, itemIds, disabled, nowISO())),
       bulkCostingRows: (actor, kind, rowIds) => run((s) => engine.bulkCostingRows(s, actor, kind, rowIds, nowISO())),
       approveCostingRow: (actor, rowId) => run((s) => engine.approveCostingRow(s, actor, rowId, nowISO())),
       revokeApproval: (actor, rowId) => run((s) => engine.revokeApproval(s, actor, rowId, nowISO())),

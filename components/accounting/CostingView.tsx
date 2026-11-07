@@ -1,5 +1,7 @@
 'use client';
 
+import { formatNumber } from '@/lib/format';
+import { makeStockBook } from '@/lib/stock';
 import { useMemo, useState } from 'react';
 import { NewSkuCard, SkuImportCard } from '@/components/accounting/NewSkuCard';
 import { Card } from '@/components/ui/Card';
@@ -208,6 +210,7 @@ function CostingEditor() {
     removeCostingRow,
     approveCostingRow,
     bulkCostingRows,
+    bulkSkuDisabled,
     revokeApproval,
     goLiveCostingRow,
     setSkuDisabled,
@@ -265,6 +268,8 @@ function CostingEditor() {
   }
   const settingChanges = SETTING_KEYS.filter((key) => preview[key] !== saved[key]);
 
+  const book = useMemo(() => makeStockBook(items, products, orders), [items, products, orders]);
+  const [stockFilter, setStockFilter] = useState<'all' | 'zero'>('all');
   const rows = useMemo(
     () =>
       costing.rows
@@ -272,11 +277,12 @@ function CostingEditor() {
         .filter((entry): entry is { row: typeof entry.row; item: NonNullable<typeof entry.item> } => !!entry.item)
         .filter(({ item }) => {
           if (merchantId !== 'all' && item.merchantId !== merchantId) return false;
+          if (stockFilter === 'zero' && book.onHand(item) > 0) return false;
           const needle = query.trim().toLowerCase();
           return !needle || item.name.toLowerCase().includes(needle) || item.sku.toLowerCase().includes(needle);
         })
         .sort((a, b) => a.item.sku.localeCompare(b.item.sku)),
-    [costing.rows, items, merchantId, query],
+    [costing.rows, items, merchantId, query, stockFilter, book],
   );
 
   // Every draft price, checked.
@@ -370,6 +376,27 @@ function CostingEditor() {
   );
 
   /** One confirm for many rows. Each row is still approved (or made live) one by one and logged on its own. */
+  /** Disable or enable the ticked SKUs (any status). Nothing is deleted: it only hides them from sale. */
+  function askBulkDisable(disabling: boolean) {
+    if (!user) return;
+    const targets = rows.filter(({ row, item }) => picked.has(row.id) && Boolean(item.disabled) !== disabling);
+    if (targets.length === 0) return setNotice(disabling ? 'Tick the SKUs you want to disable first.' : 'Tick the disabled SKUs you want to enable first.');
+    setDialog({
+      lines: targets.slice(0, 12).map(({ item }) => `${item.sku} · stock ${formatNumber(book.onHand(item))}`).concat(targets.length > 12 ? [`... and ${targets.length - 12} more`] : []),
+      warnings: [],
+      title: `${disabling ? 'Disable' : 'Enable'} ${targets.length} SKU${targets.length === 1 ? '' : 's'}?`,
+      intro: disabling ? 'They are hidden from POS and orders. Nothing is deleted: enable them again once they have stock.' : 'They can be sold again if they are live and have stock.',
+      confirmLabel: `${disabling ? 'Disable' : 'Enable'} ${targets.length}`,
+      apply: async () => {
+        const r = await bulkSkuDisabled(user, targets.map(({ item }) => item.id), disabling);
+        if (!r.ok) return r.error;
+        setPicked(new Set());
+        setNotice(`${r.value} SKU${r.value === 1 ? '' : 's'} ${disabling ? 'disabled' : 'enabled'}.`);
+        return null;
+      },
+    });
+  }
+
   function askBulk(kind: 'approve' | 'live') {
     if (!user) return;
     const wanted = kind === 'approve' ? 'draft' : 'approved';
@@ -570,7 +597,18 @@ function CostingEditor() {
             <button type="button" onClick={() => askBulk('live')} className="rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-500">
               Go live selected ({rows.filter(({ row }) => picked.has(row.id) && row.status === 'approved').length})
             </button>
-            <button type="button" onClick={() => setPicked(new Set(rows.filter(({ row }) => row.status !== 'live' && (row.status === 'approved' || row.pickupPriceHkd !== null)).map(({ row }) => row.id)))} className="rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50">Select all</button>
+            <button type="button" onClick={() => askBulkDisable(true)} className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+              Disable selected ({rows.filter(({ row, item }) => picked.has(row.id) && !item.disabled).length})
+            </button>
+            <button type="button" onClick={() => askBulkDisable(false)} className="rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+              Enable selected ({rows.filter(({ row, item }) => picked.has(row.id) && item.disabled).length})
+            </button>
+            <select value={stockFilter} onChange={(event) => setStockFilter(event.target.value as 'all' | 'zero')} aria-label="Filter by stock" className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm">
+              <option value="all">All stock levels</option>
+              <option value="zero">0 stock only</option>
+            </select>
+            <button type="button" onClick={() => setPicked(new Set(rows.filter(({ row, item }) => book.onHand(item) === 0).map(({ row }) => row.id)))} className="rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50">Select 0 stock</button>
+            <button type="button" onClick={() => setPicked(new Set(rows.map(({ row }) => row.id)))} className="rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50">Select all</button>
             <button type="button" onClick={() => setPicked(new Set())} className="rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50">Clear</button>
             <select
               value={merchantId}
@@ -695,6 +733,7 @@ function CostingEditor() {
                           </label>
                         ) : null}
                         {item.parts?.length ? <span className="mt-0.5 block text-[11px] font-normal leading-snug text-slate-500">{describeParts(item, products)}</span> : null}
+                        <span className="ml-2 text-[11px] font-normal text-slate-500">Stock {formatNumber(book.onHand(item))}</span>
                         {item.disabled ? <span className="ml-2 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-600">Disabled</span> : null}
                         <button
                           type="button"
@@ -819,7 +858,7 @@ function CostingEditor() {
                                 : 'bg-slate-100 text-slate-600';
                           return (
                             <div className="space-y-1">
-                              {row.status !== 'live' && !dirty ? (
+                              {!dirty ? (
                                 <label className="flex items-center gap-1.5 text-xs text-slate-500">
                                   <input type="checkbox" checked={picked.has(row.id)} onChange={() => toggle(row.id)} aria-label={`Select ${item.sku}`} className="h-4 w-4 rounded border-slate-300" />
                                   Select

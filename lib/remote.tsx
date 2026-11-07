@@ -210,6 +210,7 @@ export function RemoteProviders({ children }: { children: ReactNode }) {
       approveRelease: (_a, remittanceId) => call('approveRelease', { remittanceId }),
       rejectRelease: (_a, remittanceId, reason) => call('rejectRelease', { remittanceId, reason }),
       submitRelease: (_a, remittanceId, input) => call('submitRelease', { remittanceId, input }),
+      bulkSkuDisabled: (_a, itemIds, disabled) => call('bulkSkuDisabled', { itemIds, disabled }),
       bulkCostingRows: (_a, kind, rowIds) => call('bulkCostingRows', { kind, rowIds }),
       approveCostingRow: (_a, rowId) => call('approveCostingRow', { rowId }),
       revokeApproval: (_a, rowId) => call('revokeApproval', { rowId }),

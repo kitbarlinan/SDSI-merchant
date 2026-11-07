@@ -32,6 +32,7 @@ export const ACTIONS: Record<string, Handler> = {
   setCostingSettings: (st, ac, a, now) => engine.setCostingSettings(st, ac, a.patch as never, now),
   removeCostingRow: (st, ac, a, now) => engine.removeCostingRow(st, ac, s(a.rowId), now),
   bulkCostingRows: (st, ac, a, now) => engine.bulkCostingRows(st, ac, a.kind as 'approve' | 'live', a.rowIds as string[], now),
+  bulkSkuDisabled: (st, ac, a, now) => engine.bulkSkuDisabled(st, ac, a.itemIds as string[], Boolean(a.disabled), now),
   approveCostingRow: (st, ac, a, now) => engine.approveCostingRow(st, ac, s(a.rowId), now),
   revokeApproval: (st, ac, a, now) => engine.revokeApproval(st, ac, s(a.rowId), now),
   goLiveCostingRow: (st, ac, a, now) => engine.goLiveCostingRow(st, ac, s(a.rowId), now),
