@@ -222,6 +222,9 @@ function CostingEditor() {
   const [query, setQuery] = useState('');
   const [merchantId, setMerchantId] = useState('all');
   const [dialog, setDialog] = useState<DialogState | null>(null);
+  // Rows ticked for Approve / Go live in bulk.
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const toggle = (id: string) => setPicked((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   const [showNewSku, setShowNewSku] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [srpEdit, setSrpEdit] = useState<{ itemId: string; value: string } | null>(null);
@@ -369,8 +372,8 @@ function CostingEditor() {
   function askBulk(kind: 'approve' | 'live') {
     if (!user) return;
     const wanted = kind === 'approve' ? 'draft' : 'approved';
-    const targets = rows.filter(({ row }) => row.status === wanted && (kind === 'live' || row.pickupPriceHkd !== null) && !changedRowIds.has(row.id));
-    if (targets.length === 0) return setNotice(kind === 'approve' ? 'No drafts with a saved price to approve here.' : 'No approved SKUs waiting to go live here.');
+    const targets = rows.filter(({ row }) => picked.has(row.id) && row.status === wanted && (kind === 'live' || row.pickupPriceHkd !== null) && !changedRowIds.has(row.id));
+    if (targets.length === 0) return setNotice(kind === 'approve' ? 'Tick the drafts you want to approve first.' : 'Tick the approved SKUs you want to make live first.');
     setDialog({
       lines: targets.slice(0, 12).map(({ row, item }) => `${item.sku} · pickup ${formatHkd(row.pickupPriceHkd ?? 0)}`).concat(targets.length > 12 ? [`... and ${targets.length - 12} more`] : []),
       warnings: kind === 'live' ? ['From now on new orders and the merchant remittance use these numbers.'] : [],
@@ -387,7 +390,8 @@ function CostingEditor() {
           }
           done += 1;
         }
-        setNotice(kind === 'approve' ? `${done} approved. Click Go live all when ready.` : `${done} are live.`);
+        setPicked(new Set());
+        setNotice(kind === 'approve' ? `${done} approved. Tick them again and click Go live when ready.` : `${done} are live.`);
         return null;
       },
     });
@@ -566,11 +570,13 @@ function CostingEditor() {
         action={
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <button type="button" onClick={() => askBulk('approve')} className="rounded-xl border border-rose-300 px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">
-              Approve all drafts ({rows.filter(({ row }) => row.status === 'draft' && row.pickupPriceHkd !== null && !changedRowIds.has(row.id)).length})
+              Approve selected ({rows.filter(({ row }) => picked.has(row.id) && row.status === 'draft' && row.pickupPriceHkd !== null && !changedRowIds.has(row.id)).length})
             </button>
             <button type="button" onClick={() => askBulk('live')} className="rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-500">
-              Go live all approved ({rows.filter(({ row }) => row.status === 'approved').length})
+              Go live selected ({rows.filter(({ row }) => picked.has(row.id) && row.status === 'approved').length})
             </button>
+            <button type="button" onClick={() => setPicked(new Set(rows.filter(({ row }) => row.status !== 'live' && (row.status === 'approved' || row.pickupPriceHkd !== null)).map(({ row }) => row.id)))} className="rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50">Select all</button>
+            <button type="button" onClick={() => setPicked(new Set())} className="rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50">Clear</button>
             <select
               value={merchantId}
               onChange={(event) => setMerchantId(event.target.value)}
@@ -818,6 +824,12 @@ function CostingEditor() {
                                 : 'bg-slate-100 text-slate-600';
                           return (
                             <div className="space-y-1">
+                              {row.status !== 'live' && !dirty ? (
+                                <label className="flex items-center gap-1.5 text-xs text-slate-500">
+                                  <input type="checkbox" checked={picked.has(row.id)} onChange={() => toggle(row.id)} aria-label={`Select ${item.sku}`} className="h-4 w-4 rounded border-slate-300" />
+                                  Select
+                                </label>
+                              ) : null}
                               <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${chip}`}>
                                 {row.status === 'live' ? 'Live' : row.status === 'approved' ? 'Approved' : 'Draft'}
                               </span>
