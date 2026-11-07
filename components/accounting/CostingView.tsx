@@ -355,6 +355,44 @@ function CostingEditor() {
     });
   }
 
+  // Rows whose price was typed but not saved yet: they are left out of the bulk buttons.
+  const changedRowIds = new Set(
+    Object.entries(prices)
+      .filter(([id, raw]) => {
+        const row = costing.rows.find((candidate) => candidate.id === id);
+        return Boolean(row) && raw.trim() !== '' && Number(raw) !== row!.pickupPriceHkd;
+      })
+      .map(([id]) => id),
+  );
+
+  /** One confirm for many rows. Each row is still approved (or made live) one by one and logged on its own. */
+  function askBulk(kind: 'approve' | 'live') {
+    if (!user) return;
+    const wanted = kind === 'approve' ? 'draft' : 'approved';
+    const targets = rows.filter(({ row }) => row.status === wanted && (kind === 'live' || row.pickupPriceHkd !== null) && !changedRowIds.has(row.id));
+    if (targets.length === 0) return setNotice(kind === 'approve' ? 'No drafts with a saved price to approve here.' : 'No approved SKUs waiting to go live here.');
+    setDialog({
+      lines: targets.slice(0, 12).map(({ row, item }) => `${item.sku} · pickup ${formatHkd(row.pickupPriceHkd ?? 0)}`).concat(targets.length > 12 ? [`... and ${targets.length - 12} more`] : []),
+      warnings: kind === 'live' ? ['From now on new orders and the merchant remittance use these numbers.'] : [],
+      title: kind === 'approve' ? `Approve ${targets.length} SKU${targets.length === 1 ? '' : 's'}?` : `Go live with ${targets.length} SKU${targets.length === 1 ? '' : 's'}?`,
+      intro: kind === 'approve' ? 'Approved is not live yet. You still click Go live after.' : 'Orders will use these prices, SF and CF right away.',
+      confirmLabel: kind === 'approve' ? `Approve ${targets.length}` : `Go live ${targets.length}`,
+      apply: async () => {
+        let done = 0;
+        for (const { row } of targets) {
+          const r = kind === 'approve' ? await approveCostingRow(user, row.id) : await goLiveCostingRow(user, row.id);
+          if (!r.ok) {
+            setNotice(`${done} done, then stopped: ${r.error}`);
+            return r.error;
+          }
+          done += 1;
+        }
+        setNotice(kind === 'approve' ? `${done} approved. Click Go live all when ready.` : `${done} are live.`);
+        return null;
+      },
+    });
+  }
+
   function askRowAction(kind: 'approve' | 'revoke' | 'live', row: CostingRow, item: InventoryItem) {
     if (!user) return;
     const result = computeCosting(item.unitPrice, row.qty, row.pickupPriceHkd, saved);
@@ -527,6 +565,12 @@ function CostingEditor() {
         subtitle="Each row is one SKU. Type the pickup price (HKD), save it as a draft, then Approve, then Go live. Only live rows are used by orders and remittance."
         action={
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <button type="button" onClick={() => askBulk('approve')} className="rounded-xl border border-rose-300 px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">
+              Approve all drafts ({rows.filter(({ row }) => row.status === 'draft' && row.pickupPriceHkd !== null && !changedRowIds.has(row.id)).length})
+            </button>
+            <button type="button" onClick={() => askBulk('live')} className="rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-500">
+              Go live all approved ({rows.filter(({ row }) => row.status === 'approved').length})
+            </button>
             <select
               value={merchantId}
               onChange={(event) => setMerchantId(event.target.value)}
